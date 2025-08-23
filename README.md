@@ -57,6 +57,61 @@ This is the backend for the AethyrTech project, built with Django and Django RES
    python manage.py runserver
    ```
 
+## Common Project Commands
+
+- **Create a new Django project:**
+
+  ```sh
+  django-admin startproject <project_name>
+  ```
+
+- **Create a new Django app:**
+
+  ```sh
+  python manage.py startapp <app_name>
+  ```
+
+- **Make migrations for changes in models:**
+
+  ```sh
+  python manage.py makemigrations
+  ```
+
+- **Apply migrations to the database:**
+
+  ```sh
+  python manage.py migrate
+  ```
+
+- **Create a superuser manually:**
+
+  ```sh
+  python manage.py createsuperuser
+  ```
+
+- **Run the development server:**
+
+  ```sh
+  python manage.py runserver
+  ```
+
+- **Run custom seed command (creates initial superuser):**
+
+  ```sh
+  python manage.py seed
+  ```
+
+- **Collect static files:**
+
+  ```sh
+  python manage.py collectstatic
+  ```
+
+- **Run tests:**
+  ```sh
+  python manage.py test
+  ```
+
 ## Project Structure
 
 - `core/` - Core logic and utilities

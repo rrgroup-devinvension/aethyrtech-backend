@@ -1,4 +1,3 @@
-
 from pathlib import Path
 from dotenv import load_dotenv
 import os
@@ -27,10 +26,15 @@ INSTALLED_APPS = [
     'apps.auths',
     'apps.users',
     'apps.brand',
+    'apps.analysis',
 ]
 
 REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "core.pagination.DefaultPageNumberPagination",
+    'DEFAULT_RENDERER_CLASSES': (
+        'shared.response.StandardJSONRenderer',
+    ),
+    'EXCEPTION_HANDLER': 'shared.exceptions.exception_handler',
     "PAGE_SIZE": 20,
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
@@ -41,7 +45,6 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.TokenAuthentication",
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
-    "EXCEPTION_HANDLER": "shared.exceptions.exception_handler",
 }
 
 
@@ -110,6 +113,9 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = 'static/'
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
