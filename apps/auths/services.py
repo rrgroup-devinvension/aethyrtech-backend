@@ -1,9 +1,7 @@
 from django.core.mail import send_mail
 from django.conf import settings
-from django.contrib.auth import get_user_model
+from apps.users.models import User
 from .tokens import PasswordResetTokenGenerator
-
-User = get_user_model()
 
 def send_password_reset_email(user: User):
     token_gen = PasswordResetTokenGenerator()
