@@ -1,0 +1,48 @@
+# Django
+*.pyc
+__pycache__/
+db.sqlite3
+*.sqlite3
+/media
+/staticfiles
+/static/
+.env
+*.env
+*.log
+
+# VSCode
+.vscode/
+.history/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Migrations
+*/migrations/
+*/migrations/*.pyc
+*/migrations/*.pyo
+*/migrations/*.db
+
+# Node modules (if using frontend)
+node_modules/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+
+# Test and debug
+*.pot
+*.mo
+*.swp
+*.swo
+
+# Build
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# IDEs
+/venv/
