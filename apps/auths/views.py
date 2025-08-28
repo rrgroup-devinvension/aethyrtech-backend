@@ -1,4 +1,4 @@
-from .serializers import LoginSerializer, ForgotPasswordSerializer, ResetPasswordSerializer, LogoutSerializer
+from .serializers import LoginSerializer, ForgotPasswordSerializer, ResetPasswordSerializer, LogoutSerializer, RefreshSerializer
 from .services import send_password_reset_email
 from rest_framework import generics, status
 from rest_framework.response import Response
@@ -21,6 +21,15 @@ class LoginView(generics.GenericAPIView):
         LoginHistory.objects.create(user=user, ip_address=request.META.get("REMOTE_ADDR"), user_agent=request.META.get("HTTP_USER_AGENT"))
         return Response(serializer.validated_data, status=status.HTTP_200_OK)
 
+class RefreshView(generics.GenericAPIView):
+    serializer_class = RefreshSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.validated_data, status=status.HTTP_200_OK)
+    
 class LogoutView(generics.GenericAPIView):
     serializer_class = LogoutSerializer
 
