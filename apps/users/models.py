@@ -36,7 +36,7 @@ class User(AbstractBaseUser, SoftDeleteModel, AuditableMixin):
         MARKETING = "marketing", "Marketing"
         EXECUTOR = "executor", "Executor"
 
-    email = models.EmailField(unique=True, db_index=True)
+    email = models.EmailField(max_length=191, unique=True, db_index=True)
     name = models.CharField(max_length=150, blank=True)
     role = models.CharField(max_length=20, choices=Roles.choices, default=Roles.EXECUTOR)
     is_active = models.BooleanField(default=True)
