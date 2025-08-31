@@ -27,7 +27,7 @@ class LoginSerializer(serializers.Serializer):
         }
 
 class RefreshSerializer(serializers.Serializer):
-    refresh = serializers.CharField()
+    refresh = serializers.CharField(max_length=191)
 
     def validate(self, data):
         try:
@@ -58,7 +58,7 @@ class RefreshSerializer(serializers.Serializer):
         }
     
 class LogoutSerializer(serializers.Serializer):
-    refresh = serializers.CharField()
+    refresh = serializers.CharField(max_length=191)
 
 
 
@@ -72,9 +72,9 @@ class ForgotPasswordSerializer(serializers.Serializer):
 
 
 class ResetPasswordSerializer(serializers.Serializer):
-    token = serializers.CharField()
-    uid = serializers.CharField()
-    new_password = serializers.CharField(min_length=6)
+    token = serializers.CharField(max_length=191)
+    uid = serializers.CharField(max_length=191)
+    new_password = serializers.CharField(min_length=6, max_length=191)
 
     def validate(self, data):
         token_gen = PasswordResetTokenGenerator()

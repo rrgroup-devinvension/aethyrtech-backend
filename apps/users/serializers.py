@@ -55,4 +55,4 @@ class UserCreateUpdateSerializer(serializers.ModelSerializer):
         return instance
 
 class PasswordUpdateSerializer(serializers.Serializer):
-    password = serializers.CharField(write_only=True, min_length=8)
+    password = serializers.CharField(write_only=True, min_length=8, max_length=191)
