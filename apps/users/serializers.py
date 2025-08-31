@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import User
+from apps.brand.models import Brand
 from apps.brand.serializers import BrandSerializer
 
 class UserSerializer(serializers.ModelSerializer):
@@ -11,31 +12,47 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ("created_by", "updated_by")
 
 class UserCreateUpdateSerializer(serializers.ModelSerializer):
-    brand_ids = serializers.ListField(write_only=True, required=False, child=serializers.IntegerField())
+    # accept "brands" as a list of IDs
+    brands = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Brand.objects.all(),
+        write_only=True,
+        required=False
+    )
 
     class Meta:
         model = User
-        fields = ("name", "email", "role", "brand_ids", "password")
+        fields = ("name", "email", "role", "brands", "password")
+        extra_kwargs = {
+            "password": {"write_only": True, "required": False}
+        }
 
     def create(self, validated_data):
-        brand_ids = validated_data.pop("brand_ids", [])
+        brands = validated_data.pop("brands", [])
         password = validated_data.pop("password", None)
+
         user = User.objects.create(**validated_data)
+
         if password:
             user.set_password(password)
             user.save()
-        if brand_ids:
-            user.brands.set(brand_ids)
+
+        if brands:
+            user.brands.set(brands)
+
         return user
 
     def update(self, instance, validated_data):
-        brand_ids = validated_data.pop("brand_ids", None)
-        password = validated_data.pop("password", None)
-        for attr, val in validated_data.items():
-            setattr(instance, attr, val)
-        if password:
-            instance.set_password(password)
+        brands = validated_data.pop("brands", None)
+        validated_data.pop("password", None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
         instance.save()
-        if brand_ids is not None:
-            instance.brands.set(brand_ids)
+
+        if brands is not None:
+            instance.brands.set(brands)
+
         return instance
+
+class PasswordUpdateSerializer(serializers.Serializer):
+    password = serializers.CharField(write_only=True, min_length=8)
