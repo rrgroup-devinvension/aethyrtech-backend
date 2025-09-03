@@ -27,7 +27,7 @@ class LoginSerializer(serializers.Serializer):
         }
 
 class RefreshSerializer(serializers.Serializer):
-    refresh = serializers.CharField(max_length=191)
+    refresh = serializers.CharField()
 
     def validate(self, data):
         try:
@@ -58,7 +58,7 @@ class RefreshSerializer(serializers.Serializer):
         }
     
 class LogoutSerializer(serializers.Serializer):
-    refresh = serializers.CharField(max_length=191)
+    refresh = serializers.CharField()
 
 
 

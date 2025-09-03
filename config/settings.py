@@ -11,8 +11,6 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 DEBUG = os.getenv("DEBUG", "False") == "True"
 DATABASE_URL = os.getenv("DATABASE_URL")
 FRONTEND_URL = os.getenv("FRONTEND_URL")
-from django.db.backends.mysql.base import DatabaseWrapper
-DatabaseWrapper.data_types['CharField'] = 'varchar(%(max_length)s)'
 
 
 ALLOWED_HOSTS = []
@@ -62,8 +60,8 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
 from datetime import timedelta
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),   # default is 5 minutes
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),      # default is 1 day
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=1),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "ROTATE_REFRESH_TOKENS": False,
     "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": True,

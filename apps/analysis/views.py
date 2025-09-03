@@ -5,14 +5,30 @@ from apps.analysis.models import ScrapingLog
 import os, json
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.exceptions import NotFound, APIException
+
+
+def load_json_response(file_path: str):
+    """Helper function to safely load JSON files."""
+    try:
+        with open(file_path, "r") as f:
+            return Response(json.load(f))
+    except FileNotFoundError:
+        file_name = os.path.basename(file_path)
+        raise NotFound(detail=f"Brand data not found")
+    except Exception as e:
+        raise APIException(detail=str(e))
+
 
 class DashboardDataView(APIView):
+    """Global dashboard data (not brand-specific)."""
 
     def get(self, request):
         users = User.objects.all()
         brands_count = Brand.objects.count()
         users_count = users.count()
         scraping_logs = ScrapingLog.objects.all()
+
         return Response({
             "brands_count": brands_count,
             "users_count": users_count,
@@ -30,83 +46,73 @@ class DashboardDataView(APIView):
 
 
 class BrandDashboardDataView(APIView):
-    def get(self, request):
-        json_path = os.path.join(settings.MEDIA_ROOT, 'analysis/hp/brand_dashboard_data.json')
+    """Brand-specific dashboard view."""
+
+    def get(self, request, brand_id: int):
         try:
-            with open(json_path, 'r') as f:
-                data = json.load(f)
-            return Response(data)
-        except FileNotFoundError:
-            return Response({"error": "File not found"}, status=404)
-        except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            brand = Brand.objects.get(id=brand_id)
+        except Brand.DoesNotExist:
+            return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
+
+        folder_name = brand.name.lower().replace(" ", "_")
+        json_path = os.path.join(settings.MEDIA_ROOT, f"analysis/{folder_name}/brand_dashboard_data.json")
+        return load_json_response(json_path)
 
 
 class CategoryViewDataView(APIView):
-
-    def get(self, request):
-        json_path = os.path.join(settings.MEDIA_ROOT, 'analysis/hp/category_view.json')
+    def get(self, request, brand_id: int):
         try:
-            with open(json_path, 'r') as f:
-                data = json.load(f)
-            return Response(data)
-        except FileNotFoundError:
-            return Response({"error": "File not found"}, status=404)
-        except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            brand = Brand.objects.get(id=brand_id)
+        except Brand.DoesNotExist:
+            return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
+
+        folder_name = brand.name.lower().replace(" ", "_")
+        json_path = os.path.join(settings.MEDIA_ROOT, f"analysis/{folder_name}/category_view.json")
+        return load_json_response(json_path)
 
 
 class BrandAuditDataView(APIView):
-
-    def get(self, request):
-        json_path = os.path.join(settings.MEDIA_ROOT, 'analysis/hp/brand_audit.json')
+    def get(self, request, brand_id: int):
         try:
-            with open(json_path, 'r') as f:
-                data = json.load(f)
-            return Response(data)
-        except FileNotFoundError:
-            return Response({"error": "File not found"}, status=404)
-        except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            brand = Brand.objects.get(id=brand_id)
+        except Brand.DoesNotExist:
+            return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
+
+        folder_name = brand.name.lower().replace(" ", "_")
+        json_path = os.path.join(settings.MEDIA_ROOT, f"analysis/{folder_name}/brand_audit.json")
+        return load_json_response(json_path)
 
 
 class ProductCatalogDataView(APIView):
-
-    def get(self, request):
-        json_path = os.path.join(settings.MEDIA_ROOT, 'analysis/hp/catalog_data.json')
+    def get(self, request, brand_id: int):
         try:
-            with open(json_path, 'r') as f:
-                data = json.load(f)
-            return Response(data)
-        except FileNotFoundError:
-            return Response({"error": "File not found"}, status=404)
-        except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            brand = Brand.objects.get(id=brand_id)
+        except Brand.DoesNotExist:
+            return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
+
+        folder_name = brand.name.lower().replace(" ", "_")
+        json_path = os.path.join(settings.MEDIA_ROOT, f"analysis/{folder_name}/catalog_data.json")
+        return load_json_response(json_path)
 
 
 class ReportTreeDataView(APIView):
-
-    def get(self, request):
-        json_path = os.path.join(settings.MEDIA_ROOT, 'analysis/hp/reports_data_tree.json')
+    def get(self, request, brand_id: int):
         try:
-            with open(json_path, 'r') as f:
-                data = json.load(f)
-            return Response(data)
-        except FileNotFoundError:
-            return Response({"error": "File not found"}, status=404)
-        except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            brand = Brand.objects.get(id=brand_id)
+        except Brand.DoesNotExist:
+            return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
+        folder_name = brand.name.lower().replace(" ", "_")
+        json_path = os.path.join(settings.MEDIA_ROOT, f"analysis/{folder_name}/reports_data_tree.json")
+        return load_json_response(json_path)
 
 
 class ContentInsightsDataView(APIView):
-
-    def get(self, request):
-        json_path = os.path.join(settings.MEDIA_ROOT, 'analysis/hp/content_insights_data.json')
+    def get(self, request, brand_id: int):
         try:
-            with open(json_path, 'r') as f:
-                data = json.load(f)
-            return Response(data)
-        except FileNotFoundError:
-            return Response({"error": "File not found"}, status=404)
-        except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            brand = Brand.objects.get(id=brand_id)
+        except Brand.DoesNotExist:
+            return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
+
+        folder_name = brand.name.lower().replace(" ", "_")
+        json_path = os.path.join(settings.MEDIA_ROOT, f"analysis/{folder_name}/content_insights_data.json")
+        return load_json_response(json_path)
