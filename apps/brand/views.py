@@ -32,3 +32,14 @@ class BrandViewSet(BaseViewSet):
         brand.save()
         msg = "Brand activated successfully" if brand.is_active else "Brand deactivated successfully"
         return Response({"detail": msg}, status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods=["get"], url_path="active")
+    def list_active(self, request):
+        active_brands = self.get_queryset().filter(is_active=True)
+        page = self.paginate_queryset(active_brands)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(active_brands, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

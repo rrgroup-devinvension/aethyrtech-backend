@@ -39,7 +39,8 @@ class UserViewSet(BaseViewSet):
     @action(detail=False, methods=["get"], url_path="brands")
     def get_user_brands(self, request):
         user = request.user
-        brands = user.brands.all()
+        # filter only active brands
+        brands = user.brands.filter(is_active=True)
         serializer = BrandSerializer(brands, many=True)
         return Response(serializer.data)
     
@@ -56,3 +57,4 @@ class UserViewSet(BaseViewSet):
         user.save()
         msg = "User activated successfully" if user.is_active else "User deactivated successfully"
         return Response({"detail": msg}, status=status.HTTP_200_OK)
+    

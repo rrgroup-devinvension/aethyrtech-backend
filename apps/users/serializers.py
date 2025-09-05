@@ -4,12 +4,28 @@ from apps.brand.models import Brand
 from apps.brand.serializers import BrandSerializer
 
 class UserSerializer(serializers.ModelSerializer):
-    brands = BrandSerializer(many=True, read_only=True)
+    brands = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ("id", "name", "email", "role", "brands", "is_active", "created_at", "updated_at", "created_by", "updated_by")
+        fields = (
+            "id",
+            "name",
+            "email",
+            "role",
+            "brands",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "created_by",
+            "updated_by",
+        )
         read_only_fields = ("created_by", "updated_by")
+    
+    def get_brands(self, obj):
+        # Only return active brands
+        active_brands = obj.brands.filter(is_active=True)
+        return BrandSerializer(active_brands, many=True).data
 
 class UserCreateUpdateSerializer(serializers.ModelSerializer):
     # accept "brands" as a list of IDs
