@@ -91,9 +91,57 @@ class ProductCatalogDataView(APIView):
             return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
 
         folder_name = brand.name.lower().replace(" ", "_")
-        json_path = os.path.join(settings.MEDIA_ROOT, f"analysis/{folder_name}/catalog_data.json")
+        json_path = os.path.join(settings.MEDIA_ROOT, f"analysis/{folder_name}/catalog_data_complete.json")
         return load_json_response(json_path)
 
+class CatalogDetailView(APIView):
+    def get(self, request, brand_id: int, product_id: int):
+        # Get the brand or return 404
+        try:
+            brand = Brand.objects.get(id=brand_id)
+        except Brand.DoesNotExist:
+            return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
+
+        # Load products JSON
+        folder_name = brand.name.lower().replace(" ", "_")
+        json_path = os.path.join(
+            settings.MEDIA_ROOT, f"analysis/{folder_name}/catalog_data_complete.json"
+        )
+
+        try:
+            products_response = load_json_response(json_path)
+            products = products_response.data
+        except NotFound:
+            raise NotFound(detail=f"Catalog data not found for brand {brand_id}")
+        except APIException as e:
+            raise APIException(detail=f"Failed to load catalog data: {str(e)}")
+
+        # Find product by ID
+        product = next((p for p in products if str(p.get("id")) == str(product_id)), None)
+        if not product:
+            raise NotFound(detail=f"Product with id {product_id} not found for brand {brand_id}")
+
+        # Load product keywords
+        keywords_path = os.path.join(
+            settings.MEDIA_ROOT, f"analysis/{folder_name}/product_keyword_data.json"
+        )
+
+        try:
+            keywords_response = load_json_response(keywords_path)
+            all_keywords = keywords_response.data
+        except NotFound:
+            all_keywords = {}
+        except APIException as e:
+            raise APIException(detail=f"Failed to load keyword data: {str(e)}")
+
+        product_title = product.get("product_title", "")
+        product_keywords = all_keywords.get(product_title, [])
+
+        # Return both product and its keywords
+        return Response({
+            "product": product,
+            "keywords": product_keywords
+        }, status=200)
 
 class ReportTreeDataView(APIView):
     def get(self, request, brand_id: int):

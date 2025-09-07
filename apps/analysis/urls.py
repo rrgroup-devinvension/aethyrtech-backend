@@ -6,6 +6,7 @@ from .views import (
     CategoryViewDataView,
     BrandAuditDataView,
     ProductCatalogDataView,
+    CatalogDetailView,
     ReportTreeDataView,
     ContentInsightsDataView,
 )
@@ -16,6 +17,7 @@ urlpatterns = [
     path("category-view/<int:brand_id>/", CategoryViewDataView.as_view(), name="category_view_data_view"),
     path("brand-audit/<int:brand_id>/", BrandAuditDataView.as_view(), name="brand_audit_data_view"),
     path("product-catalog/<int:brand_id>/", ProductCatalogDataView.as_view(), name="product_catalog_data_view"),
+    path("catalog-detail/<int:brand_id>/<int:product_id>/", CatalogDetailView.as_view(), name="catalog_detail_view"),
     path("report-tree/<int:brand_id>/", ReportTreeDataView.as_view(), name="report_tree_data_view"),
     path("content-insights/<int:brand_id>/", ContentInsightsDataView.as_view(), name="content_insights_data_view"),
 ]
