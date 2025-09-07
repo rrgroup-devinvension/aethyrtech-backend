@@ -8,16 +8,14 @@ from rest_framework.response import Response
 from rest_framework.exceptions import NotFound, APIException
 
 
-def load_json_response(file_path: str):
-    """Helper function to safely load JSON files."""
+def load_json_response(file_path):
     try:
-        with open(file_path, "r") as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             return Response(json.load(f))
-    except FileNotFoundError:
-        file_name = os.path.basename(file_path)
-        raise NotFound(detail=f"Brand data not found")
-    except Exception as e:
-        raise APIException(detail=str(e))
+    except UnicodeDecodeError as e:
+        raise APIException(detail=f"Encoding error: {str(e)}")
+    except json.JSONDecodeError as e:
+        raise APIException(detail=f"JSON error: {str(e)}")
 
 
 class DashboardDataView(APIView):
