@@ -1,7 +1,6 @@
-from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
-from .tokens import PasswordResetTokenGenerator
 
 
 User = get_user_model()
@@ -59,33 +58,3 @@ class RefreshSerializer(serializers.Serializer):
     
 class LogoutSerializer(serializers.Serializer):
     refresh = serializers.CharField()
-
-
-
-class ForgotPasswordSerializer(serializers.Serializer):
-    email = serializers.EmailField()
-
-    def validate_email(self, value):
-        if not User.objects.filter(email=value, is_active=True).exists():
-            raise serializers.ValidationError("No active user with this email")
-        return value
-
-
-class ResetPasswordSerializer(serializers.Serializer):
-    token = serializers.CharField(max_length=191)
-    uid = serializers.CharField(max_length=191)
-    new_password = serializers.CharField(min_length=6, max_length=191)
-
-    def validate(self, data):
-        token_gen = PasswordResetTokenGenerator()
-        user = token_gen.validate_token(data["uid"], data["token"])
-        if not user:
-            raise serializers.ValidationError("Invalid or expired token")
-        data["user"] = user
-        return data
-
-    def save(self, **kwargs):
-        user = self.validated_data["user"]
-        user.set_password(self.validated_data["new_password"])
-        user.save()
-        return user
