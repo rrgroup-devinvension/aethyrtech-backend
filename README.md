@@ -145,4 +145,5 @@ This is the backend for the AethyrTech project, built with Django and Django RES
 - Use `python manage.py startapp <appname>` to create new apps.
 - Add new apps to `INSTALLED_APPS` in `config/settings.py`.
 
-## License
+
+

@@ -87,9 +87,18 @@ class ProductCatalogDataView(APIView):
             brand = Brand.objects.get(id=brand_id)
         except Brand.DoesNotExist:
             return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
-
         folder_name = brand.name.lower().replace(" ", "_")
-        json_path = os.path.join(settings.MEDIA_ROOT, f"analysis/{folder_name}/catalog_data_complete.json")
+        selected_id = (request.query_params.get("id") or "").upper()
+
+        # Decide file name based on id
+        if selected_id == "CANON":
+            file_name = "catalog_data_canon.json"
+        elif selected_id == "BROTHER":
+            file_name = "catalog_data_brother.json"
+        else:  # default: HP or anything else
+            file_name = "catalog_data_complete.json"
+
+        json_path = os.path.join(settings.MEDIA_ROOT, f"analysis/{folder_name}/{file_name}")
         return load_json_response(json_path)
 
 class CatalogDetailView(APIView):
