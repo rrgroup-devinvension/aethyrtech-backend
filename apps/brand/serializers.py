@@ -17,7 +17,7 @@ class BrandSerializer(BaseSerializer):
             "created_by",
             "updated_by",
         )
-        read_only_fields = ("created_by", "updated_by")
+        read_only_fields = ("created_by", "updated_by", "is_active")
 
     def validate_name(self, value):
         """
