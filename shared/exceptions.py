@@ -56,7 +56,7 @@ def exception_handler(exc, context):
                 response.data = {
                     "success": False,
                     "errorCode": "validationerror",
-                    "message": "Some of the data you entered is invalid. Please check and try again.",
+                    "message": "The data you entered is invalid. Please check and try again.",
                     "errors": data,
                     "path": request.path if request else None,
                     "timestamp": now(),
