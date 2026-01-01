@@ -29,6 +29,8 @@ INSTALLED_APPS = [
     'apps.auths',
     'apps.users',
     'apps.brand',
+    'apps.scheduler',
+    'apps.tasks',
     'apps.analysis',
 ]
 
@@ -157,3 +159,16 @@ MEDIA_ROOT = BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'users.User'
+
+# Scheduler defaults
+SCHEDULER_JSON_TEMPLATES = [
+    'brand-products',
+    'brand-catalog',
+]
+
+# Base folder under MEDIA_ROOT where JSONs will be saved
+SCHEDULER_JSON_MEDIA_SUBPATH = 'jsons'
+
+# External API configuration for DATA_DUMP tasks (fill later)
+SCHEDULER_EXTERNAL_API_BASE = os.getenv('SCHEDULER_EXTERNAL_API_BASE', '')
+SCHEDULER_EXTERNAL_API_KEY = os.getenv('SCHEDULER_EXTERNAL_API_KEY', '')

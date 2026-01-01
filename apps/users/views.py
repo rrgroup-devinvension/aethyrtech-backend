@@ -1,12 +1,20 @@
 from core.views import BaseViewSet
 from .models import User
-from .serializers import UserSerializer, UserCreateUpdateSerializer, PasswordUpdateSerializer
+from .serializers import (
+    UserSerializer, 
+    UserCreateUpdateSerializer, 
+    PasswordUpdateSerializer,
+    ProfileSerializer,
+    ProfileUpdateSerializer,
+    ChangePasswordSerializer
+)
 from rest_framework.permissions import IsAuthenticated
 from core.permissions import IsStaffOrReadOnly
 from rest_framework.decorators import action
 from rest_framework import status
 from rest_framework.response import Response
 from apps.brand.serializers import BrandSerializer
+from rest_framework.views import APIView
 
 class UserViewSet(BaseViewSet):
     queryset = User.objects.all()
@@ -57,4 +65,47 @@ class UserViewSet(BaseViewSet):
         user.save()
         msg = "User activated successfully" if user.is_active else "User deactivated successfully"
         return Response({"detail": msg}, status=status.HTTP_200_OK)
+
+
+class ProfileView(APIView):
+    """Get and update user profile"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """Get current user's profile"""
+        serializer = ProfileSerializer(request.user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    def put(self, request):
+        """Update current user's profile"""
+        serializer = ProfileUpdateSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        
+        # Return full profile
+        response_serializer = ProfileSerializer(request.user)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
+    
+    def patch(self, request):
+        """Partially update current user's profile"""
+        return self.put(request)
+
+
+class ChangePasswordView(APIView):
+    """Change password for authenticated user"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        
+        # Update password
+        user = request.user
+        user.set_password(serializer.validated_data['new_password'])
+        user.save()
+        
+        return Response(
+            {"detail": "Password changed successfully"},
+            status=status.HTTP_200_OK
+        )
     

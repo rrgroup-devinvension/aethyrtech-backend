@@ -58,3 +58,31 @@ class RefreshSerializer(serializers.Serializer):
     
 class LogoutSerializer(serializers.Serializer):
     refresh = serializers.CharField()
+
+
+class ForgotPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        try:
+            user = User.objects.get(email=value, is_active=True, is_deleted=False)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("No active account found with this email address")
+        return value
+
+
+class VerifyOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    otp = serializers.CharField(max_length=6, min_length=6)
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    otp = serializers.CharField(max_length=6, min_length=6)
+    new_password = serializers.CharField(min_length=8, write_only=True)
+    confirm_password = serializers.CharField(min_length=8, write_only=True)
+
+    def validate(self, data):
+        if data['new_password'] != data['confirm_password']:
+            raise serializers.ValidationError({"confirm_password": "Passwords do not match"})
+        return data

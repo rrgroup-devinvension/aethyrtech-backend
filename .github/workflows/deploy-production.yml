@@ -1,0 +1,83 @@
+name: 🚀 Deploy Spring Boot Backend (Production)
+
+on:
+  push:
+    branches:
+      - master
+
+env:
+  JAVA_VERSION: "21"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Build & Deploy to EC2
+
+    steps:
+      # 1️⃣ Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2️⃣ Setup Java
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+
+      # 3️⃣ Cache Maven dependencies
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      # 4️⃣ Build the application
+      - name: Build the application
+        run: ./mvnw clean package -DskipTests
+
+      # 5️⃣ Upload JAR to EC2 ✅ no tar, direct file
+      - name: Upload JAR to EC2
+        uses: appleboy/scp-action@v0.1.5
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          source: "./target/*.jar"
+          target: "/opt/alfjobs/production"
+          strip_components: 0
+          tar_tmp_path: "false"
+
+      # 6️⃣ Restart Spring Boot service on EC2
+      - name: Restart Spring Boot service
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            echo "Stopping service..."
+            sudo systemctl stop alfjobs-production || true
+
+            echo "Moving and applying JAR..."
+            sudo mv /opt/alfjobs/production/target/*.jar /opt/alfjobs/production/alfjobs-backend.jar
+            sudo chown ubuntu:ubuntu /opt/alfjobs/production/alfjobs-backend.jar
+
+            echo "Starting service..."
+            sudo systemctl start alfjobs-production
+
+            sleep 5
+            sudo systemctl status alfjobs-production --no-pager
+
+      # # ✅ 7️⃣ Health Check (Optional)
+      # - name: Health Check
+      #   run: |
+      #     sleep 10
+      #     curl -f http://${{ secrets.PROD_HOST }}:8080/actuator/health || exit 1
+
+# 🔐 GitHub Secrets Required:
+# - PROD_HOST:       Public IP of your Production EC2 Server
+# - PROD_USER:       SSH user (Example: ubuntu)
+# - PROD_SSH_KEY:    Private SSH key for connecting to EC2 (.pem)

@@ -1,0 +1,17 @@
+[Unit]
+Description=AlfJobs Staging Spring Boot Application
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/opt/alfjobs/staging
+EnvironmentFile=/opt/alfjobs/staging/.env
+ExecStart=/usr/bin/java -jar /opt/alfjobs/staging/alfjobs-backend.jar
+SuccessExitStatus=143
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/alfjobs/staging/logs/app.out.log
+StandardError=append:/opt/alfjobs/staging/logs/app.err.log
+
+[Install]
+WantedBy=multi-user.target
