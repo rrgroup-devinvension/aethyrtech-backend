@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     'apps.auths',
     'apps.users',
     'apps.brand',
+    'apps.category',
     'apps.scheduler',
     'apps.tasks',
     'apps.analysis',
@@ -161,14 +162,33 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'users.User'
 
 # Scheduler defaults
-SCHEDULER_JSON_TEMPLATES = [
-    'brand-products',
-    'brand-catalog',
-]
-
 # Base folder under MEDIA_ROOT where JSONs will be saved
 SCHEDULER_JSON_MEDIA_SUBPATH = 'jsons'
 
+JSON_BUILDER_DB = None
+_jb_host = os.getenv('JSON_BUILDER_DB_HOST')
+print("JSON_BUILDER_DB_HOST:", _jb_host)
+if _jb_host:
+    JSON_BUILDER_DB = {
+        'host': _jb_host,
+        'port': int(os.getenv('JSON_BUILDER_DB_PORT', 3306)),
+        'user': os.getenv('JSON_BUILDER_DB_USER'),
+        'password': os.getenv('JSON_BUILDER_DB_PASSWORD'),
+        'database': os.getenv('JSON_BUILDER_DB_NAME'),
+    }
+
 # External API configuration for DATA_DUMP tasks (fill later)
-SCHEDULER_EXTERNAL_API_BASE = os.getenv('SCHEDULER_EXTERNAL_API_BASE', '')
-SCHEDULER_EXTERNAL_API_KEY = os.getenv('SCHEDULER_EXTERNAL_API_KEY', '')
+XBYTE_API_URL = os.getenv('XBYTE_API_URL', '')
+XBYTE_API_KEY = os.getenv('XBYTE_API_KEY', '')
+
+# ============================================================================
+# Celery Configuration
+# ============================================================================
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60

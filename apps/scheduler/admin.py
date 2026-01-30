@@ -6,6 +6,7 @@ from .models import Scheduler, SchedulerJob, Task
 class SchedulerAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'type', 'trigger_type', 'status', 'last_run_at', 'next_run_at')
     search_fields = ('name',)
+    list_filter = ('type', 'trigger_type', 'status')
 
 
 @admin.register(SchedulerJob)

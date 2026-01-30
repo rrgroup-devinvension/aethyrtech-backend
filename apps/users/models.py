@@ -4,10 +4,6 @@ from django.utils.translation import gettext_lazy as _
 from core.models import AuditableMixin, SoftDeleteModel
 from apps.brand.models import Brand
 
-# ===========================
-# Custom User
-# ===========================
-
 class UserManager(BaseUserManager):
     def create_user(self, email, password=None, role="executor", **extra_fields):
         if not email:
@@ -35,13 +31,15 @@ class User(AbstractBaseUser, SoftDeleteModel, AuditableMixin):
         CTO = "cto", "CTO"
         MARKETING = "marketing", "Marketing"
         EXECUTOR = "executor", "Executor"
+        INTERNAL_USER = "internal_user", "Internal User"
 
     email = models.EmailField(max_length=191, unique=True, db_index=True)
     name = models.CharField(max_length=150, blank=True)
     role = models.CharField(max_length=20, choices=Roles.choices, default=Roles.EXECUTOR)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
-
+    organizations = models.ManyToManyField('brand.Organization', blank=True, related_name='internal_users')
+    client_organization = models.ForeignKey('brand.Organization', on_delete=models.SET_NULL, null=True, blank=True, related_name='client_users')    
     brands = models.ManyToManyField("brand.Brand", blank=True, related_name="users")
 
     USERNAME_FIELD = "email"
@@ -56,6 +54,22 @@ class User(AbstractBaseUser, SoftDeleteModel, AuditableMixin):
         return self.email
 
     def can_access_brand(self, brand_id):
-        if self.role in [self.Roles.ADMIN, self.Roles.CTO]:
+        """Check if user can access a specific brand."""
+        if self.role == self.Roles.ADMIN:
             return True
+        if self.role == self.Roles.INTERNAL_USER:
+            # Internal users can access brands in their assigned organizations
+            return Brand.objects.filter(
+                id=brand_id,
+                organization__in=self.organizations.all()
+            ).exists()
+        # Client users can only access their assigned brands
         return self.brands.filter(id=brand_id).exists()
+    
+    def can_manage_organization(self, organization_id):
+        """Check if user can manage a specific organization."""
+        if self.role == self.Roles.ADMIN:
+            return True
+        if self.role == self.Roles.INTERNAL_USER:
+            return self.organizations.filter(id=organization_id).exists()
+        return False

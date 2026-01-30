@@ -112,6 +112,8 @@ This is the backend for the AethyrTech project, built with Django and Django RES
   python manage.py test
   ```
 
+celery -A config worker --loglevel=info
+
 ## Project Structure
 
 - `core/` - Core logic and utilities
@@ -147,14 +149,13 @@ This is the backend for the AethyrTech project, built with Django and Django RES
 
 <!-- todo -->
 
-excel updload of pincode
+update api call of analytics
+base on user show menus
+base on brand open page
+json builder
 
-category
 
-company/organizatio - exmaple pepsi,
-multiple brands -
-category
-keywords
+python -m debugpy --listen 5678 manage.py runserver
 
-organization
-category
+mysql -u root -p compx_db < compx_db.sql
+

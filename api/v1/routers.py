@@ -1,8 +1,8 @@
 from rest_framework.routers import DefaultRouter
-from apps.brand.views import BrandViewSet
 
-# Register only brand routes here. User routes are defined in apps.users.urls
+# Brand and Organization routes are defined in apps.brand.urls
+# User routes are defined in apps.users.urls
+# Category routes are defined in apps.category.urls
 router = DefaultRouter()
-router.register(r"brands", BrandViewSet, basename="brand")
 
 urlpatterns = router.urls

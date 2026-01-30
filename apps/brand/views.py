@@ -1,9 +1,42 @@
 from core.views import BaseViewSet
-from .models import Brand
-from .serializers import BrandSerializer
+from .models import Brand, Organization, Competitor
+from .serializers import BrandSerializer, OrganizationSerializer, CompetitorSerializer
+from apps.scheduler.utility.service_utility import ensure_brand_json_files
+from apps.scheduler.enums import JsonTemplate
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework import status
+
+
+class OrganizationViewSet(BaseViewSet):
+    queryset = Organization.objects.all()
+    serializer_class = OrganizationSerializer
+    search_fields = ('name', 'description')
+    ordering_fields = ('name', 'status', 'created_at', 'updated_at')
+
+    def perform_create(self, serializer):
+        brand = serializer.save(created_by=self.request.user)
+        # Ensure BrandJsonFile entries exist for new brand
+        try:
+            ensure_brand_json_files(brand, [t.slug for t in JsonTemplate])
+        except Exception:
+            # Don't block brand creation on provisioning failures; log via service layer when available
+            pass
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+    @action(detail=True, methods=['get'], url_path='brands')
+    def organization_brands(self, request, pk=None):
+        organization = self.get_object()
+        brands = organization.brands.filter(is_deleted=False)
+        page = self.paginate_queryset(brands)
+        if page is not None:
+            serializer = BrandSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = BrandSerializer(brands, many=True)
+        return Response(serializer.data)
+
 
 class BrandViewSet(BaseViewSet):
     queryset = Brand.objects.all()
@@ -43,3 +76,17 @@ class BrandViewSet(BaseViewSet):
 
         serializer = self.get_serializer(active_brands, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class CompetitorViewSet(BaseViewSet):
+    queryset = Competitor.objects.all()
+    serializer_class = CompetitorSerializer
+    search_fields = ("name", "description")
+    ordering_fields = ("name", "created_at", "updated_at")
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        brand_id = self.request.query_params.get('brand')
+        if brand_id:
+            queryset = queryset.filter(brand_id=brand_id)
+        return queryset

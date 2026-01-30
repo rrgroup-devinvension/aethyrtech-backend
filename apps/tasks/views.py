@@ -1,586 +1,504 @@
+"""
+Views for scheduler and tasks management.
+Provides APIs for data dump and JSON builder functionalities.
+"""
+from apps.scheduler.json_builder.json_builder import perform_json_build
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status, viewsets
+from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
 from core.permissions import IsStaffOrReadOnly
 from django.conf import settings
 from django.utils import timezone
-
-from apps.scheduler.models import Task, Scheduler, SchedulerJob, BrandJsonFile, Keyword
-from apps.scheduler import services, tasks as scheduler_tasks
-from apps.scheduler.service_layer import stop_task as service_stop_task
-from apps.tasks.serializers import BrandJsonSerializer, JsonFileSerializer, SchedulerSerializer, SchedulerJobSerializer, TaskSerializer
+from django.db.models import Prefetch
+from apps.scheduler.models import Scheduler, SchedulerJob, Task, BrandJsonFile, BrandJsonTask
+from apps.scheduler.enums import JsonTemplate
+from apps.scheduler import service_layer
+from apps.tasks.serializers import ( SchedulerSerializer, SchedulerJobSerializer, TaskSerializer)
 from apps.brand.models import Brand
+from apps.category.models import Category
 from core.views import BaseViewSet
-from django.db.models import Q, Count
-from django.db.models import Q, Count
+from django.db.models import Q
+import logging
+import json
+import requests
+from django.utils import timezone
+from apps.scheduler.models import KeywordPincode
+from apps.category.models import CategoryKeyword, CategoryPincode
 
-
-class JsonsListView(APIView):
-    """List all brands with JSON build status and files."""
-    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
-
-    def get(self, request):
-        brands = Brand.objects.filter(is_deleted=False)
-        json_templates = getattr(settings, 'SCHEDULER_JSON_TEMPLATES', [])
-        result = []
-        
-        for b in brands:
-            # Use BrandJsonFile table as source of truth for files
-            files_qs = BrandJsonFile.objects.filter(brand=b)
-            files = []
-            template_status = {}
-            for fobj in files_qs:
-                tpl = fobj.template
-                # find latest task for this brand/template to get status
-                latest_task = Task.objects.filter(entity_type=Task.EntityType.JSON_FILE, entity_id=b.id).filter(
-                    extra_context__template=tpl
-                ).order_by('-created_at').first()
-
-                status_val = latest_task.status if latest_task else 'PENDING'
-                last_updated = latest_task.ended_at if latest_task and latest_task.ended_at else fobj.last_synced or b.updated_at
-
-                if tpl not in template_status:
-                    template_status[tpl] = status_val
-
-                files.append({
-                    'id': fobj.id,
-                    'filename': fobj.filename,
-                    'file_path': fobj.file_path,
-                    'template': tpl,
-                    'last_updated': last_updated,
-                    'status': status_val,
-                    'error_message': fobj.error_message,
-                })
-            
-            # Determine overall brand status from templates
-            if template_status:
-                if any(s == Task.TaskStatus.FAILED for s in template_status.values()):
-                    status_val = 'FAILED'
-                elif any(s == Task.TaskStatus.RUNNING for s in template_status.values()):
-                    status_val = 'RUNNING'
-                elif all(s == Task.TaskStatus.SUCCESS for s in template_status.values()):
-                    status_val = 'SUCCESS'
-                else:
-                    status_val = 'PENDING'
-            else:
-                status_val = 'PENDING'
-            
-            last_task = Task.objects.filter(entity_type=Task.EntityType.JSON_FILE, entity_id=b.id).order_by('-created_at').first()
-            last_updated = last_task.ended_at if last_task and last_task.ended_at else b.updated_at
-
-            result.append({
-                'id': b.id,
-                'brand_name': b.name,
-                'last_updated': last_updated,
-                'status': status_val,
-                'json_templates': json_templates,
-                'files': files[:20],  # limit to recent 20
-            })
-
-        # Return plain dict, let StandardJSONRenderer wrap it
-        return Response(result, status=status.HTTP_200_OK)
-
-
-class BrandFilesView(APIView):
-    """Get files for a specific brand."""
-    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
-
-    def get(self, request, brand_id: int):
-        files = []
-        for fobj in BrandJsonFile.objects.filter(brand_id=brand_id):
-            tpl = fobj.template
-            latest_task = Task.objects.filter(entity_type=Task.EntityType.JSON_FILE, entity_id=brand_id).filter(
-                extra_context__template=tpl
-            ).order_by('-created_at').first()
-            status_val = latest_task.status if latest_task else 'PENDING'
-            last_updated = latest_task.ended_at if latest_task and latest_task.ended_at else fobj.last_synced or None
-            files.append({
-                'id': fobj.id,
-                'filename': fobj.filename,
-                'file_path': fobj.file_path,
-                'template': tpl,
-                'last_updated': last_updated,
-                'status': status_val,
-                'error_message': fobj.error_message,
-            })
-
-        return Response(files, status=status.HTTP_200_OK)
-
-
-class BrandSyncView(APIView):
-    """Sync JSON files for a specific brand."""
-    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
-
-    def post(self, request, brand_id: int):
-        job = services.create_scheduler_job(scheduler_id=None, triggered_by='ADMIN', scope_type='BRAND', scope_id=brand_id, task_group='JSON_BUILD')
-        return Response({'detail': 'Job created', 'job_id': job.id}, status=status.HTTP_201_CREATED)
-
-
-class FileSyncView(APIView):
-    """Sync a specific JSON file (retry)."""
-    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
-
-    def post(self, request, file_id: int):
-        # file_id is BrandJsonFile.id; find the template and brand to create a task
-        from apps.scheduler.models import BrandJsonFile
-        try:
-            file_obj = BrandJsonFile.objects.get(id=file_id)
-        except BrandJsonFile.DoesNotExist:
-            return Response({'detail': 'File not found'}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Create a job with BRAND scope for this specific brand, but only for this template
-        # We'll create a single-task job by creating the job and manually creating one task
-        job = SchedulerJob.objects.create(
-            triggered_by='ADMIN',
-            scope_type=SchedulerJob.ScopeType.BRAND,
-            scope_id=file_obj.brand_id,
-            task_group=SchedulerJob.TaskGroup.JSON_BUILD,
-            status=SchedulerJob.JobStatus.RUNNING,
-            started_at=timezone.now()
-        )
-        
-        # Create single task for this template only
-        t = Task.objects.create(
-            scheduler_job=job,
-            task_type=Task.TaskType.JSON_BUILD,
-            entity_type=Task.EntityType.JSON_FILE,
-            entity_id=file_obj.brand_id,
-            entity_name=file_obj.template,
-            extra_context={'template': file_obj.template, 'brand_id': file_obj.brand_id},
-            status=Task.TaskStatus.PENDING,
-        )
-        
-        # Dispatch task to celery
-        from apps.scheduler.tasks import run_task
-        run_task.apply_async((t.id,))
-        
-        return Response({'detail': 'Job created', 'job_id': job.id}, status=status.HTTP_201_CREATED)
-
-
-class JsonSyncAllView(APIView):
-    """Sync all brands (global sync)."""
-    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
-
-    def post(self, request):
-        job = services.create_scheduler_job(scheduler_id=None, triggered_by='ADMIN', scope_type='GLOBAL', scope_id=None, task_group='JSON_BUILD')
-        return Response({'detail': 'Job created', 'job_id': job.id}, status=status.HTTP_201_CREATED)
-
-
-class JsonJobStatusView(APIView):
-    """Get status of the latest JSON builder job."""
-    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
-
-    def get(self, request):
-        # Find the most recent global or brand-level JSON_BUILD job
-        latest_job = SchedulerJob.objects.filter(
-            task_group__in=[SchedulerJob.TaskGroup.JSON_BUILD, SchedulerJob.TaskGroup.BOTH]
-        ).order_by('-created_at').first()
-        
-        if not latest_job:
-            return Response({
-                'is_running': False,
-                'job': None
-            }, status=status.HTTP_200_OK)
-        
-        # Get task stats
-        tasks = latest_job.tasks.all()
-        total = tasks.count()
-        success = tasks.filter(status=Task.TaskStatus.SUCCESS).count()
-        failed = tasks.filter(status=Task.TaskStatus.FAILED).count()
-        running = tasks.filter(status=Task.TaskStatus.RUNNING).count()
-        pending = tasks.filter(status=Task.TaskStatus.PENDING).count()
-        
-        duration = None
-        if latest_job.started_at and latest_job.ended_at:
-            duration = (latest_job.ended_at - latest_job.started_at).total_seconds()
-        
-        return Response({
-            'is_running': latest_job.status == SchedulerJob.JobStatus.RUNNING,
-            'job': {
-                'id': latest_job.id,
-                'status': latest_job.status,
-                'scope_type': latest_job.scope_type,
-                'scope_id': latest_job.scope_id,
-                'started_at': latest_job.started_at,
-                'ended_at': latest_job.ended_at,
-                'duration_seconds': duration,
-                'tasks': {
-                    'total': total,
-                    'success': success,
-                    'failed': failed,
-                    'running': running,
-                    'pending': pending
-                }
-            }
-        }, status=status.HTTP_200_OK)
-
+logger = logging.getLogger(__name__)
 
 class SchedulerViewSet(BaseViewSet):
     """CRUD operations for Scheduler."""
-    queryset = Scheduler.objects.all()
-    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
+    queryset = Scheduler.objects.all().order_by('-created_at')
     serializer_class = SchedulerSerializer
-
+    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
+    
     @action(detail=True, methods=['post'])
-    def trigger(self, request, pk=None):
+    def run(self, request, pk=None):
         """Manually trigger a scheduler."""
         scheduler = self.get_object()
-        job = services.create_scheduler_job(scheduler_id=scheduler.id, triggered_by='ADMIN', scope_type='GLOBAL', scope_id=None, task_group='BOTH')
-        return Response({'detail': 'Job created', 'job_id': job.id}, status=status.HTTP_201_CREATED)
-    
-    def perform_create(self, serializer):
-        obj = serializer.save()
-        # if cron-based, sync periodic task
-        try:
-            services.sync_periodic_task_for_scheduler(obj)
-        except Exception:
-            pass
-
-    def perform_update(self, serializer):
-        obj = serializer.save()
-        try:
-            services.sync_periodic_task_for_scheduler(obj)
-        except Exception:
-            pass
-
-    def perform_destroy(self, instance):
-        try:
-            services.remove_periodic_task_for_scheduler(instance)
-        except Exception:
-            pass
-        instance.delete()
-
-
-class SchedulerJobViewSet(BaseViewSet):
-    """List and manage SchedulerJobs."""
-    queryset = SchedulerJob.objects.all()
-    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
-    serializer_class = SchedulerJobSerializer
-
-    @action(detail=True, methods=['post'])
-    def retry(self, request, pk=None):
-        """Retry a failed job."""
-        job = self.get_object()
-        scheduler_tasks.process_scheduler_job.apply_async((job.id,))
-        return Response({'detail': 'Job retriggered'}, status=status.HTTP_200_OK)
-
-
-class TaskViewSet(BaseViewSet):
-    """List and manage Tasks."""
-    queryset = Task.objects.all()
-    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
-    serializer_class = TaskSerializer
-
-    @action(detail=True, methods=['post'])
-    def retry(self, request, pk=None):
-        """Retry a failed task."""
-        t = self.get_object()
-        # create retry task
-        retry_task = Task.objects.create(
-            scheduler_job=t.scheduler_job,
-            task_type=t.task_type,
-            entity_type=t.entity_type,
-            entity_id=t.entity_id,
-            entity_name=t.entity_name,
-            extra_context=t.extra_context,
-            status=Task.TaskStatus.PENDING,
-            retry_of_task=t
-        )
-        scheduler_tasks.run_task.apply_async((retry_task.id,))
-        return Response({'detail': 'Task retried', 'task_id': retry_task.id}, status=status.HTTP_201_CREATED)
-
-
-class SchedulerJobListView(APIView):
-    """List all scheduler jobs with filtering and pagination."""
-    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
-
-    def get(self, request):
-        # Get query parameters for filtering
-        status_filter = request.query_params.get('status', None)
-        triggered_by = request.query_params.get('triggered_by', None)
-        scope_type = request.query_params.get('scope_type', None)
-        task_group = request.query_params.get('task_group', None)
-        
-        # Build query
-        jobs = SchedulerJob.objects.select_related('scheduler').annotate(
-            total_tasks=Count('tasks'),
-            success_tasks=Count('tasks', filter=Q(tasks__status=Task.TaskStatus.SUCCESS)),
-            failed_tasks=Count('tasks', filter=Q(tasks__status=Task.TaskStatus.FAILED)),
-            running_tasks=Count('tasks', filter=Q(tasks__status=Task.TaskStatus.RUNNING)),
-            pending_tasks=Count('tasks', filter=Q(tasks__status=Task.TaskStatus.PENDING))
-        ).order_by('-created_at')
-        
-        # Apply filters
-        if status_filter:
-            jobs = jobs.filter(status=status_filter)
-        if triggered_by:
-            jobs = jobs.filter(triggered_by=triggered_by)
-        if scope_type:
-            jobs = jobs.filter(scope_type=scope_type)
-        if task_group:
-            jobs = jobs.filter(task_group=task_group)
-        
-        # Pagination
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 50))
-        start = (page - 1) * page_size
-        end = start + page_size
-        
-        total_count = jobs.count()
-        jobs_page = jobs[start:end]
-        
-        result = []
-        for job in jobs_page:
-            result.append({
-                'id': job.id,
-                'scheduler_id': job.scheduler.id if job.scheduler else None,
-                'scheduler_name': job.scheduler.name if job.scheduler else None,
-                'triggered_by': job.triggered_by,
-                'scope_type': job.scope_type,
-                'scope_id': job.scope_id,
-                'task_group': job.task_group,
-                'status': job.status,
-                'started_at': job.started_at,
-                'ended_at': job.ended_at,
-                'created_at': job.created_at,
-                'updated_at': job.updated_at,
-                'total_tasks': job.total_tasks,
-                'success_tasks': job.success_tasks,
-                'failed_tasks': job.failed_tasks,
-                'running_tasks': job.running_tasks,
-                'pending_tasks': job.pending_tasks,
-            })
-        
-        return Response(result)
-
-
-class StopSchedulerJobView(APIView):
-    """Stop a running scheduler job."""
-    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
-
-    def post(self, request, job_id):
-        try:
-            job = SchedulerJob.objects.get(id=job_id)
-        except SchedulerJob.DoesNotExist:
-            return Response({'error': 'Job not found'}, status=status.HTTP_404_NOT_FOUND)
-        
-        if job.status != SchedulerJob.JobStatus.RUNNING:
-            return Response(
-                {'error': f'Job is not running. Current status: {job.status}'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Update job status to FAILED (stopped)
-        job.status = SchedulerJob.JobStatus.FAILED
-        job.ended_at = timezone.now()
-        job.save()
-        
-        # Update all pending/running tasks to FAILED
-        Task.objects.filter(
-            scheduler_job=job,
-            status__in=[Task.TaskStatus.PENDING, Task.TaskStatus.RUNNING]
-        ).update(
-            status=Task.TaskStatus.FAILED,
-            error_message='Job stopped by user',
-            ended_at=timezone.now()
-        )
-        
-        return Response({
-            'message': 'Job stopped successfully',
-            'job_id': job.id,
-            'status': job.status
-        })
-
-
-class TaskListView(APIView):
-    """List all tasks with filtering and pagination."""
-    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
-
-    def get(self, request):
-        # Get query parameters for filtering
-        task_type = request.query_params.get('task_type', None)
-        entity_type = request.query_params.get('entity_type', None)
-        status_filter = request.query_params.get('status', None)
-        job_id = request.query_params.get('job_id', None)
-        
-        # Build query
-        tasks = Task.objects.select_related('scheduler_job', 'scheduler_job__scheduler').order_by('-created_at')
-        
-        # Apply filters
-        if task_type:
-            tasks = tasks.filter(task_type=task_type)
-        if entity_type:
-            tasks = tasks.filter(entity_type=entity_type)
-        if status_filter:
-            tasks = tasks.filter(status=status_filter)
-        if job_id:
-            tasks = tasks.filter(scheduler_job_id=job_id)
-        
-        # Pagination
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 50))
-        start = (page - 1) * page_size
-        end = start + page_size
-        
-        total_count = tasks.count()
-        tasks_page = tasks[start:end]
-        
-        result = []
-        for task in tasks_page:
-            result.append({
-                'id': task.id,
-                'job_id': task.scheduler_job.id if task.scheduler_job else None,
-                'task_type': task.task_type,
-                'entity_type': task.entity_type,
-                'entity_id': task.entity_id,
-                'entity_name': task.entity_name,
-                'extra_context': task.extra_context,
-                'status': task.status,
-                'started_at': task.started_at,
-                'ended_at': task.ended_at,
-                'error_message': task.error_message,
-                'created_at': task.created_at,
-                'updated_at': task.updated_at,
-            })
-        
-        return Response(result)
-
-
-# ============================================================================
-# Data Dump Views (for Keywords)
-# ============================================================================
-
-class DataDumpListView(APIView):
-    """List all keywords with data dump status."""
-    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
-
-    def get(self, request):
-        keywords = Keyword.objects.filter(is_deleted=False).select_related('pincode', 'last_running_task', 'last_completed_task').order_by('keyword', 'pincode')
-        
-        result = []
-        for kw in keywords:
-            # Determine status from last_completed_task or last_running_task
-            status_val = 'PENDING'
-            last_updated = kw.last_synced or kw.updated_at
-            
-            if kw.last_running_task and not kw.last_completed_task:
-                status_val = 'RUNNING'
-                last_updated = kw.last_running_task.started_at or last_updated
-            elif kw.last_completed_task:
-                status_val = kw.last_completed_task.status
-                last_updated = kw.last_completed_task.ended_at or last_updated
-            
-            result.append({
-                'id': kw.id,
-                'keyword': kw.keyword,
-                'pincode': kw.pincode.pincode,
-                'pincode_id': kw.pincode.id,
-                'city': kw.pincode.city,
-                'state': kw.pincode.state,
-                'is_active': kw.is_active,
-                'last_updated': last_updated,
-                'status': status_val,
-                'error_message': kw.error_message,
-                'last_running_task_id': kw.last_running_task.id if kw.last_running_task else None,
-                'last_completed_task_id': kw.last_completed_task.id if kw.last_completed_task else None,
-            })
-        
-        return Response(result, status=status.HTTP_200_OK)
-
-
-class KeywordSyncAllView(APIView):
-    """Sync all keywords (global sync)."""
-    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
-
-    def post(self, request):
-        job = services.create_scheduler_job(
-            scheduler_id=None,
+        job = service_layer.create_job_and_tasks(
+            scheduler_id=scheduler.id,
             triggered_by='ADMIN',
             scope_type='GLOBAL',
             scope_id=None,
-            task_group='DATA_DUMP'
+            task_group=scheduler.type
         )
-        return Response({'detail': 'Job created', 'job_id': job.id}, status=status.HTTP_201_CREATED)
-
-
-class KeywordSyncView(APIView):
-    """Sync a specific keyword."""
-    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
-
-    def post(self, request, keyword_id: int):
-        job = services.create_scheduler_job(
-            scheduler_id=None,
-            triggered_by='ADMIN',
-            scope_type='KEYWORD',
-            scope_id=keyword_id,
-            task_group='DATA_DUMP'
-        )
-        return Response({'detail': 'Job created', 'job_id': job.id}, status=status.HTTP_201_CREATED)
-
-
-class DataDumpJobStatusView(APIView):
-    """Get status of the latest data dump job."""
-    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
-
-    def get(self, request):
-        # Find the most recent DATA_DUMP job
-        latest_job = SchedulerJob.objects.filter(
-            task_group__in=[SchedulerJob.TaskGroup.DATA_DUMP, SchedulerJob.TaskGroup.BOTH]
-        ).order_by('-created_at').first()
         
-        if not latest_job:
-            return Response({
-                'is_running': False,
-                'job': None
-            }, status=status.HTTP_200_OK)
-        
-        # Get task stats
-        tasks = latest_job.tasks.all()
-        total = tasks.count()
-        success = tasks.filter(status=Task.TaskStatus.SUCCESS).count()
-        failed = tasks.filter(status=Task.TaskStatus.FAILED).count()
-        running = tasks.filter(status=Task.TaskStatus.RUNNING).count()
-        pending = tasks.filter(status=Task.TaskStatus.PENDING).count()
-        
-        duration = None
-        if latest_job.started_at and latest_job.ended_at:
-            duration = (latest_job.ended_at - latest_job.started_at).total_seconds()
+        # Update scheduler last_run_at
+        scheduler.last_run_at = timezone.now()
+        scheduler.save(update_fields=['last_run_at'])
         
         return Response({
-            'is_running': latest_job.status == SchedulerJob.JobStatus.RUNNING,
-            'job': {
-                'id': latest_job.id,
-                'status': latest_job.status,
-                'scope_type': latest_job.scope_type,
-                'scope_id': latest_job.scope_id,
-                'started_at': latest_job.started_at,
-                'ended_at': latest_job.ended_at,
-                'duration_seconds': duration,
-                'tasks': {
-                    'total': total,
-                    'success': success,
-                    'failed': failed,
-                    'running': running,
-                    'pending': pending
-                }
-            }
+            'message': 'Scheduler job created successfully',
+            'job_id': job.id,
+            'status': job.status
+        }, status=status.HTTP_201_CREATED)
+
+class SchedulerJobViewSet(BaseViewSet):
+    """CRUD operations for SchedulerJob."""
+    queryset = SchedulerJob.objects.all().select_related('scheduler').order_by('-created_at')
+    serializer_class = SchedulerJobSerializer
+    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
+    
+    @action(detail=True, methods=['post'])
+    def stop(self, request, pk=None):
+        """Stop a running job."""
+        job = self.get_object()
+        
+        if job.status != SchedulerJob.JobStatus.RUNNING:
+            return Response({
+                'error': f'Job is not running. Current status: {job.status}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        stopped_job = service_layer.stop_job(job.id)
+        serializer = SchedulerJobSerializer(stopped_job)
+        
+        return Response({
+            'message': 'Job stopped successfully',
+            'job': serializer.data
         }, status=status.HTTP_200_OK)
 
+    @action(detail=False, methods=['get'], url_path='last-running')
+    def last_running(self, request):
+        """Return the last (most recent) job filtered by task_group and optional scope_type."""
+        task_group = request.query_params.get('task_group')
+        scope_type = request.query_params.get('scope_type')
+        scope_id = request.query_params.get('scope_id')
 
-class StopTaskView(APIView):
-    """Stop a single running task."""
+        if not task_group:
+            return Response({'error': 'task_group is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        task_group = task_group.upper()
+        qs = SchedulerJob.objects.filter(task_group=task_group)
+        if scope_type:
+            qs = qs.filter(scope_type=scope_type.upper())
+
+        keyword_id = request.query_params.get('keyword_id')
+
+        if scope_id:
+            if scope_type and scope_type.upper() == SchedulerJob.ScopeType.KEYWORD:
+                try:
+                    kw = CategoryKeyword.objects.get(id=int(scope_id))
+                    qs = qs.filter(scope_id=kw.keyword)
+                except Exception:
+                    qs = qs.filter(scope_id=scope_id)
+            elif scope_type and scope_type.upper() == SchedulerJob.ScopeType.PINCODE:
+                try:
+                    cp = CategoryPincode.objects.get(id=int(scope_id))
+                    if keyword_id:
+                        try:
+                            kw = CategoryKeyword.objects.get(id=int(keyword_id))
+                            composite = f"{cp.pincode}::KW::{kw.keyword}"
+                            qs = qs.filter(scope_id=composite)
+                        except Exception:
+                            qs = qs.filter(scope_id=cp.pincode)
+                    else:
+                        from django.db.models import Q
+                        qs = qs.filter(Q(scope_id=cp.pincode) | Q(scope_id__startswith=f"{cp.pincode}::KW::"))
+                except Exception:
+                    qs = qs.filter(scope_id=scope_id)
+            else:
+                # attempt integer conversion, but allow string match as fallback
+                try:
+                    qs = qs.filter(scope_id=int(scope_id))
+                except Exception:
+                    qs = qs.filter(scope_id=scope_id)
+
+        latest_job = qs.order_by('-created_at').first()
+
+        if not latest_job:
+            return Response({'is_running': False, 'job': None}, status=status.HTTP_200_OK)
+
+        serializer = SchedulerJobSerializer(latest_job)
+        return Response({
+            'is_running': latest_job.status == SchedulerJob.JobStatus.RUNNING,
+            'job': serializer.data
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], url_path='run')
+    def run_job(self, request):
+        """Create a SchedulerJob for a given task_group and scope via POST /jobs/run/"""
+        task_group = request.data.get('task_group')
+        scope_type = request.data.get('scope_type', 'GLOBAL')
+        scope_id = request.data.get('scope_id')
+        keyword_id = request.data.get('keyword_id')
+        scheduler_id = request.data.get('scheduler_id')
+
+        if not task_group:
+            return Response({'error': 'task_group is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        task_group = task_group.upper()
+        scope_type = scope_type.upper() if scope_type else 'GLOBAL'
+
+        if scope_type != 'GLOBAL' and not scope_id:
+            return Response({'error': 'scope_id is required for non-GLOBAL scope_type'}, status=status.HTTP_400_BAD_REQUEST)
+
+        job = service_layer.create_job_and_tasks(
+            triggered_by='ADMIN',
+            scope_type=scope_type,
+            scope_id=scope_id,
+            keyword_id=keyword_id,
+            task_group=task_group,
+            scheduler_id=scheduler_id,
+        )
+
+        serializer = SchedulerJobSerializer(job)
+
+        return Response({
+            'message': 'Job created successfully',
+            'job_id': job.id,
+            'job': serializer.data,
+            'status': job.status,
+        }, status=status.HTTP_201_CREATED)
+    
+class TaskViewSet(BaseViewSet):
+    """CRUD operations for Task."""
+    queryset = Task.objects.all().select_related('scheduler_job').order_by('-created_at')
+    serializer_class = TaskSerializer
     permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
-
-    def post(self, request, task_id):
-        task = service_stop_task(task_id)
+    
+    @action(detail=True, methods=['post'])
+    def stop(self, request, pk=None):
+        """Stop a running task."""
+        task = self.get_object()
         
-        if not task:
-            return Response({'error': 'Task not found'}, status=status.HTTP_404_NOT_FOUND)
+        if task.status not in [Task.TaskStatus.PENDING, Task.TaskStatus.RUNNING]:
+            return Response({
+                'error': f'Task is not running. Current status: {task.status}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        service_layer.stop_task(task.id)
         
         return Response({
             'message': 'Task stopped successfully',
-            'task_id': task.id,
-            'status': task.status
-        })
+            'task_id': task.id
+        }, status=status.HTTP_200_OK)
+
+class DummyTask:
+    def __init__(self, id, entity_id, extra_context):
+        self.id = id
+        self.entity_id = entity_id
+        self.extra_context = extra_context
+
+class JsonBuilderBrandListView(APIView):
+    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
+    def get(self, request):
+        # task = DummyTask(
+        #     id=1,
+        #     entity_id=2,   # brand_id
+        #     extra_context={
+        #         "brand_id": 2,
+        #         "brand_name": "Motorola",
+        #         "platform_type": "marketplace",
+        #         "templates": ["brand-audit"]
+        #     }
+        # )
+        # perform_json_build(task)
+        
+        brands = Brand.objects.filter(is_deleted=False).order_by('name')
+        json_templates = [t.slug for t in JsonTemplate]
+        job_qs = SchedulerJob.objects.filter(task_group=SchedulerJob.TaskGroup.JSON_BUILD)
+        global_job = job_qs.filter(scope_type=SchedulerJob.ScopeType.GLOBAL).order_by('-created_at').first()
+        result = []
+        for brand in brands:
+            brand_task, _ = BrandJsonTask.objects.get_or_create(brand=brand)
+            brand_running_task = None
+            brand_completed_task = None
+            brand_status = Task.TaskStatus.PENDING
+            if brand_task.last_running_task:
+                t = brand_task.last_running_task
+                brand_status = t.status or Task.TaskStatus.RUNNING
+                brand_running_task = {"id": t.id,"status": t.status,"started_at": t.started_at,"ended_at": t.ended_at,}
+                brand_completed_task = None
+            # FAILED SECOND PRIORITY
+            elif brand_task.error_message:
+                brand_status = Task.TaskStatus.FAILED
+                brand_running_task = None
+                brand_completed_task = None
+
+            # SUCCESS THIRD PRIORITY
+            elif brand_task.last_completed_task:
+                t = brand_task.last_completed_task
+                brand_status = t.status or Task.TaskStatus.SUCCESS
+                brand_completed_task = {"id": t.id,"status": t.status,"started_at": t.started_at,"ended_at": t.ended_at,}
+                brand_running_task = None
+            # --------------------------------------------------
+            # BRAND JOB (UNCHANGED)
+            # --------------------------------------------------
+            brand_last_job = None
+            brand_specific_job = job_qs.filter(scope_type=SchedulerJob.ScopeType.BRAND,scope_id=str(brand.id)).order_by('-created_at').first()
+            if brand_specific_job:
+                if not global_job or brand_specific_job.created_at > global_job.created_at:
+                    brand_last_job = SchedulerJobSerializer(brand_specific_job).data
+            json_files = []
+            for template in json_templates:
+                json_file, _ = BrandJsonFile.objects.get_or_create(
+                    brand=brand,
+                    template=template
+                )
+                file_status = Task.TaskStatus.PENDING
+                if json_file.last_run_status:
+                    file_status = json_file.last_run_status
+                elif json_file.error_message:
+                    file_status = Task.TaskStatus.FAILED
+                elif json_file.last_completed_time:
+                    file_status = Task.TaskStatus.SUCCESS
+                json_last_job = None
+                json_scoped_job = job_qs.filter(
+                    scope_type=SchedulerJob.ScopeType.JSON,
+                    scope_id=str(json_file.id)
+                ).order_by('-created_at').first()
+                if json_scoped_job:
+                    is_latest = True
+                    if brand_specific_job and json_scoped_job.created_at <= brand_specific_job.created_at:
+                        is_latest = False
+                    if global_job and json_scoped_job.created_at <= global_job.created_at:
+                        is_latest = False
+                    if is_latest:
+                        json_last_job = SchedulerJobSerializer(json_scoped_job).data
+                json_files.append({
+                    "id": json_file.id,
+                    "template": json_file.template,
+                    "filename": json_file.filename,
+                    "file_path": json_file.file_path,
+                    "last_run_time": json_file.last_run_time,
+                    "last_completed_time": json_file.last_completed_time,
+                    "last_synced": json_file.last_synced,
+                    "status": file_status,
+                    "error_message": json_file.error_message,
+                    "last_job": json_last_job
+                })
+            result.append({
+                "id": brand.id,
+                "name": brand.name,
+                "brand_status": brand_status,
+                "last_running_task": brand_running_task,
+                "last_completed_task": brand_completed_task,
+                "last_synced": brand_task.last_synced,
+                "error_message": brand_task.error_message,
+                "last_job": brand_last_job,
+                "json_files": json_files
+            })
+        return Response(result, status=200)
+
+class DataDumpKeywordListView(APIView):
+    """
+    Keyword → Category → CategoryPincode → KeywordPincode(task info)
+    """
+    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
+
+    def get(self, request):
+        keyword_qs = CategoryKeyword.objects.select_related('category').filter(
+            category__is_deleted=False,
+            category__platform_type__contains=["quick_commerce"]
+        ).order_by('keyword')
+        filter_param = request.query_params.get('filter')
+        if filter_param:
+            try:
+                filter_data = json.loads(filter_param)
+                if (
+                    filter_data.get('field') == 'category_id'
+                    and filter_data.get('operation') == 'EQUALS'
+                ):
+                    category_id = filter_data.get('value')
+                    if category_id:
+                        keyword_qs = keyword_qs.filter(category_id=category_id)
+            except Exception:
+                pass
+        category_id = request.query_params.get('category_id')
+        if category_id:
+            keyword_qs = keyword_qs.filter(category_id=category_id)
+        keyword_qs = keyword_qs.prefetch_related(
+            Prefetch(
+                'category__category_pincodes',
+                queryset=CategoryPincode.objects.order_by('pincode')
+            )
+        )
+        keywords = list(keyword_qs)
+        pincode_texts = set()
+        keyword_texts = set()
+        for k in keywords:
+            keyword_texts.add(k.keyword)
+            for cp in k.category.category_pincodes.all():
+                pincode_texts.add(cp.pincode)
+
+        job_qs = SchedulerJob.objects.filter(
+            task_group=SchedulerJob.TaskGroup.DATA_DUMP
+        )
+        global_job = job_qs.filter(
+            scope_type=SchedulerJob.ScopeType.GLOBAL
+        ).order_by('-created_at').first()
+        keyword_jobs = job_qs.filter(
+            scope_type=SchedulerJob.ScopeType.KEYWORD,
+            scope_id__in=list(keyword_texts)
+        )
+        if pincode_texts:
+            starts_q = Q()
+            for p in pincode_texts:
+                starts_q |= Q(scope_id__startswith=f"{p}::KW::")
+            pincode_jobs = job_qs.filter(
+                scope_type=SchedulerJob.ScopeType.PINCODE
+            ).filter(
+                Q(scope_id__in=list(pincode_texts)) | starts_q
+            )
+        else:
+            pincode_jobs = job_qs.none()
+        kw_job_map = {}
+        for j in keyword_jobs:
+            if not j.scope_id:
+                continue
+
+            sid = str(j.scope_id)
+            existing = kw_job_map.get(sid)
+
+            if not existing or j.created_at >= existing.created_at:
+                kw_job_map[sid] = j
+        pin_kw_map = {}
+        for j in pincode_jobs:
+            if not j.scope_id:
+                continue
+            sid = str(j.scope_id)
+            if '::KW::' in sid:
+                pincode_text, kw_text = sid.split('::KW::', 1)
+                key = (pincode_text, kw_text)
+                existing = pin_kw_map.get(key)
+                if not existing or j.created_at >= existing.created_at:
+                    pin_kw_map[key] = j
+        grouped_keywords = {}
+        for kw in keywords:
+            key = kw.keyword   # ✅ CASE-SENSITIVE
+            if key not in grouped_keywords:
+                grouped_keywords[key] = {
+                    'keyword_objects': [],
+                    'platforms': set(),
+                    'categories': {}
+                }
+            grouped_keywords[key]['keyword_objects'].append(kw)
+            # platform optional
+            if kw.platform:
+                grouped_keywords[key]['platforms'].add(kw.platform)
+            grouped_keywords[key]['categories'][kw.category.id] = kw.category.name
+        result = []
+        for keyword_text, data in grouped_keywords.items():
+            keyword_objects = data['keyword_objects']
+            platforms = list(data['platforms'])
+            categories = list(data['categories'].values())
+            merged_pincodes = {}
+            keyword_last_job = None
+            for keyword in keyword_objects:
+                kw_job = kw_job_map.get(keyword.keyword)
+                if kw_job:
+                    if not keyword_last_job or kw_job.created_at > keyword_last_job.created_at:
+                        keyword_last_job = kw_job
+                for cp in keyword.category.category_pincodes.all():
+                    if cp.pincode in merged_pincodes:
+                        continue
+                    kp = KeywordPincode.objects.filter(
+                        keyword=keyword.keyword,
+                        pincode=cp.pincode,
+                        is_deleted=False
+                    ).select_related(
+                        'last_running_task',
+                        'last_completed_task'
+                    ).first()
+                    running_task_info = None
+                    if kp and kp.last_running_task:
+                        task_obj = kp.last_running_task
+                        running_task_info = {
+                            'id': task_obj.id,
+                            'status': task_obj.status,
+                            'started_at': task_obj.started_at,
+                            'ended_at': task_obj.ended_at,
+                        }
+                    p_kw = pin_kw_map.get((cp.pincode, keyword.keyword))
+                    pincode_last_job = None
+                    if p_kw and (not global_job or p_kw.created_at > global_job.created_at):
+                        pincode_last_job = p_kw
+                    merged_pincodes[cp.pincode] = {
+                        'id': cp.id,
+                        'pincode': cp.pincode,
+                        'city': cp.city,
+                        'state': cp.state,
+                        'last_synced': kp.last_synced if kp else None,
+                        'error_message': kp.error_message if kp else None,
+                        'last_running_task': running_task_info,
+                        'last_job': SchedulerJobSerializer(pincode_last_job).data if pincode_last_job else None,
+                    }
+
+            result.append({
+                'keyword': keyword_text,
+                'platforms': platforms,
+                'categories': categories,
+                'pincodes': list(merged_pincodes.values()),
+                'status': Task.TaskStatus.PENDING,
+                'last_job': SchedulerJobSerializer(keyword_last_job).data if keyword_last_job else None
+            })
+        return Response(result, status=status.HTTP_200_OK)
+
+class DataDumpSyncAllView(APIView):
+    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
+
+    def get(self, request):
+        third_party_url = getattr(settings, 'XBYTE_API_URL', None)
+        api_key = getattr(settings, 'XBYTE_API_KEY', {})
+
+        if not third_party_url:
+            return Response(
+                {'error': 'XBYTE_API_URL not configured in settings'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        pincode_map: dict[str, set[str]] = {}
+        qs = CategoryKeyword.objects.select_related('category').all()
+        for kw in qs:
+            # fetch CategoryPincode rows for this keyword's category
+            for cp in CategoryPincode.objects.filter(category=kw.category).iterator():
+                if not cp or not cp.pincode:
+                    continue
+                pincode_map.setdefault(cp.pincode, set()).add(kw.keyword)
+
+        results = []
+        stats = {'total': 0, 'success': 0, 'failed': 0}
+
+        for pincode, keywords in pincode_map.items():
+            stats['total'] += 1
+            payload = {'pincode': pincode,'keywords': list(keywords), 'api_key': api_key, 'endpoint': 'input'}
+
+            try:
+                resp = requests.post( third_party_url, json=payload, timeout=30)
+                if 200 <= resp.status_code < 300:
+                    stats['success'] += 1
+                    KeywordPincode.objects.filter(pincode=pincode, keyword__in=keywords).update(at_synced_with_xbyte=timezone.now(), synced_with_xbyte=True, error_message=None)
+                    results.append({ 'pincode': pincode, 'status': 'success', 'code': resp.status_code})
+                else:
+                    raise Exception(f"HTTP {resp.status_code}: {resp.text[:200]}")
+
+            except Exception as e:
+                stats['failed'] += 1
+                err = str(e)
+                KeywordPincode.objects.filter(pincode=pincode, keyword__in=keywords).update(at_synced_with_xbyte=timezone.now(), error_message=err)
+                results.append({ 'pincode': pincode, 'status': 'failed', 'error': err})
+
+        return Response({'stats': stats, 'results': results}, status=status.HTTP_200_OK)

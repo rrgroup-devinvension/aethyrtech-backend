@@ -2,28 +2,35 @@ from django.db import models
 from django.utils import timezone
 from core.models import TimeStampedModel, AuditableMixin, SoftDeleteModel
 from django.db.models import JSONField
+from apps.category.models import CategoryKeyword, CategoryPincode
 
 
 class Scheduler(TimeStampedModel, AuditableMixin):
+    """Scheduler configuration for cron jobs."""
+    
+    class SchedulerType(models.TextChoices):
+        DATA_DUMP = 'DATA_DUMP', 'Data Dump'
+        JSON_BUILD = 'JSON_BUILD', 'JSON Build'
+    
     class TriggerType(models.TextChoices):
-        CRON = "CRON", "Cron"
-        MANUAL = "MANUAL", "Manual"
-
-    class Status(models.TextChoices):
-        ACTIVE = "ACTIVE", "Active"
-        PAUSED = "PAUSED", "Paused"
-
-    name = models.CharField(max_length=255)
-    type = models.CharField(max_length=50, choices=(('KEYWORD_SYNC','KEYWORD_SYNC'),('JSON_BUILD','JSON_BUILD')))
-    trigger_type = models.CharField(max_length=20, choices=TriggerType.choices, default=TriggerType.MANUAL)
-    cron_expression = models.CharField(max_length=255, null=True, blank=True)
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
+        MANUAL = 'MANUAL', 'Manual'
+        CRON = 'CRON', 'Cron'
+    
+    class SchedulerStatus(models.TextChoices):
+        ACTIVE = 'ACTIVE', 'Active'
+        INACTIVE = 'INACTIVE', 'Inactive'
+    
+    name = models.CharField(max_length=255, unique=True)
+    type = models.CharField(max_length=50, choices=SchedulerType.choices)
+    trigger_type = models.CharField(max_length=50, choices=TriggerType.choices, default=TriggerType.MANUAL)
+    cron_expression = models.CharField(max_length=255, blank=True, null=True, help_text='Cron expression for scheduled jobs')
+    status = models.CharField(max_length=20, choices=SchedulerStatus.choices, default=SchedulerStatus.ACTIVE)
     last_run_at = models.DateTimeField(null=True, blank=True)
     next_run_at = models.DateTimeField(null=True, blank=True)
-
+    
     class Meta:
-        db_table = "scheduler"
-
+        db_table = 'scheduler'
+    
     def __str__(self):
         return f"{self.name} ({self.type})"
 
@@ -36,25 +43,33 @@ class SchedulerJob(TimeStampedModel, AuditableMixin):
     class ScopeType(models.TextChoices):
         GLOBAL = "GLOBAL", "Global"
         KEYWORD = "KEYWORD", "Keyword"
+        PINCODE = "PINCODE", "Pincode"
         BRAND = "BRAND", "Brand"
         JSON = "JSON", "JSON"
 
     class TaskGroup(models.TextChoices):
         DATA_DUMP = "DATA_DUMP", "Data Dump"
         JSON_BUILD = "JSON_BUILD", "JSON Build"
-        BOTH = "BOTH", "Both"
 
     class JobStatus(models.TextChoices):
         RUNNING = "RUNNING", "Running"
         SUCCESS = "SUCCESS", "Success"
         FAILED = "FAILED", "Failed"
         PARTIAL = "PARTIAL", "Partial"
+        STOPPED = "STOPPED", "Stopped"
 
-    scheduler = models.ForeignKey(Scheduler, null=True, blank=True, on_delete=models.SET_NULL, related_name='jobs')
+    scheduler = models.ForeignKey(
+        Scheduler,
+        on_delete=models.CASCADE,
+        related_name='jobs',
+        null=True,
+        blank=True,
+        help_text='Scheduler that triggered this job (null for manual runs)'
+    )
     triggered_by = models.CharField(max_length=20, choices=TriggeredBy.choices, default=TriggeredBy.SYSTEM)
     scope_type = models.CharField(max_length=20, choices=ScopeType.choices, default=ScopeType.GLOBAL)
-    scope_id = models.BigIntegerField(null=True, blank=True)
-    task_group = models.CharField(max_length=20, choices=TaskGroup.choices, default=TaskGroup.BOTH)
+    scope_id = models.CharField(max_length=255, null=True, blank=True)
+    task_group = models.CharField(max_length=20, choices=TaskGroup.choices)
     status = models.CharField(max_length=20, choices=JobStatus.choices, default=JobStatus.RUNNING)
     started_at = models.DateTimeField(null=True, blank=True)
     ended_at = models.DateTimeField(null=True, blank=True)
@@ -63,7 +78,8 @@ class SchedulerJob(TimeStampedModel, AuditableMixin):
         db_table = "scheduler_job"
 
     def __str__(self):
-        return f"Job {self.id} for {self.scheduler}"
+        scheduler_name = self.scheduler.name if self.scheduler else 'Manual'
+        return f"Job {self.id} - {scheduler_name} - {self.task_group} ({self.status})"
 
 
 class Task(TimeStampedModel, AuditableMixin):
@@ -72,7 +88,7 @@ class Task(TimeStampedModel, AuditableMixin):
         JSON_BUILD = "JSON_BUILD", "JSON Build"
 
     class EntityType(models.TextChoices):
-        KEYWORD = "KEYWORD", "Keyword"
+        KEYWORD_PINCODE = "KEYWORD_PINCODE", "Keyword Pincode"
         BRAND = "BRAND", "Brand"
         JSON_FILE = "JSON_FILE", "JSON File"
 
@@ -81,6 +97,7 @@ class Task(TimeStampedModel, AuditableMixin):
         RUNNING = "RUNNING", "Running"
         SUCCESS = "SUCCESS", "Success"
         FAILED = "FAILED", "Failed"
+        STOPPED = "STOPPED", "Stopped"
 
     scheduler_job = models.ForeignKey(SchedulerJob, null=True, blank=True, on_delete=models.CASCADE, related_name='tasks')
     task_type = models.CharField(max_length=20, choices=TaskType.choices)
@@ -88,6 +105,7 @@ class Task(TimeStampedModel, AuditableMixin):
     entity_id = models.BigIntegerField(null=True, blank=True)
     entity_name = models.CharField(max_length=255, blank=True)
     extra_context = JSONField(null=True, blank=True)
+    celery_task_id = models.CharField(max_length=255, null=True, blank=True)
     status = models.CharField(max_length=20, choices=TaskStatus.choices, default=TaskStatus.PENDING)
     started_at = models.DateTimeField(null=True, blank=True)
     ended_at = models.DateTimeField(null=True, blank=True)
@@ -100,27 +118,11 @@ class Task(TimeStampedModel, AuditableMixin):
     def __str__(self):
         return f"Task {self.id} [{self.task_type}] for {self.entity_type}:{self.entity_id}"
 
-
-class Pincode(SoftDeleteModel, AuditableMixin):
-    """Pincode master data for data dump operations."""
-    pincode = models.CharField(max_length=10, unique=True)
-    city = models.CharField(max_length=100, blank=True)
-    state = models.CharField(max_length=100, blank=True)
-    is_active = models.BooleanField(default=True)
-
-    class Meta:
-        db_table = "pincode"
-        ordering = ('pincode',)
-
-    def __str__(self):
-        return self.pincode
-
-
-class Keyword(SoftDeleteModel, AuditableMixin):
-    """Keyword master data for data dump operations."""
+class KeywordPincode(SoftDeleteModel, AuditableMixin):
     keyword = models.CharField(max_length=255)
-    pincode = models.ForeignKey(Pincode, on_delete=models.CASCADE, related_name='keywords')
-    is_active = models.BooleanField(default=True)
+    pincode = models.CharField(max_length=32)
+    at_synced_with_xbyte = models.DateTimeField(null=True, blank=True)
+    synced_with_xbyte = models.BooleanField(null=True, blank=True)
     
     # Task tracking
     last_running_task = models.ForeignKey(Task, null=True, blank=True, on_delete=models.SET_NULL, related_name='running_keywords')
@@ -129,30 +131,38 @@ class Keyword(SoftDeleteModel, AuditableMixin):
     error_message = models.TextField(null=True, blank=True)
 
     class Meta:
-        db_table = "keyword"
+        db_table = "keyword_pincode"
         unique_together = [['keyword', 'pincode']]
         ordering = ('keyword', 'pincode')
 
     def __str__(self):
-        return f"{self.keyword} - {self.pincode.pincode}"
+        return f"{self.keyword} - {self.pincode}"
 
+
+class BrandJsonTask(SoftDeleteModel, AuditableMixin):
+    brand = models.ForeignKey('brand.Brand',on_delete=models.CASCADE,related_name='brand_json_task')
+    last_running_task = models.ForeignKey(Task, null=True, blank=True, on_delete=models.SET_NULL, related_name='running_brand_files')
+    last_completed_task = models.ForeignKey(Task, null=True, blank=True, on_delete=models.SET_NULL, related_name='completed_brand_files')
+    last_synced = models.DateTimeField(null=True, blank=True)
+    error_message = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'brand_json_task'
+        constraints = [
+            models.UniqueConstraint(fields=['brand'], name='unique_brand_json_task')
+        ]
+
+    def __str__(self):
+        return f"BrandTaskFile {self.brand_id}"
 
 class BrandJsonFile(SoftDeleteModel, AuditableMixin):
-    """Stores latest JSON file metadata for a brand and template.
-
-    - `brand` and `template` are unique together.
-    - `file_path` holds the relative MEDIA path to the file (do not modify on error).
-    - `error_message` stores last error if generation failed.
-    - `last_synced` denotes last attempt time (success or failure).
-    """
     brand = models.ForeignKey('brand.Brand', on_delete=models.CASCADE, related_name='json_files')
     template = models.CharField(max_length=255)
     filename = models.CharField(max_length=1024, null=True, blank=True)
-    file_path = models.CharField(max_length=2048, null=True, blank=True)
-    
-    # Task tracking
-    last_running_task = models.ForeignKey(Task, null=True, blank=True, on_delete=models.SET_NULL, related_name='running_json_files')
-    last_completed_task = models.ForeignKey(Task, null=True, blank=True, on_delete=models.SET_NULL, related_name='completed_json_files')
+    file_path = models.CharField(max_length=2048, null=True, blank=True)    
+    last_run_time = models.DateTimeField(null=True, blank=True)
+    last_run_status = models.CharField(max_length=50, null=True)
+    last_completed_time = models.DateTimeField(null=True, blank=True)
     last_synced = models.DateTimeField(null=True, blank=True)
     error_message = models.TextField(null=True, blank=True)
 
@@ -162,3 +172,74 @@ class BrandJsonFile(SoftDeleteModel, AuditableMixin):
 
     def __str__(self):
         return f"BrandJsonFile {self.brand_id}:{self.template}"
+
+class QuickCommerceSearch(models.Model):
+    task_id = models.BigIntegerField()
+    keyword = models.CharField(max_length=255)
+    pincode = models.CharField(max_length=10)
+    platform = models.CharField(max_length=50)
+    request_time = models.DateTimeField(null=True)
+    response_time = models.DateTimeField(null=True)
+    process_time = models.FloatField()
+    status_code = models.IntegerField()
+    status = models.CharField(max_length=50)
+    response_file = models.CharField(max_length=500)
+    response_file_size = models.BigIntegerField(null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        db_table = "qc_search"
+
+class QuickCommerceProduct(models.Model):
+    search = models.ForeignKey(
+        QuickCommerceSearch,
+        related_name="products",
+        on_delete=models.CASCADE
+    )
+    rank = models.IntegerField()
+    product_uid = models.CharField(max_length=100)
+    title = models.CharField(max_length=500)
+    brand = models.CharField(max_length=255, null=True)
+    platform = models.CharField(max_length=255, null=True)
+    keyword = models.CharField(max_length=255, null=True)
+    pincode = models.CharField(max_length=255, null=True)
+    category = models.CharField(max_length=255, null=True)
+    availability = models.CharField(max_length=100)
+    detail_page_images = models.TextField(null=True)
+    msrp = models.FloatField(null=True)
+    sell_price = models.FloatField(null=True)
+    rating = models.FloatField(null=True)
+    reviews = models.IntegerField(null=True)
+    product_url = models.URLField(max_length=1000)
+    thumbnail = models.URLField(max_length=1000)
+    main_image = models.URLField(max_length=1000)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "qc_products"
+        indexes = [
+            models.Index(fields=['product_uid']),
+            models.Index(fields=['title']),
+        ]
+
+class QuickCommerceProductDetail(models.Model):
+    product = models.OneToOneField(
+        QuickCommerceProduct,
+        on_delete=models.CASCADE,
+        related_name="detail"
+    )
+    model = models.CharField(max_length=255, null=True, blank=True)
+    manufacturer_part = models.CharField(max_length=255, null=True, blank=True)
+    upc_retailer_id = models.CharField(max_length=100, null=True, blank=True)
+    sold_by = models.CharField(max_length=255, null=True, blank=True)
+    shipped_by = models.CharField(max_length=255, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    bullets = models.JSONField(default=list, blank=True)
+    image_count = models.IntegerField(default=0)
+    video_count = models.IntegerField(default=0)
+    document_count = models.IntegerField(default=0)
+    product_view_360 = models.BooleanField(default=False)
+    run_date = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        db_table = "qc_product_detail"
+

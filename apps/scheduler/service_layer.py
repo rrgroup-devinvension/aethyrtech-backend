@@ -1,448 +1,398 @@
 """
-Reusable service layer for scheduler operations.
-Provides generic functions that work across different entity types (Keyword, BrandJsonFile, etc.)
+Service layer for scheduler operations.
+Handles job creation, task generation, and entity tracking.
 """
 from django.utils import timezone
 from django.db import transaction
 from django.conf import settings
 from apps.scheduler.models import (
-    Scheduler, SchedulerJob, Task,
-    Keyword, Pincode, BrandJsonFile
+    Scheduler,
+    SchedulerJob, Task,
+    KeywordPincode, BrandJsonFile
 )
+from celery.result import AsyncResult
 from apps.brand.models import Brand
-from apps.scheduler.tasks import process_scheduler_job
+from apps.category.models import Category, CategoryKeyword, CategoryPincode
 import logging
+from .utility.service_utility import bulk_create_tasks, update_job_status, ensure_brand_json_files, ensure_keyword_pincode_single, update_entity_tracking_on_complete
+from apps.scheduler.tasks import process_scheduler_job
+from apps.scheduler.enums import JsonTemplate
 
 logger = logging.getLogger(__name__)
 
-
-# ============================================================================
-# Generic Job and Task Management
-# ============================================================================
-
 @transaction.atomic
-def create_job_with_tasks(
-    scheduler_id=None,
-    triggered_by='SYSTEM',
+def create_job_and_tasks(
+    triggered_by='ADMIN',
     scope_type='GLOBAL',
     scope_id=None,
-    task_group='BOTH',
-    task_configs=None
+    task_group='JSON_BUILD',
+    scheduler_id=None,
+    keyword_id=None,
 ):
     """
-    Generic function to create a SchedulerJob with tasks.
+    Create a SchedulerJob and generate tasks based on scope.
     
     Args:
-        scheduler_id: Optional Scheduler FK
         triggered_by: SYSTEM or ADMIN
-        scope_type: GLOBAL, KEYWORD, BRAND, JSON
+        scope_type: GLOBAL, KEYWORD, PINCODE, BRAND, JSON
         scope_id: ID of the scoped entity
         task_group: DATA_DUMP, JSON_BUILD, or BOTH
-        task_configs: List of dicts with task configuration
-            Example: [
-                {
-                    'task_type': 'DATA_DUMP',
-                    'entity_type': 'KEYWORD',
-                    'entity_id': 1,
-                    'entity_name': 'laptop - 110001',
-                    'extra_context': {'keyword': 'laptop', 'pincode': '110001'}
-                }
-            ]
+        scheduler_id: Optional - ID of scheduler if triggered by cron
     
     Returns:
         SchedulerJob instance
     """
-    scheduler = None
-    if scheduler_id:
-        scheduler = Scheduler.objects.filter(id=scheduler_id).first()
+    # Normalize scope_id for certain scope types. For KEYWORD scope, accept numeric
+    # id from callers but store the keyword text in SchedulerJob.scope_id so the
+    # job is identifiable by keyword string.
+    scope_value = scope_id
+    if scope_type == SchedulerJob.ScopeType.KEYWORD and scope_id is not None:
+        # If numeric id supplied, resolve to CategoryKeyword.keyword
+        try:
+            # allow both numeric and string ids; if already a string keyword, keep it
+            if isinstance(scope_id, int) or (isinstance(scope_id, str) and scope_id.isdigit()):
+                kw = CategoryKeyword.objects.get(id=int(scope_id))
+                scope_value = kw.keyword
+            else:
+                # assume provided value is already the keyword text
+                scope_value = str(scope_id)
+        except CategoryKeyword.DoesNotExist:
+            # fallback: store stringified scope_id
+            scope_value = str(scope_id)
+    elif scope_type == SchedulerJob.ScopeType.PINCODE and scope_id is not None:
+        # For PINCODE jobs, store the real pincode string in job.scope_id while
+        # keeping the original scope_id (category_pincode id) for task generation.
+        try:
+            if isinstance(scope_id, int) or (isinstance(scope_id, str) and scope_id.isdigit()):
+                cp = CategoryPincode.objects.get(id=int(scope_id))
+                # If a specific keyword was provided for this pincode-run, encode both
+                # pincode and keyword into the job.scope_id so we can later distinguish
+                # a pincode-wide run from a keyword+pincode run.
+                if keyword_id:
+                    try:
+                        kw = CategoryKeyword.objects.get(id=int(keyword_id))
+                        scope_value = f"{cp.pincode}::KW::{kw.keyword}"
+                    except CategoryKeyword.DoesNotExist:
+                        scope_value = cp.pincode
+                else:
+                    scope_value = cp.pincode
+            else:
+                scope_value = str(scope_id)
+        except CategoryPincode.DoesNotExist:
+            scope_value = str(scope_id)
 
+    # Create the job
     job = SchedulerJob.objects.create(
-        scheduler=scheduler,
+        scheduler_id=scheduler_id,
         triggered_by=triggered_by,
         scope_type=scope_type,
-        scope_id=scope_id,
+        scope_id=scope_value,
         task_group=task_group,
         status=SchedulerJob.JobStatus.RUNNING,
         started_at=timezone.now(),
     )
 
-    # Create tasks if provided
-    created_tasks = []
-    if task_configs:
-        for config in task_configs:
-            task = Task.objects.create(
-                scheduler_job=job,
-                task_type=config.get('task_type', Task.TaskType.DATA_DUMP),
-                entity_type=config.get('entity_type', Task.EntityType.KEYWORD),
-                entity_id=config.get('entity_id'),
-                entity_name=config.get('entity_name', ''),
-                extra_context=config.get('extra_context'),
-                status=Task.TaskStatus.PENDING,
-            )
-            created_tasks.append(task)
+    # Generate tasks based on scope and task_group
+    if task_group in [SchedulerJob.TaskGroup.DATA_DUMP]:
+        _create_data_dump_tasks(job, scope_type, scope_id, keyword_id)
+    
+    if task_group in [SchedulerJob.TaskGroup.JSON_BUILD]:
+        _create_json_build_tasks(job, scope_type, scope_id)
 
     # Dispatch to Celery
-    process_scheduler_job.apply_async((job.id,))
+    try:
+        # Try async first (production with broker)
+        process_scheduler_job.apply_async((job.id,))
+    except Exception as e:
+        logger.warning(f"Celery broker not available, running synchronously: {e}")
+        # Fall back to synchronous execution (development without broker)
+        process_scheduler_job(job.id)
     
     return job
 
 
-def auto_update_job_status(job: SchedulerJob):
-    """
-    Recalculate job status based on child tasks.
-    - If any task is RUNNING -> job is RUNNING
-    - If any task FAILED and some SUCCESS -> PARTIAL
-    - If all FAILED -> FAILED
-    - If all SUCCESS -> SUCCESS
-    """
-    tasks = job.tasks.all()
-    if not tasks:
-        job.status = SchedulerJob.JobStatus.SUCCESS
-        job.ended_at = timezone.now()
-        job.save()
-        return job
+def _create_data_dump_tasks(job, scope_type, scope_id, keyword_id=None):
+    """Create DATA_DUMP tasks based on scope."""
 
-    statuses = set(tasks.values_list('status', flat=True))
+    tasks_to_create = []
+
+    # ----------------------
+    # GLOBAL SCOPE
+    # ----------------------
+    if scope_type == SchedulerJob.ScopeType.GLOBAL:
+
+        keywords = CategoryKeyword.objects.filter(
+            category__is_deleted=False,
+            category__platform_type__contains=["quick_commerce"]
+        ).select_related('category').prefetch_related(
+            'category__category_pincodes'
+        )
+        grouped_keywords = {}
+
+        for kw in keywords:
+
+            key = kw.keyword.strip().lower()
+            if key not in grouped_keywords:
+                grouped_keywords[key] = {
+                    'keyword_text': kw.keyword,
+                    'platforms': set(),
+                    'categories': set()
+                }
+            if kw.platform:
+                grouped_keywords[key]['platforms'].add(kw.platform)
+            grouped_keywords[key]['categories'].add(kw.category)
+        for data in grouped_keywords.values():
+            keyword_text = data['keyword_text']
+            platforms = list(data['platforms'])
+            categories = data['categories']
+            pincodes_seen = set()
+            for category in categories:
+                for cp in category.category_pincodes.all():
+                    if not cp.pincode:
+                        continue
+                    if cp.pincode in pincodes_seen:
+                        continue
+                    pincodes_seen.add(cp.pincode)
+                    kp = ensure_keyword_pincode_single(keyword_text, cp)
+
+                    tasks_to_create.append({
+                        'task_type': Task.TaskType.DATA_DUMP,
+                        'entity_type': Task.EntityType.KEYWORD_PINCODE,
+                        'entity_id': kp.id,
+                        'entity_name': f"{keyword_text} - {cp.pincode}",
+                        'extra_context': {
+                            'keyword': keyword_text,
+                            'pincode': cp.pincode,
+                            'platforms': platforms
+                        }
+                    })
+    elif scope_type == SchedulerJob.ScopeType.KEYWORD:
+
+        try:
+            category_keyword = CategoryKeyword.objects.select_related('category').get(
+                id=scope_id,
+                category__is_deleted=False,
+                category__platform_type__contains=["quick_commerce"]
+            )
+
+            pincodes = CategoryPincode.objects.filter(
+                category=category_keyword.category
+            ).order_by('pincode')
+
+            frameworks = []
+            if category_keyword.platform:
+                frameworks.append(category_keyword.platform)
+            for cp in pincodes:
+
+                if not cp.pincode:
+                    continue
+
+                kp = ensure_keyword_pincode_single(category_keyword.keyword, cp)
+
+                tasks_to_create.append({
+                    'task_type': Task.TaskType.DATA_DUMP,
+                    'entity_type': Task.EntityType.KEYWORD_PINCODE,
+                    'entity_id': kp.id,
+                    'entity_name': f"{category_keyword.keyword} - {cp.pincode}",
+                    'extra_context': {
+                        'keyword': category_keyword.keyword,
+                        'pincode': cp.pincode,
+                        'frameworks': frameworks
+                    }
+                })
+
+        except CategoryKeyword.DoesNotExist:
+            logger.error(f"CategoryKeyword with id {scope_id} not found or invalid")
+
+    # ----------------------
+    # PINCODE SCOPE
+    # ----------------------
+    elif scope_type == SchedulerJob.ScopeType.PINCODE:
+
+        try:
+            category_pincode = CategoryPincode.objects.select_related('category').get(
+                id=scope_id,
+                category__platform_type__contains=["quick_commerce"],
+                category__is_deleted=False
+            )
+
+            # ---------- Single Keyword ----------
+            if keyword_id:
+
+                try:
+                    kw = CategoryKeyword.objects.get(
+                        id=int(keyword_id),
+                        category=category_pincode.category,
+                        category__platform_type__contains=["quick_commerce"]
+                    )
+
+                    frameworks = []
+                    if kw.platform:
+                        frameworks.append(kw.platform)
+                    kp = ensure_keyword_pincode_single(kw.keyword, category_pincode)
+
+                    tasks_to_create.append({
+                        'task_type': Task.TaskType.DATA_DUMP,
+                        'entity_type': Task.EntityType.KEYWORD_PINCODE,
+                        'entity_id': kp.id,
+                        'entity_name': f"{kw.keyword} - {category_pincode.pincode}",
+                        'extra_context': {
+                            'keyword': kw.keyword,
+                            'pincode': category_pincode.pincode,
+                            'frameworks': frameworks
+                        }
+                    })
+
+                except CategoryKeyword.DoesNotExist:
+                    logger.error(f"Invalid keyword {keyword_id} for pincode {scope_id}")
+
+            # ---------- All Keywords ----------
+            else:
+
+                keywords = CategoryKeyword.objects.filter(
+                    category=category_pincode.category,
+                    category__platform_type__contains=["quick_commerce"]
+                )
+                grouped_keywords = {}
+
+                for kw in keywords:
+
+                    key = kw.keyword.strip().lower()
+                    if key not in grouped_keywords:
+                        grouped_keywords[key] = {
+                            'keyword_text': kw.keyword,
+                            'frameworks': set()
+                        }
+                    if kw.platform:
+                        grouped_keywords[key]['frameworks'].add(kw.platform)
+                for data in grouped_keywords.values():
+                    keyword_text = data['keyword_text']
+                    frameworks = list(data['frameworks'])
+                    kp = ensure_keyword_pincode_single(keyword_text, category_pincode)
+
+                    tasks_to_create.append({
+                        'task_type': Task.TaskType.DATA_DUMP,
+                        'entity_type': Task.EntityType.KEYWORD_PINCODE,
+                        'entity_id': kp.id,
+                        'entity_name': f"{keyword_text} - {category_pincode.pincode}",
+                        'extra_context': {
+                            'keyword': keyword_text,
+                            'pincode': category_pincode.pincode,
+                            'frameworks': frameworks
+                        }
+                    })
+
+        except CategoryPincode.DoesNotExist:
+            logger.error(f"CategoryPincode with id {scope_id} not found or invalid")
+
+    # ----------------------
+    # BULK CREATE
+    # ----------------------
+    bulk_create_tasks(job, tasks_to_create)
+
+def _create_json_build_tasks(job, scope_type, scope_id):
+    """Create JSON_BUILD tasks based on scope."""
+    tasks_to_create = []
+    json_templates = [t.slug for t in JsonTemplate]
     
-    if any(s == Task.TaskStatus.RUNNING for s in statuses):
-        job.status = SchedulerJob.JobStatus.RUNNING
-    elif any(s == Task.TaskStatus.FAILED for s in statuses):
-        if any(s == Task.TaskStatus.SUCCESS for s in statuses):
-            job.status = SchedulerJob.JobStatus.PARTIAL
-        else:
-            job.status = SchedulerJob.JobStatus.FAILED
-        job.ended_at = timezone.now()
-    elif all(s == Task.TaskStatus.SUCCESS for s in statuses):
-        job.status = SchedulerJob.JobStatus.SUCCESS
-        job.ended_at = timezone.now()
+    if scope_type == SchedulerJob.ScopeType.GLOBAL:
+        # Create tasks for all brands and all templates
+        brands = Brand.objects.filter(is_deleted=False)
+        for brand in brands:
+            # Ensure BrandJsonFile records exist
+            ensure_brand_json_files(brand, json_templates)
+            tasks_to_create.append({
+                'task_type': Task.TaskType.JSON_BUILD,
+                'entity_type': Task.EntityType.JSON_FILE,
+                'entity_id': brand.id,
+                'entity_name': f"{brand.name}",
+                'extra_context': {
+                    'brand_id': brand.id,
+                    'brand_name': brand.name,
+                    'platform_type': getattr(brand.category, 'platform_type'),
+                }
+            })
     
-    job.save()
-    return job
+    elif scope_type == SchedulerJob.ScopeType.BRAND:
+        # Create tasks for all templates for this brand
+        try:
+            brand = Brand.objects.get(id=scope_id)
+            # Ensure BrandJsonFile records exist
+            ensure_brand_json_files(brand, json_templates)
+            tasks_to_create.append({
+                'task_type': Task.TaskType.JSON_BUILD,
+                'entity_type': Task.EntityType.JSON_FILE,
+                'entity_id': brand.id,
+                'entity_name': f"{brand.name}",
+                'extra_context': {
+                    'brand_id': brand.id,
+                    'brand_name': brand.name,
+                    'platform_type': getattr(brand.category, 'platform_type'),
+                }
+            })
+        except Brand.DoesNotExist:
+            logger.error(f"Brand with id {scope_id} not found")
+    
+    # Bulk create tasks
+    bulk_create_tasks(job, tasks_to_create)
 
 
-@transaction.atomic
+# ============================================================================
+# Job and Task Status Management
+# ============================================================================
+
 def stop_job(job_id):
-    """
-    Stop a running job and all its pending/running tasks.
-    
-    Args:
-        job_id: SchedulerJob ID
-    
-    Returns:
-        Updated SchedulerJob instance
-    """
+    """Stop a running job and all its tasks."""
     try:
         job = SchedulerJob.objects.get(id=job_id)
-        
-        # Update job status
-        job.status = SchedulerJob.JobStatus.FAILED
-        job.ended_at = timezone.now()
-        job.save()
-        
-        # Stop all pending/running tasks
-        tasks_to_stop = job.tasks.filter(
-            status__in=[Task.TaskStatus.PENDING, Task.TaskStatus.RUNNING]
-        )
-        
-        for task in tasks_to_stop:
-            task.status = Task.TaskStatus.FAILED
-            task.error_message = "Stopped by user"
-            task.ended_at = timezone.now()
-            task.save()
-        
-        return job
     except SchedulerJob.DoesNotExist:
-        logger.error(f"Job {job_id} not found")
         return None
+    
+    if job.status != SchedulerJob.JobStatus.RUNNING:
+        return job
+    
+    # Update job status
+    job.status = SchedulerJob.JobStatus.STOPPED
+    job.ended_at = timezone.now()
+    job.save(update_fields=['status', 'ended_at'])
+    
+    # Stop all pending/running tasks
+    tasks = job.tasks.filter(status__in=[Task.TaskStatus.PENDING, Task.TaskStatus.RUNNING])
+    for task in tasks:
+        stop_task(task.id)
+    
+    return job
 
 
-@transaction.atomic
 def stop_task(task_id):
-    """
-    Stop a single running task.
-    
-    Args:
-        task_id: Task ID
-    
-    Returns:
-        Updated Task instance
-    """
+    """Stop a single task."""
     try:
         task = Task.objects.get(id=task_id)
-        
-        if task.status in [Task.TaskStatus.PENDING, Task.TaskStatus.RUNNING]:
-            task.status = Task.TaskStatus.FAILED
-            task.error_message = "Stopped by user"
-            task.ended_at = timezone.now()
-            task.save()
-            
-            # Update job status
-            auto_update_job_status(task.scheduler_job)
-        
-        return task
     except Task.DoesNotExist:
-        logger.error(f"Task {task_id} not found")
         return None
-
-
-# ============================================================================
-# Entity Tracking Management
-# ============================================================================
-
-def update_entity_tracking_on_start(task: Task):
-    """
-    Update entity's last_running_task when task starts.
-    Handles both Keyword and BrandJsonFile entities.
     
-    Args:
-        task: Task instance
-    """
-    try:
-        if task.entity_type == Task.EntityType.KEYWORD and task.entity_id:
-            Keyword.objects.filter(id=task.entity_id).update(last_running_task=task)
-        elif task.entity_type == Task.EntityType.JSON_FILE:
-            # For JSON_FILE, entity_id is brand_id and we need template from extra_context
-            brand_id = task.entity_id
-            template = (task.extra_context or {}).get('template')
-            if brand_id and template:
-                BrandJsonFile.objects.filter(
-                    brand_id=brand_id, 
-                    template=template
-                ).update(last_running_task=task)
-    except Exception as e:
-        logger.exception(f"Failed to update entity tracking on start for task {task.id}: {e}")
+    if task.status not in [Task.TaskStatus.PENDING, Task.TaskStatus.RUNNING]:
+        return task
 
-
-def update_entity_tracking_on_complete(task: Task, success=True, error_msg=None):
-    """
-    Update entity's last_completed_task and other fields when task completes.
-    Handles both Keyword and BrandJsonFile entities.
-    
-    Args:
-        task: Task instance
-        success: Whether task completed successfully
-        error_msg: Error message if task failed
-    """
-    try:
-        now = timezone.now()
-        
-        if task.entity_type == Task.EntityType.KEYWORD and task.entity_id:
-            Keyword.objects.filter(id=task.entity_id).update(
-                last_completed_task=task,
-                last_synced=now,
-                error_message=error_msg if not success else None
-            )
-        elif task.entity_type == Task.EntityType.JSON_FILE:
-            brand_id = task.entity_id
-            template = (task.extra_context or {}).get('template')
-            if brand_id and template:
-                BrandJsonFile.objects.filter(
-                    brand_id=brand_id,
-                    template=template
-                ).update(
-                    last_completed_task=task,
-                    last_synced=now,
-                    error_message=error_msg if not success else None
-                )
-    except Exception as e:
-        logger.exception(f"Failed to update entity tracking on complete for task {task.id}: {e}")
-
-
-# ============================================================================
-# Keyword Sync Operations
-# ============================================================================
-
-def resolve_keyword_tasks(job: SchedulerJob):
-    """
-    Create DATA_DUMP tasks based on scope for keywords.
-    
-    Scope types:
-    - GLOBAL: All active keyword × pincode combinations
-    - KEYWORD: All pincodes for a specific keyword ID (scope_id)
-    - (Future) KEYWORD+PINCODE: Single keyword × pincode combination
-    
-    Returns:
-        List of created Task objects
-    """
-    created_tasks = []
-    
-    if job.scope_type == SchedulerJob.ScopeType.GLOBAL:
-        # All active keywords
-        keywords = Keyword.objects.filter(is_deleted=False, is_active=True).select_related('pincode')
-        
-        for kw in keywords:
-            task = Task.objects.create(
-                scheduler_job=job,
-                task_type=Task.TaskType.DATA_DUMP,
-                entity_type=Task.EntityType.KEYWORD,
-                entity_id=kw.id,
-                entity_name=f"{kw.keyword} - {kw.pincode.pincode}",
-                extra_context={
-                    'keyword': kw.keyword,
-                    'pincode': kw.pincode.pincode,
-                    'keyword_id': kw.id,
-                    'pincode_id': kw.pincode.id
-                },
-                status=Task.TaskStatus.PENDING,
-            )
-            created_tasks.append(task)
-    
-    elif job.scope_type == SchedulerJob.ScopeType.KEYWORD and job.scope_id:
-        # All pincodes for specific keyword
-        keywords = Keyword.objects.filter(
-            id=job.scope_id,
-            is_deleted=False,
-            is_active=True
-        ).select_related('pincode')
-        
-        for kw in keywords:
-            task = Task.objects.create(
-                scheduler_job=job,
-                task_type=Task.TaskType.DATA_DUMP,
-                entity_type=Task.EntityType.KEYWORD,
-                entity_id=kw.id,
-                entity_name=f"{kw.keyword} - {kw.pincode.pincode}",
-                extra_context={
-                    'keyword': kw.keyword,
-                    'pincode': kw.pincode.pincode,
-                    'keyword_id': kw.id,
-                    'pincode_id': kw.pincode.id
-                },
-                status=Task.TaskStatus.PENDING,
-            )
-            created_tasks.append(task)
-    
-    return created_tasks
-
-
-# ============================================================================
-# JSON Build Operations (for Brand files)
-# ============================================================================
-
-def sync_files_table_for_brand(brand: Brand):
-    """
-    Ensure BrandJsonFile entries match configured templates for a brand.
-    Creates missing entries and removes extras.
-    """
-    templates = getattr(settings, 'SCHEDULER_JSON_TEMPLATES', []) or []
-    existing = BrandJsonFile.objects.filter(brand=brand, is_deleted=False)
-    existing_templates = set(existing.values_list('template', flat=True))
-
-    # Create missing entries
-    for tpl in templates:
-        if tpl not in existing_templates:
-            try:
-                BrandJsonFile.objects.create(brand=brand, template=tpl)
-            except Exception:
-                logger.exception(f'Failed to create BrandJsonFile for brand {brand.id} template {tpl}')
-
-    # Remove entries not in config
-    for e in existing:
-        if e.template not in templates:
-            try:
-                e.delete()
-            except Exception:
-                logger.exception(f'Failed to delete extra BrandJsonFile {e.id}')
-
-
-def resolve_json_build_tasks(job: SchedulerJob):
-    """
-    Create JSON_BUILD tasks based on scope for brands.
-    
-    Scope types:
-    - GLOBAL: All active brands × all templates
-    - BRAND: All templates for a specific brand ID (scope_id)
-    - JSON: Retry a single file task (scope_id is Task ID)
-    
-    Returns:
-        List of created Task objects
-    """
-    created_tasks = []
-    templates = getattr(settings, 'SCHEDULER_JSON_TEMPLATES', [])
-
-    if job.scope_type == SchedulerJob.ScopeType.GLOBAL:
-        # All active brands × all templates
-        brands = Brand.objects.filter(is_deleted=False, is_active=True)
-        for brand in brands:
-            sync_files_table_for_brand(brand)
-            for tpl in templates:
-                task = Task.objects.create(
-                    scheduler_job=job,
-                    task_type=Task.TaskType.JSON_BUILD,
-                    entity_type=Task.EntityType.JSON_FILE,
-                    entity_id=brand.id,
-                    entity_name=tpl,
-                    extra_context={'template': tpl, 'brand_id': brand.id},
-                    status=Task.TaskStatus.PENDING,
-                )
-                created_tasks.append(task)
-                
-                # Ensure BrandJsonFile entry exists
-                try:
-                    BrandJsonFile.objects.get_or_create(brand_id=brand.id, template=tpl)
-                except Exception:
-                    logger.exception(f'Failed to ensure BrandJsonFile for {brand.id} {tpl}')
-
-    elif job.scope_type == SchedulerJob.ScopeType.BRAND and job.scope_id:
-        # All templates for specific brand
-        brands = Brand.objects.filter(id=job.scope_id, is_deleted=False)
-        for brand in brands:
-            sync_files_table_for_brand(brand)
-            for tpl in templates:
-                task = Task.objects.create(
-                    scheduler_job=job,
-                    task_type=Task.TaskType.JSON_BUILD,
-                    entity_type=Task.EntityType.JSON_FILE,
-                    entity_id=brand.id,
-                    entity_name=tpl,
-                    extra_context={'template': tpl, 'brand_id': brand.id},
-                    status=Task.TaskStatus.PENDING,
-                )
-                created_tasks.append(task)
-                
-                try:
-                    BrandJsonFile.objects.get_or_create(brand_id=brand.id, template=tpl)
-                except Exception:
-                    logger.exception(f'Failed to ensure BrandJsonFile for {brand.id} {tpl}')
-
-    elif job.scope_type == SchedulerJob.ScopeType.JSON and job.scope_id:
-        # Retry single file task
+    # If there is an associated celery background task, attempt to revoke it
+    if getattr(task, 'celery_task_id', None):
         try:
-            origin = Task.objects.get(id=job.scope_id)
-            task = Task.objects.create(
-                scheduler_job=job,
-                task_type=Task.TaskType.JSON_BUILD,
-                entity_type=Task.EntityType.JSON_FILE,
-                entity_id=origin.entity_id,
-                entity_name=origin.entity_name,
-                extra_context=origin.extra_context,
-                status=Task.TaskStatus.PENDING,
-                retry_of_task=origin,
-            )
-            created_tasks.append(task)
-        except Task.DoesNotExist:
-            logger.error(f"Origin task {job.scope_id} not found for retry")
+            res = AsyncResult(task.celery_task_id)
+            # revoke; terminate worker if running
+            res.revoke(terminate=True)
+        except Exception:
+            logger.exception(f"Failed to revoke celery task {task.celery_task_id} for task {task.id}")
 
-    return created_tasks
+    task.status = Task.TaskStatus.STOPPED
+    task.ended_at = timezone.now()
+    task.error_message = 'Stopped by user'
+    task.save(update_fields=['status', 'ended_at', 'error_message'])
+    
+    # Update entity tracking
+    update_entity_tracking_on_complete(task, success=False, error_msg='Stopped by user')
+    
+    # Update parent job status
+    if task.scheduler_job:
+        update_job_status(task.scheduler_job)
+    return task
 
-
-def resolve_scope_and_create_tasks(job: SchedulerJob):
-    """
-    Main dispatcher for creating tasks based on job's task_group and scope.
-    
-    Returns:
-        List of all created Task objects
-    """
-    all_tasks = []
-    
-    # Handle DATA_DUMP tasks
-    if job.task_group in (SchedulerJob.TaskGroup.DATA_DUMP, SchedulerJob.TaskGroup.BOTH):
-        keyword_tasks = resolve_keyword_tasks(job)
-        all_tasks.extend(keyword_tasks)
-    
-    # Handle JSON_BUILD tasks
-    if job.task_group in (SchedulerJob.TaskGroup.JSON_BUILD, SchedulerJob.TaskGroup.BOTH):
-        json_tasks = resolve_json_build_tasks(job)
-        all_tasks.extend(json_tasks)
-    
-    return all_tasks
