@@ -1,0 +1,23 @@
+[Unit]
+Description=Celery Worker (Django Staging)
+After=network.target redis.service
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/aethyrtech/django-staging
+EnvironmentFile=/opt/aethyrtech/django-staging/.env
+
+ExecStart=/opt/aethyrtech/django-staging/venv/bin/celery \
+  -A config worker \
+  --loglevel=info \
+  -Q scheduler,celery
+
+Restart=always
+RestartSec=5
+
+StandardOutput=append:/opt/aethyrtech/logs/celery-worker.log
+StandardError=append:/opt/aethyrtech/logs/celery-worker.err.log
+
+[Install]
+WantedBy=multi-user.target

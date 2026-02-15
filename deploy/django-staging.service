@@ -1,0 +1,23 @@
+[Unit]
+Description=Django Staging App
+After=network.target redis.service
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/aethyrtech/django-staging
+EnvironmentFile=/opt/aethyrtech/django-staging/.env
+
+ExecStart=/opt/aethyrtech/django-staging/venv/bin/gunicorn \
+    config.wsgi:application \
+    --workers 4 \
+    --bind 0.0.0.0:8000
+
+Restart=always
+RestartSec=5
+
+StandardOutput=append:/opt/aethyrtech/logs/django.out.log
+StandardError=append:/opt/aethyrtech/logs/django.err.log
+
+[Install]
+WantedBy=multi-user.target
