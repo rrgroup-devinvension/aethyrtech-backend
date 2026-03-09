@@ -19,22 +19,26 @@ def get_brands(brand_id):
 
 def match_brand(product_brand, input_brand):
     if not product_brand or not input_brand:
-        return False
+        return None
     pb = product_brand.strip().lower()
     ib = input_brand.strip().lower()
-    return re.search(rf"\b{re.escape(ib)}\b", pb) is not None
+    return product_brand if re.search(rf"\b{re.escape(pb)}\b", ib) else None
 
 def match_brands(brands, input_brand):
+    """
+    Returns matched brand from list if found inside input_brand.
+    Otherwise returns None.
+    """
     if not brands or not input_brand:
-        return False
+        return None
     ib = input_brand.strip().lower()
-    for product_brand in brands:
-        if not product_brand:
+    for brand in brands:
+        if not brand:
             continue
-        pb = product_brand.strip().lower()
-        if re.search(rf"\b{re.escape(ib)}\b", pb):
-            return True
-    return False
+        pb = brand.strip().lower()
+        if re.search(rf"\b{re.escape(pb)}\b", ib):
+            return brand
+    return None
 
 def get_all_keywords():
     return list(CategoryKeyword.objects.values_list('keyword', flat=True))

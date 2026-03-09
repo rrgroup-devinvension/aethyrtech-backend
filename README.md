@@ -190,3 +190,75 @@ https://aethyrtech.ai/new/dashboard-positive.php
 https://aethyrtech.ai/new/insights.php
 
 
+
+
+SELECT COUNT(*) AS total_rankings FROM product_rankings pr JOIN products p ON pr.sku = p.sku WHERE p.scraper_id = 1000000020 AND pr.scraper_id = 1000000020 AND p.id NOT IN ( 15979,16064,16100,16156,16160,16170,16175,16176, 16181,16186,16214,16216,16220,16222,16225,16226, 16229,16230,16236,16244,16252 );
+
+
+SELECT COUNT(*) AS total_rankings FROM product_rankings pr JOIN products p ON pr.sku = p.sku WHERE p.scraper_id = 1000000020 AND pr.scraper_id = 1000000020;
+SELECT COUNT(*) AS total FROM products WHERE scraper_id = 1000000020;
+
+SELECT p.id, p.sku FROM products p LEFT JOIN product_rankings pr ON pr.sku = p.sku WHERE pr.id IS NULL and p.scraper_id=1000000020;
+SELECT pr.id, pr.product_id, pr.sku FROM product_rankings pr LEFT JOIN products p ON pr.sku = p.sku WHERE p.id IS NULL and pr.scraper_id=1000000020;
+
+
+
+
+
+110001
+110002
+110003
+110004
+110005
+110006
+110011
+110016
+110017
+110018
+110021
+110023
+110024
+110025
+110026
+110027
+110029
+110031
+110032
+110034
+110035
+110037
+110039
+110045
+110048
+110051
+110052
+110053
+110054
+110055
+110062
+110065
+110071
+110072
+110075
+110078
+110084
+110085
+110091
+110092
+121001
+121003
+121004
+121006
+121010
+121012
+121102
+122001
+122004
+122010
+122011
+122101
+122104
+122105
+122108
+131001
+132103

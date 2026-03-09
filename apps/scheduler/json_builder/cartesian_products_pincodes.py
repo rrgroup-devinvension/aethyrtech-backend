@@ -29,7 +29,8 @@ def get_cartesian_products_pincodes_list(products, brands, brand_name, is_compet
         for pincode, rank_list in rankings.items():
             if pincode == "000000":
                 continue
-            if not match_brands(brands, p.brand):
+            matched_brand = match_brands(brands, p.brand)
+            if not matched_brand:
                 continue
             pincode_id = category_pincode_map.get((category_id, pincode))
             ranks = [
@@ -44,7 +45,7 @@ def get_cartesian_products_pincodes_list(products, brands, brand_name, is_compet
                 "productid": p.id,
                 "pincodeid": pincode_id,
                 "Company": None,
-                "Brand": p.brand,
+                "Brand": matched_brand,
                 "MRP (₹)": p.market_price or 0,
                 "Current Price (₹)": p.selling_price or 0,
                 "Pincode": pincode,

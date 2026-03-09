@@ -1,4 +1,5 @@
 import logging
+import json
 from apps.scheduler.json_builder.utils import mysql_connection
 from apps.scheduler.json_builder.services.product_formatter import ProductFormatter
 from apps.scheduler.models import QuickCommerceProduct
@@ -113,34 +114,70 @@ def get_all_market_products(keywords, brands):
         products = cursor.fetchall()
         if not products:
             return []
-        product_ids = [p["id"] for p in products]
-        fmt = ",".join(["%s"] * len(product_ids))
+        skus = [p["sku"] for p in products]
+        fmt = ",".join(["%s"] * len(skus))
         cursor.execute(f"""
             SELECT 
                 pr.product_id,
+                pr.sku,
                 pr.platform,
                 pr.position,
                 pr.page,
                 k.keyword
             FROM product_rankings pr
             JOIN keywords k ON pr.keyword_id = k.id
-            WHERE pr.product_id IN ({fmt})
+            WHERE pr.sku IN ({fmt})
               AND pr.scraper_id = %s
-        """, (*product_ids, scraper_id))
+        """, (*skus, scraper_id))
         rankings = cursor.fetchall()
+        cursor.execute(f"""
+            SELECT 
+                id,
+                product_id,
+                sku,
+                platform,
+                review_id,
+                reviewer_name,
+                rating,
+                review_title,
+                review_text,
+                review_date,
+                verified_purchase,
+                helpful_count,
+                review_images
+            FROM reviews
+            WHERE sku IN ({fmt})
+        """, skus)
+        reviews = cursor.fetchall()
     ranking_map = {}
     for r in rankings:
-        product_id = r["product_id"]
         ranking_entry = {
             "platform": r["platform"],
             "keyword": r["keyword"],
             "rank": r["position"],
             "page": r["page"]
         }
-        ranking_map.setdefault(product_id, []).append(ranking_entry)
+        ranking_map.setdefault(r["sku"], []).append(ranking_entry)
+    review_map = {}
+    for r in reviews:
+        review_entry = {
+            "id": r["id"],
+            "product_id": r["product_id"],
+            "sku": r["sku"],
+            "platform": r["platform"],
+            "review_id": r["review_id"],
+            "reviewer_name": r["reviewer_name"],
+            "rating": float(r["rating"]) if r["rating"] else 0,
+            "review_title": r["review_title"],
+            "review_text": r["review_text"],
+            "review_date": r["review_date"],
+            "verified_purchase": r["verified_purchase"],
+            "helpful_count": r["helpful_count"],
+            "review_images": json.loads(r["review_images"]) if r["review_images"] else []
+        }
+        review_map.setdefault(r["sku"], []).append(review_entry)
     formatted_products = []
     for p in products:
-        product_id = p["id"]
         sku = p["sku"]
         pf = ProductFormatter()
         pf.set_basic(
@@ -169,10 +206,12 @@ def get_all_market_products(keywords, brands):
             sold_by=p['seller_name'],
             shipped_by=None
         )
-        product_rankings = ranking_map.get(product_id, [])
+        product_rankings = ranking_map.get(sku, [])
         pf.set_rankings({
             "000000": product_rankings
         })
+        if sku in review_map:
+            pf.set_reviews(review_map[sku])
         is_avaible_correct = pf.set_availability(p["inventory_status"])
         if is_avaible_correct:
             formatted_products.append(pf)

@@ -4,8 +4,10 @@ from collections import defaultdict
 from apps.scheduler.json_builder.utils import save_json_to_file
 from apps.scheduler.exceptions import SchedulerBaseException, DataProcessingException
 from apps.scheduler.utility.tasks_utility import match_brand, get_brand_pincodes
+from scripts.csv_logger import CSVLogger
 
 logger = logging.getLogger(__name__)
+csv_logger = CSVLogger("product_debug.csv")
 from apps.scheduler.utility.jsonbuilder_api_logger import log_start, log_success, log_error
 
 def get_unique_keywords(data):
@@ -19,6 +21,9 @@ def get_unique_keywords(data):
 
 def build_keyword_matrix(brands, keywords, products, brand_name, platform_type):
     result = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
+    aggregate_bucket = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    )
     brand_keywords = get_unique_keywords(keywords)
     brand_pincodes = get_brand_pincodes().get(brand_name) or ["000000"]
     for p in products:
@@ -27,62 +32,86 @@ def build_keyword_matrix(brands, keywords, products, brand_name, platform_type):
         product_brand = str(p.brand).strip()
         matched_brand = None
         for b in brands:
-            if match_brand(product_brand, b):
+            if match_brand(b, product_brand):
                 matched_brand = b
                 break
         if not matched_brand:
             continue
-        brand = matched_brand 
+        brand = matched_brand
         title = str(p.title).strip()
         ranking_data = p.rankings or {}
         product_pincode = brand_pincodes
         if p.platform_type == "marketplace":
             product_pincode = ["000000"]
         for pincode in product_pincode:
-            if pincode not in result[brand][title]:
-                result[brand][title][pincode] = { kw: 0 for kw in brand_keywords }
             rank_entries = ranking_data.get(pincode, [])
-            keyword_rank_bucket = defaultdict(list)
             for entry in rank_entries:
                 kw = entry.get("keyword")
                 rank = entry.get("rank")
-                if kw and rank:
-                    keyword_rank_bucket[kw].append(rank)
-            for kw, ranks in keyword_rank_bucket.items():
-                avg_rank = round(sum(ranks) / len(ranks))
-                if kw in result[brand][title][pincode]:
+                if rank is not None:
+                    try:
+                        rank = int(rank)
+                        if rank > 32:
+                            rank = 0
+                    except (ValueError, TypeError):
+                        rank = 0
+                platform = entry.get("platform")
+                csv_logger.append({
+                    "product_id": p.uid,
+                    "brand": brand,
+                    "product": title,
+                    "pincode": pincode,
+                    "keyword": kw,
+                    "platform": platform,
+                    "ranking": rank
+                })
+                if kw and rank is not None:
+                    aggregate_bucket[brand][title][pincode][kw].append(rank) 
+
+    for brand, titles in aggregate_bucket.items():
+        for title, pincodes in titles.items():
+            for pincode, keywords_map in pincodes.items():
+                result[brand][title][pincode] = {
+                    kw: 0 for kw in brand_keywords
+                }
+                for kw, ranks in keywords_map.items():
+                    avg_rank = round(sum(ranks) / len(ranks), 2) if ranks else 0
                     result[brand][title][pincode][kw] = avg_rank
     return result
-
 
 def build_rank_averages(keyword_matrix):
     product_averages = {}
     brand_averages = {}
-    all_brand_values = []
+    overall_sum = 0
+    overall_count = 0
     for brand, products in keyword_matrix.items():
-        brand_rank_values = []
+        brand_sum = 0
+        brand_count = 0
         for product_title, pincodes in products.items():
-            product_rank_values = []
+            product_sum = 0
+            product_count = 0
             for pincode, keyword_ranks in pincodes.items():
                 for kw, rank in keyword_ranks.items():
                     if rank and rank > 0:
-                        product_rank_values.append(rank)
-            if product_rank_values:
-                avg_product_rank = round(sum(product_rank_values) / len(product_rank_values), 2)
+                        product_sum += rank
+                        product_count += 1
+            # Weighted Product Average
+            if product_count > 0:
+                avg_product_rank = round(product_sum / product_count, 2)
             else:
                 avg_product_rank = 0
             product_averages[product_title] = avg_product_rank
-            if avg_product_rank > 0:
-                brand_rank_values.append(avg_product_rank)
-        if brand_rank_values:
-            avg_brand_rank = round(sum(brand_rank_values) / len(brand_rank_values), 2)
+            brand_sum += product_sum
+            brand_count += product_count
+        if brand_count > 0:
+            avg_brand_rank = round(brand_sum / brand_count, 2)
         else:
             avg_brand_rank = 0
         brand_averages[brand] = avg_brand_rank
-        if avg_brand_rank > 0:
-            all_brand_values.append(avg_brand_rank)
-    if all_brand_values:
-        category_avg = round(sum(all_brand_values) / len(all_brand_values), 2)
+        overall_sum += brand_sum
+        overall_count += brand_count
+    if overall_count > 0:
+        category_avg = round(overall_sum / overall_count, 2)
     else:
         category_avg = 0
     return {
@@ -94,7 +123,7 @@ def build_rank_averages(keyword_matrix):
     }
 
 
-def keyword_matrix_builder(brands, keywords, products, task, brand_id=None, brand_name=None, template="catalog", platform_type=None):
+def keyword_matrix_builder(brands, keywords, products, task, brand_id=None, brand_name=None, template="keyword-matrix", platform_type=None):
     t_id = getattr(task, 'id', 'unknown')
     logger.info(f"Starting KEYWORD_MATRIX JSON build | Task={t_id}")
     try:

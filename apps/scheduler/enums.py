@@ -33,6 +33,7 @@ class JsonTemplate(Enum):
     CONTENT_INSIGHTS = ("content-insights-data")
     KEYWORD_MATRIX = ("keyword-matrix")
     KEYWORD_COUNTS = ("keyword-counts")
+    PRODUCT_REVIEWS = ("product-reviews")
     CARTESIAN_PRODUCTS_PINCODES = ("cartesian-products-pincodes")
     def __init__(self, slug):
         self.slug = slug

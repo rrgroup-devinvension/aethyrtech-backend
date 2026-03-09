@@ -9,10 +9,18 @@ from apps.scheduler.enums import JsonTemplate
 logger = logging.getLogger(__name__)
 from apps.scheduler.utility.jsonbuilder_api_logger import log_start, log_success, log_error
 
+import re
+
 def count_occurrence(text, keyword):
     if not text or not keyword:
         return 0
-    return text.lower().count(keyword.lower())
+
+    # convert to lowercase → ignore case
+    text_words = set(re.findall(r'\w+', text.lower()))
+    keyword_words = re.findall(r'\w+', keyword.lower())
+
+    # return 1 if ANY keyword word exists in text
+    return 1 if any(word in text_words for word in keyword_words) else 0
 
 def build_keyword_count(keywords, products, brand_name):
     result = defaultdict(dict)
@@ -20,7 +28,7 @@ def build_keyword_count(keywords, products, brand_name):
     for platform, keyword_list in keywords.items():
         platform_products = [
             p for p in products
-            if p.platform == platform and match_brand(p.brand, brand_name)
+            if p.platform == platform and match_brand(brand_name, p.brand)
         ]
         for p in platform_products:
             product_title = p.title
@@ -30,25 +38,24 @@ def build_keyword_count(keywords, products, brand_name):
             for pin, rank_list in ranking_data.items():
                 for r in rank_list:
                     if r.get("platform") == platform:
-                        ranked_keywords.add(r.get("keyword"))
+                        kw = r.get("keyword")
+                        if kw:
+                            ranked_keywords.add(kw.strip().lower())
             for kw in keyword_list:
-                kw = kw.strip()
-                if kw not in ranked_keywords:
-                    result[platform][product_title].append({
-                        "keyword": kw,
-                        "counts": {
-                            "title": 0,
-                            "description": 0,
-                            "bullets": 0
-                        }
-                    })
+                if not kw:
                     continue
-                title_count = count_occurrence(p.title, kw)
-                desc_count = count_occurrence(p.description, kw)
+
+                kw_clean = kw.strip().lower()
+
+                # Always count keyword presence
+                title_count = count_occurrence(p.title, kw_clean)
+                desc_count = count_occurrence(p.description, kw_clean)
                 bullets_text = " ".join(p.bullets) if p.bullets else ""
-                bullet_count = count_occurrence(bullets_text, kw)
+                bullet_count = count_occurrence(bullets_text, kw_clean)
+
                 result[platform][product_title].append({
                     "keyword": kw,
+                    "is_ranked": kw_clean in ranked_keywords,
                     "counts": {
                         "title": title_count,
                         "description": desc_count,

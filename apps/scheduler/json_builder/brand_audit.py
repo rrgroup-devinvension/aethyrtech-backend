@@ -37,14 +37,14 @@ def get_audit_data(brands, products):
         found = False
 
         for p in products:
-            if not p.brand or not match_brand(p.brand, brand):
+            if not p.brand or not match_brand(brand, p.brand):
                 continue
             found = True
             sku_count += 1
             # Availability
             if (p.availability_status or "").lower() == "available":
                 live_count += 1
-            # Health score
+            # Health score 
             try:
                 score = p.health_score()
             except Exception:

@@ -21,10 +21,10 @@ class ProductFormatter:
         self.title = None
         self.description = None
         self.category = None
-        self.sub_category_1=None
-        self.sub_category_2=None
-        self.sub_category_3=None
-        self.sub_category_4=None
+        self.sub_category_1 = None
+        self.sub_category_2 = None
+        self.sub_category_3 = None
+        self.sub_category_4 = None
         self.availability = None
         self.availability_status = None
         self.product_url = None
@@ -51,10 +51,14 @@ class ProductFormatter:
         self.sold_by = None
         self.shipped_by = None
         self.bullets = []
-        self.rankings = {}   # { pincode : { keyword : rank } }
+        self.rankings = {}
+        self.reviews = []
         return self
 
-    def set_basic(self, uid=None, keywords=None, status=None, target_keyword=None, platform=None, brand=None, title=None, description=None, product_url=None, platform_type=None, scraped_date=None, scraper_id=None, platform_assured=None):
+    def set_basic(self, uid=None, keywords=None, status=None, target_keyword=None,
+                  platform=None, brand=None, title=None, description=None,
+                  product_url=None, platform_type=None, scraped_date=None,
+                  scraper_id=None, platform_assured=None):
         self.uid = uid
         self.keywords = keywords
         self.status = status
@@ -77,7 +81,9 @@ class ProductFormatter:
         if self.market_price and self.selling_price:
             diff = self.market_price - self.selling_price
             self.discount_price = round(diff, 2) if diff > 0 else 0
-            self.discount_percentage = (self.discount_price/self.market_price)*100
+            self.discount_percentage = (
+                (self.discount_price / self.market_price) * 100
+            ) if self.market_price else 0
         else:
             self.discount_price = None
         return self
@@ -87,6 +93,9 @@ class ProductFormatter:
         self.review_count = self._parse_int_count(count)
         return self
     
+    def set_reviews(self, reviews):
+        self.reviews = reviews or []
+        return self
 
     def _parse_int_count(self, val, default=0):
         if val is None:
@@ -164,13 +173,14 @@ class ProductFormatter:
     
     def set_bullets(self, bullets):
         self.bullets = self._parse_bullets(bullets)
+        return self
 
     def set_detail(self, model=None, manufacturer_part=None, sold_by=None, shipped_by=None):
         self.model=model
         self.manufacturer_part=manufacturer_part
         self.sold_by=sold_by
         self.shipped_by=shipped_by
-        pass
+        return self
 
     def set_category(self, category):
         values = self._parse_category_values(category)
@@ -180,7 +190,8 @@ class ProductFormatter:
         self.sub_category_3 = None
         self.sub_category_4 = None
         if not values:
-            return
+            return self
+
         self.category = values[0]
         subs = values[1:5]
         if len(subs) > 0:
@@ -191,7 +202,7 @@ class ProductFormatter:
             self.sub_category_3 = subs[2]
         if len(subs) > 3:
             self.sub_category_4 = subs[3]
-
+        return self
     def set_rankings(self, rankings):
         self.rankings = rankings or {}
         return self
@@ -204,7 +215,7 @@ class ProductFormatter:
     
     def _normalize_availability(self, value):
         if not value:
-            return "unavailable"
+            return "Unavailable"
         text = str(value).strip().lower()
         available_keywords = ["in stock", "available", "yes", "true", "1", "instock", "stock available"]
         unavailable_keywords = ["out of stock", "unavailable", "no", "false", "0", "sold out"]
@@ -432,7 +443,7 @@ class ProductFormatter:
             score_value = 100
         return score_value
 
-    def to_catalog_json(self, is_competitor=False):
+    def to_catalog_json(self, brand_name, is_competitor=False):
         base = {
             "id": self.id,
             "scraped_date": self.scraped_date,
@@ -440,8 +451,8 @@ class ProductFormatter:
             "data_source": self.platform,
             "product_title": self.title,
             "sku": self.uid,
-            "status": "Live" if self.status==1 else "Offline",
-            "brand": self.brand,
+            "status": "Live" if self.status == 1 else "Offline",
+            "brand": brand_name if brand_name else self.brand,
             "main_image": self.thumbnail,
             "thumbnail_image_url": self.thumbnail,
             "main_category": self.category,
@@ -474,25 +485,24 @@ class ProductFormatter:
             }
         }
 
-        if not is_competitor:
-            base["detail_data"] = {
-                "run_date": self.scraped_date,
-                "upc_retailer_id": self.uid,
-                "model": self.model,
-                "manufacturer_part": self.manufacturer_part,
-                "sell_price": f"{self.selling_price:.2f}" if self.selling_price else "--",
-                "sold_by": self.sold_by,
-                "shipped_by": self.shipped_by,
-                "description": self.description,
-                "bullets": self.bullets,
-                "keywords": "",
-                "images": self.image_count,
-                "videos": self.video_count,
-                "documents": "",
-                "rating": f"{self.rating_value or 0} out of 5",
-                "reviews": str(self.review_count or 0),
-                "product_view_360": "NO",
-                "enhanced_content": "NO"
-            }
+        base["detail_data"] = {
+            "run_date": self.scraped_date,
+            "upc_retailer_id": self.uid,
+            "model": self.model,
+            "manufacturer_part": self.manufacturer_part,
+            "sell_price": f"{self.selling_price:.2f}" if self.selling_price else "--",
+            "sold_by": self.sold_by,
+            "shipped_by": self.shipped_by,
+            "description": self.description,
+            "bullets": self.bullets,
+            "keywords": "",
+            "images": self.image_count,
+            "videos": self.video_count,
+            "documents": "",
+            "rating": f"{self.rating_value or 0}",
+            "reviews": str(self.review_count or 0),
+            "product_view_360": "NO",
+            "enhanced_content": "NO"
+        }
 
         return base

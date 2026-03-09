@@ -21,7 +21,7 @@ def build_brand_stats(products, brand):
     total_videos = 0
     found = False
     for p in products:
-        if not p.brand or not match_brand(p.brand, brand):
+        if not p.brand or not match_brand(brand, p.brand):
             continue
         found = True
         if p.selling_price:
@@ -55,7 +55,7 @@ def platform_health_by_brand(products, brand, platforms):
         for p in platforms
     }
     for p in products:
-        if not p.brand or not match_brand(p.brand, brand):
+        if not p.brand or not match_brand(brand, p.brand):
             continue
         platform = (p.platform or "").lower()
         if platform not in stats:
@@ -83,7 +83,7 @@ def build_availability_by_brand(products, brands):
         unavailable_count = 0
         found = False
         for p in products:
-            if not p.brand or not match_brand(p.brand, brand):
+            if not p.brand or not match_brand(brand, p.brand):
                 continue
             found = True
             status = (p.availability_status or "").lower()
@@ -115,7 +115,7 @@ def build_category_data(products, brands):
         last_run = None
         found = False
         for p in products:
-            if not p.brand or not match_brand(p.brand, brand):
+            if not p.brand or not match_brand(brand, p.brand):
                 continue
             found = True
             sku_count += 1

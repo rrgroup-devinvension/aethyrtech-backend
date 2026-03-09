@@ -8,6 +8,7 @@ from apps.scheduler.json_builder.catalog import catalog_data_builder
 from apps.scheduler.json_builder.reports import reports_data_builder
 from apps.scheduler.json_builder.content_insights import content_insights_data_builder
 from apps.scheduler.json_builder.keyword_counts import keyword_counts_builder
+from apps.scheduler.json_builder.product_reviews import product_reviews_builder
 from apps.scheduler.json_builder.services.data_collector import get_all_products
 from apps.scheduler.json_builder.cartesian_products_pincodes import cartesian_products_pincodes_builder
 from apps.scheduler.enums import JsonTemplate
@@ -35,6 +36,8 @@ def build_json(brands, keywords, products, task, brand_id, brand_name, template,
         return keyword_matrix_builder(brands, keywords, products, task, brand_id, brand_name, template, platform_type)
     elif template == JsonTemplate.KEYWORD_COUNTS.slug:
         return keyword_counts_builder(brands, keywords, products, task, brand_id, brand_name, template, platform_type)
+    elif template == JsonTemplate.PRODUCT_REVIEWS.slug:
+        return product_reviews_builder(brands, keywords, products, task, brand_id, brand_name, template, platform_type)
     elif template == JsonTemplate.CARTESIAN_PRODUCTS_PINCODES.slug:
         return cartesian_products_pincodes_builder(brands, keywords, products, task, brand_id, brand_name, template, platform_type)
     else:
@@ -53,7 +56,7 @@ def perform_json_build(task):
     brands = get_brands(brand_id)
     brand_keywords = get_brand_platform_keywords()
     keywords = brand_keywords.get(brand_name) or {}
-    products = get_all_products(platform_type, keywords, brands[:1])
+    products = get_all_products(platform_type, keywords, brands)
     for template in templates:
         json_file = None
         try:

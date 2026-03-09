@@ -7,11 +7,13 @@ logger = logging.getLogger(__name__)
 from apps.scheduler.utility.jsonbuilder_api_logger import log_start, log_success, log_error
 
 def get_catalog_list(products, brand_name, is_competitor=False):
-    return [
-        p.to_catalog_json(is_competitor)
-        for p in products
-        if match_brand(p.brand, brand_name)
-    ]
+    result = []
+    for p in products:
+        matched_brand = match_brand(brand_name, p.brand)
+        if not p.brand or not matched_brand:
+            continue
+        result.append(p.to_catalog_json(matched_brand, is_competitor))
+    return result
 
 def catalog_data_builder(brands, keywords, products, task, brand_id=None, brand_name=None, template="catalog", platform_type=None):
     t_id = getattr(task, 'id', 'unknown')
