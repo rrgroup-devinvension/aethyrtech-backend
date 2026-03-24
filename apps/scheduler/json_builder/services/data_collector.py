@@ -1,6 +1,7 @@
 import logging
 import json
 from apps.scheduler.json_builder.utils import mysql_connection
+from apps.scheduler.utility.tasks_utility import match_brands
 from apps.scheduler.json_builder.services.product_formatter import ProductFormatter
 from apps.scheduler.models import QuickCommerceProduct
 from apps.category.models import CategoryKeyword
@@ -8,7 +9,7 @@ from apps.scheduler.utility.jsonbuilder_api_logger import log_start, log_success
 
 logger = logging.getLogger(__name__)
 
-def get_all_quick_products(keywords, brands):
+def get_all_quick_products(keywords, pincodes, brands):
     qs = QuickCommerceProduct.objects.select_related("detail")
 
     product_map = {}   # product_uid -> ProductFormatter
@@ -19,6 +20,21 @@ def get_all_quick_products(keywords, brands):
         if scraped_date is None:
             scraped_date = p.created_at
             scraper_id = p.search.id
+        matched_brand = match_brands(brands, p.brand)
+        if not matched_brand:
+            log_error(task_id=None, error='Product skipped due to brand mismatch', extra={
+                'product_uid': p.product_uid,
+                'brand': p.brand
+            })
+            continue
+        if p.keyword not in keywords.get(p.platform, []) or p.pincode not in pincodes.get(p.platform, []):
+            log_error(task_id=None, error='Product skipped due to keyword/pincode mismatch', extra={
+                'product_uid': p.product_uid,
+                'keyword': p.keyword,
+                'pincode': p.pincode,
+                'brand': p.brand
+            })
+            continue
         product_uid = p.product_uid
         ranking_entry = {
             "platform": p.platform,
@@ -56,7 +72,7 @@ def get_all_quick_products(keywords, brands):
             status=1,
             target_keyword=p.keyword,
             platform=p.platform,
-            brand=p.brand,
+            brand=matched_brand or p.brand,
             title=p.title,
             description=d.description if d else None,
             product_url=p.product_url,
@@ -88,7 +104,7 @@ def get_all_quick_products(keywords, brands):
             product_map[product_uid] = pf
     return list(product_map.values())
 
-def get_all_market_products(keywords, brands):
+def get_all_market_products(keywords, pincodes, brands):
     scraper_id = None
     scraped_date = None
     with mysql_connection() as conn:
@@ -179,6 +195,13 @@ def get_all_market_products(keywords, brands):
     formatted_products = []
     for p in products:
         sku = p["sku"]
+        matched_brand = match_brands(brands, p["brand"])
+        if not matched_brand:
+            log_error(task_id=None, error='Product skipped due to brand mismatch', extra={
+                'product_uid': p["id"],
+                'brand': p["brand"]
+            })
+            continue 
         pf = ProductFormatter()
         pf.set_basic(
             uid=sku,
@@ -186,7 +209,7 @@ def get_all_market_products(keywords, brands):
             status=p['is_active'],
             target_keyword=None,
             platform=p["platform"],
-            brand=p["brand"],
+            brand=matched_brand or p["brand"],
             title=p["title"],
             description=p.get("description"),
             product_url=p["product_url"],
@@ -222,15 +245,15 @@ def get_all_market_products(keywords, brands):
             })
     return formatted_products
 
-def get_all_products(platform_type, keywords, brands):
+def get_all_products(platform_type, keywords, pincodes, brands):
     platform_type = platform_type or []
     if isinstance(platform_type, str):
         platform_type = [platform_type]
     products = []
     if "quick_commerce" in platform_type:
-        products.extend(get_all_quick_products(keywords, brands))
+        products.extend(get_all_quick_products(keywords, pincodes, brands))
     if "marketplace" in platform_type:
-        products.extend(get_all_market_products(keywords, brands))
+        products.extend(get_all_market_products(keywords, pincodes, brands))
     
     for index, pf in enumerate(products, start=1):
         pf.id = index

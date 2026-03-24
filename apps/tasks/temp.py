@@ -169,12 +169,12 @@ def export_qc_products_to_excel(file_path="qc_products_export.xlsx"):
 def json_build():
     task = DummyTask(
         id=1,
-        entity_id=2,
+        entity_id=1,
         extra_context={
-            "brand_id": 1,
-            "brand_name": "HP",
-            "platform_type": ["marketplace"],
-            "templates": ["product-reviews"]
+            "brand_id": 2,
+            "brand_name": "Motorola",
+            "platform_type": ["marketplace", "quick_commerce"],
+            "templates": ["product-reviews", "keyword-counts"]
         }
     )
     perform_json_build(task)

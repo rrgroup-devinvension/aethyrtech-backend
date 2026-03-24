@@ -214,7 +214,7 @@ class TaskViewSet(BaseViewSet):
 class JsonBuilderBrandListView(APIView):
     permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
     def get(self, request):
-        json_build()
+        # json_build()
         # export_qc_products_to_excel()
         # run_bulk_quickcommerce_dump()
         # data_dump()
