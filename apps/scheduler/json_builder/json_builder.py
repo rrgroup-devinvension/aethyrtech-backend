@@ -13,7 +13,7 @@ from apps.scheduler.json_builder.services.data_collector import get_all_products
 from apps.scheduler.json_builder.cartesian_products_pincodes import cartesian_products_pincodes_builder
 from apps.scheduler.enums import JsonTemplate
 from apps.scheduler.exceptions import SchedulerBaseException, DataProcessingException
-from apps.scheduler.utility.tasks_utility import get_brands, get_brand_platform_keywords
+from apps.scheduler.utility.tasks_utility import get_brands, get_brand_platform_keywords, get_brand_platform_pincodes
 from apps.scheduler.models import BrandJsonFile
 from apps.scheduler.utility.jsonbuilder_api_logger import log_start, log_success, log_error
 
@@ -55,8 +55,10 @@ def perform_json_build(task):
     failures = []
     brands = get_brands(brand_id)
     brand_keywords = get_brand_platform_keywords()
+    brand_pincodes = get_brand_platform_pincodes()
     keywords = brand_keywords.get(brand_name) or {}
-    products = get_all_products(platform_type, keywords, brands)
+    pincodes = brand_pincodes.get(brand_name) or {}
+    products = get_all_products(platform_type, keywords, pincodes, brands)
     for template in templates:
         json_file = None
         try:

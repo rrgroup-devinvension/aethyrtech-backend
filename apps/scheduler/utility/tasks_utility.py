@@ -82,6 +82,32 @@ def get_brand_platform_keywords():
                         result[brand.name][p].append(keyword)
     return {b: dict(p) for b, p in result.items()}
 
+def get_brand_platform_pincodes():
+    result = defaultdict(lambda: defaultdict(list))
+    brands = Brand.objects.filter(
+        is_active=True,
+        category__isnull=False
+    ).select_related('category').prefetch_related(
+        'category__category_pincodes'
+    )
+    for brand in brands:
+        category = brand.category
+        category_platform_types = category.platform_type or []
+        for cp in category.category_pincodes.all().order_by('id'):
+            platform = getattr(cp, "platform", None) or "all"
+            pincode = cp.pincode
+            if not pincode:
+                continue
+            if platform and platform != "all":
+                result[brand.name][platform].append(pincode)
+                continue
+            if platform == "all" or not platform:
+                for platform_type in category_platform_types:
+                    platforms = PLATFORM_GROUP_MAP.get(platform_type, [])
+                    for p in platforms:
+                        result[brand.name][p].append(pincode)
+
+    return {b: dict(p) for b, p in result.items()}
 
 def get_brand_pincodes():
     result = defaultdict(set)
