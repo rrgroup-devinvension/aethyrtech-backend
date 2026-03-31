@@ -134,7 +134,7 @@ def keyword_matrix_builder(brands, keywords, products, task, brand_id=None, bran
             "matrix": keyword_matrix,
             "summary": keyword_summary
         }
-        result = save_json_to_file(task, payload, brand_id, brand_name, template)
+        result = save_json_to_file(payload, brand_name, template)
         log_success(task_id=t_id, info={'template': template, 'brand_id': brand_id})
         return result
     except SchedulerBaseException:

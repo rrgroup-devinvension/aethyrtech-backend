@@ -26,7 +26,7 @@ def catalog_data_builder(brands, keywords, products, task, brand_id=None, brand_
             payload[b] = get_catalog_list(products, b, True)
         logger.info(f"Completed CATALOG JSON build | Task={t_id}")
         log_success(task_id=t_id, info={'template': template, 'brand_id': brand_id})
-        return save_json_to_file(task, payload, brand_id, brand_name, template)
+        return save_json_to_file(payload, brand_name, template)
     except SchedulerBaseException:
         raise
     except Exception as exc:

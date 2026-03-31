@@ -71,7 +71,7 @@ def keyword_counts_builder(brands, keywords, products, task, brand_id=None, bran
     try:
         log_start(task_id=t_id, info={'template': template, 'brand_id': brand_id})
         payload = build_keyword_count(keywords, products, brand_name)
-        result = save_json_to_file(task, payload, brand_id, brand_name, template)
+        result = save_json_to_file(payload, brand_name, template)
         log_success(task_id=t_id, info={'template': template, 'brand_id': brand_id})
         return result
     except SchedulerBaseException:

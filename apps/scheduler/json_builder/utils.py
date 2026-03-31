@@ -9,7 +9,7 @@ from apps.scheduler.exceptions import FileWriteException, DatabaseException
 
 logger = logging.getLogger(__name__)
 
-def save_json_to_file(task, json_data, brand_id, brand_name, template):
+def save_json_to_file(json_data, brand_name, template):
     try:
         media_sub = getattr(settings, 'SCHEDULER_JSON_MEDIA_SUBPATH', 'jsons')
         brand_slug = slugify(brand_name)
