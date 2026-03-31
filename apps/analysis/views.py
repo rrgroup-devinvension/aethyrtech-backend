@@ -12,6 +12,47 @@ from rest_framework.exceptions import NotFound, APIException
 from apps.analysis.services.llm_service import LLMService
 
 
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from django.core.mail import send_mail
+from django.conf import settings
+from rest_framework.permissions import AllowAny
+from rest_framework.decorators import api_view, permission_classes
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def contact_api(request):
+    try:
+        name = request.data.get('name')
+        email = request.data.get('email')
+        mobile = request.data.get('mobile')
+        message = request.data.get('message')
+
+        subject = f"New Contact Request from {name}"
+
+        body = f"""
+        Name: {name}
+        Email: {email}
+        Mobile: {mobile}
+
+        Message:
+        {message}
+        """
+
+        send_mail(
+            subject,
+            body,
+            settings.EMAIL_HOST_USER,   # from
+            ['Aethyrtech@aethyrtech.AI'],  # to
+            fail_silently=False,
+        )
+
+        return Response({"success": True, "message": "Email sent successfully"})
+
+    except Exception as e:
+        return Response({"success": False, "error": str(e)}, status=500)
+    
 def load_json_response(file_path):
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -78,7 +119,86 @@ class BrandDashboardDataView(APIView):
         return Response(serve_brand_template_json(brand, JsonTemplate.BRAND_DASHBOARD.slug), status=200)
 
 
-class CategoryViewDataView(APIView):
+class InsightsDataView(APIView):
+    """Brand-specific dashboard view."""
+
+    def get(self, request, brand_id: int):
+        try:
+            brand = Brand.objects.get(id=brand_id)
+        except Brand.DoesNotExist:
+            return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
+        return Response({
+            "dashboard": serve_brand_template_json(brand, JsonTemplate.RISK_DATA.slug),
+            "insights": serve_brand_template_json(brand, JsonTemplate.INSIGHTS.slug)
+        }, status=200)
+
+
+class DashboardPositiveDataView(APIView):
+    """Brand-specific dashboard view."""
+
+    def get(self, request, brand_id: int):
+        try:
+            brand = Brand.objects.get(id=brand_id)
+        except Brand.DoesNotExist:
+            return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
+        return Response(serve_brand_template_json(brand, JsonTemplate.POSITIVE_DATA.slug), status=200)
+
+
+class CROBarriersDataView(APIView):
+    """Brand-specific dashboard view."""
+
+    def get(self, request, brand_id: int):
+        try:
+            brand = Brand.objects.get(id=brand_id)
+        except Brand.DoesNotExist:
+            return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
+        return Response(serve_brand_template_json(brand, JsonTemplate.BRAND_GRAPH.slug), status=200)
+
+class PlpInsightsDataView(APIView):
+    """Brand-specific PLP insights view."""
+
+    def get(self, request, brand_id: int):
+        try:
+            brand = Brand.objects.get(id=brand_id)
+        except Brand.DoesNotExist:
+            return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
+        return Response(serve_brand_template_json(brand, JsonTemplate.PLP_INSIGHTS.slug), status=200)
+
+
+class IncentiveInsightsDataView(APIView):
+    """Brand-specific dashboard view."""
+
+    def get(self, request, brand_id: int):
+        try:
+            brand = Brand.objects.get(id=brand_id)
+        except Brand.DoesNotExist:
+            return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
+        return Response(serve_brand_template_json(brand, JsonTemplate.INCENTIVE_INSIGHTS.slug), status=200)
+
+
+class PdpInsightsDataView(APIView):
+    """Brand-specific dashboard view."""
+
+    def get(self, request, brand_id: int):
+        try:
+            brand = Brand.objects.get(id=brand_id)
+        except Brand.DoesNotExist:
+            return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
+        return Response(serve_brand_template_json(brand, JsonTemplate.PDP_INSIGHTS.slug), status=200)
+
+
+class ReviewsInsightsDataView(APIView):
+    """Brand-specific dashboard view."""
+
+    def get(self, request, brand_id: int):
+        try:
+            brand = Brand.objects.get(id=brand_id)
+        except Brand.DoesNotExist:
+            return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
+        return Response(serve_brand_template_json(brand, JsonTemplate.REVIEWS_INSIGHTS.slug), status=200)
+
+
+class CategoryDataView(APIView):
     def get(self, request, brand_id: int):
         try:
             brand = Brand.objects.get(id=brand_id)
@@ -93,7 +213,10 @@ class BrandAuditDataView(APIView):
             brand = Brand.objects.get(id=brand_id)
         except Brand.DoesNotExist:
             return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
-        return Response(serve_brand_template_json(brand, JsonTemplate.BRAND_AUDIT.slug), status=200)
+        return Response({
+            "category": serve_brand_template_json(brand, JsonTemplate.CATEGORY_VIEW.slug),
+            "dashboard":  serve_brand_template_json(brand, JsonTemplate.INSIGHTS.slug)
+        }, status=200)
 
 
 class ProductCatalogDataView(APIView):
@@ -143,7 +266,60 @@ class ReportsDataView(APIView):
         except Brand.DoesNotExist:
             return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
         # Keep backward compatibility for direct report-tree calls but prefer the unified reports endpoint.
-        return Response(serve_brand_template_json(brand, JsonTemplate.REPORTS.slug), status=200)
+        return Response({
+            "reports": serve_brand_template_json(brand, JsonTemplate.CARTESIAN_PRODUCTS_PINCODES.slug),
+            "pincodes": [
+  { "lat": 28.6517, "lng": 77.1906, "area": "Karol Bagh", "pincode": "110005" },
+  { "lat": 28.4089, "lng": 77.3178, "area": "Faridabad Sector 6", "pincode": "121006" },
+  { "lat": 28.6503, "lng": 77.1194, "area": "Rajouri Garden", "pincode": "110027" },
+  { "lat": 28.5485, "lng": 76.9855, "area": "Chhawla", "pincode": "110071" },
+  { "lat": 28.4305, "lng": 77.3056, "area": "Faridabad NIT", "pincode": "121004" },
+  { "lat": 28.7092, "lng": 77.1543, "area": "Pitampura", "pincode": "110034" },
+  { "lat": 28.5638, "lng": 77.2609, "area": "East of Kailash", "pincode": "110065" },
+  { "lat": 28.6692, "lng": 77.2315, "area": "Chandni Chowk", "pincode": "110006" },
+  { "lat": 28.5632, "lng": 77.054, "area": "Dwarka", "pincode": "110075" },
+  { "lat": 28.58, "lng": 77.195, "area": "Netaji Nagar", "pincode": "110023" },
+  { "lat": 28.4089, "lng": 77.3178, "area": "Faridabad Sector 15", "pincode": "121001" },
+  { "lat": 28.5892, "lng": 77.046, "area": "Janakpuri", "pincode": "110045" },
+  { "lat": 28.5381, "lng": 77.1971, "area": "Hauz Khas", "pincode": "110016" },
+  { "lat": 28.4595, "lng": 77.0266, "area": "Faridabad Sector 12", "pincode": "121012" },
+  { "lat": 28.6565, "lng": 77.14, "area": "Tilak Nagar", "pincode": "110018" },
+  { "lat": 28.5845, "lng": 77.1881, "area": "Chanakyapuri", "pincode": "110021" },
+  { "lat": 28.7005, "lng": 77.1678, "area": "Ashok Vihar", "pincode": "110035" },
+  { "lat": 28.7288, "lng": 77.1068, "area": "Rohini", "pincode": "110085" },
+  { "lat": 28.6842, "lng": 77.288, "area": "Shahdara", "pincode": "110032" },
+  { "lat": 28.4595, "lng": 77.0266, "area": "Gurgaon", "pincode": "122001" },
+  { "lat": 28.6905, "lng": 77.2647, "area": "Seelampur", "pincode": "110053" },
+  { "lat": 28.6304, "lng": 77.2177, "area": "Connaught Place", "pincode": "110001" },
+  { "lat": 28.6355, "lng": 77.2697, "area": "Laxmi Nagar", "pincode": "110092" },
+  { "lat": 28.626, "lng": 77.309, "area": "Mayur Vihar Phase 1", "pincode": "110091" },
+  { "lat": 28.4973, "lng": 77.088, "area": "DLF Phase 1", "pincode": "122010" },
+  { "lat": 28.5165, "lng": 77.232, "area": "Saket", "pincode": "110062" },
+  { "lat": 28.6528, "lng": 77.2848, "area": "Krishna Nagar", "pincode": "110051" },
+  { "lat": 28.523, "lng": 77.2145, "area": "Malviya Nagar", "pincode": "110017" },
+  { "lat": 28.619, "lng": 76.997, "area": "Najafgarh", "pincode": "110072" },
+  { "lat": 28.5245, "lng": 77.077, "area": "DLF Phase 2", "pincode": "122011" },
+  { "lat": 28.9931, "lng": 77.0151, "area": "Sonipat", "pincode": "131001" },
+  { "lat": 28.5382, "lng": 77.215, "area": "Lajpat Nagar", "pincode": "110024" },
+  { "lat": 28.5244, "lng": 77.2066, "area": "Greater Kailash", "pincode": "110048" },
+  { "lat": 28.4089, "lng": 77.3178, "area": "Faridabad Sector 10", "pincode": "121010" },
+  { "lat": 28.76, "lng": 77.25, "area": "Burari", "pincode": "110084" },
+  { "lat": 28.4089, "lng": 77.3178, "area": "Faridabad Sector 3", "pincode": "121003" },
+  { "lat": 28.735, "lng": 77.098, "area": "Bawana", "pincode": "110039" },
+  { "lat": 28.645, "lng": 77.209, "area": "Paharganj", "pincode": "110055" },
+  { "lat": 28.423, "lng": 77.031, "area": "Sohna", "pincode": "122104" },
+  { "lat": 28.6825, "lng": 77.178, "area": "Wazirpur", "pincode": "110052" },
+  { "lat": 28.474, "lng": 77.04, "area": "Badshahpur", "pincode": "122101" },
+  { "lat": 28.6351, "lng": 77.2337, "area": "Daryaganj", "pincode": "110002" },
+  { "lat": 28.38, "lng": 77.42, "area": "Palwal", "pincode": "121102" },
+  { "lat": 28.682, "lng": 77.219, "area": "Civil Lines", "pincode": "110054" },
+  { "lat": 28.4595, "lng": 77.0266, "area": "Gurgaon Sector 4", "pincode": "122004" },
+  { "lat": 28.6721, "lng": 77.2663, "area": "Gandhi Nagar", "pincode": "110031" },
+  { "lat": 29.3909, "lng": 76.9635, "area": "Panipat", "pincode": "132103" },
+  { "lat": 28.608, "lng": 77.213, "area": "South Block", "pincode": "110011" },
+  { "lat": 28.628, "lng": 77.239, "area": "Gole Market", "pincode": "110004" },
+  { "lat": 28.5562, "lng": 77.1, "area": "IGI Airport", "pincode": "110037" }
+]}, status=200)
 
 
 class ContentInsightsDataView(APIView):

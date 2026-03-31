@@ -648,7 +648,7 @@ def content_insights_data_builder(task, brand_id=None, brand_name=None, template
 
         logger.info(f"Completed CONTENT_INSIGHTS JSON build for task {t_id}")
         log_success(task_id=t_id, info={'template': template, 'brand_id': brand_id})
-        return save_json_to_file(task, payload, brand_id, brand_name, template)
+        return save_json_to_file(payload, brand_name, template)
     except Exception as exc:
         logger.exception('Failed to build CONTENT_INSIGHTS JSON')
         log_error(task_id=t_id, error=str(exc), extra={'template': template, 'brand_id': brand_id})

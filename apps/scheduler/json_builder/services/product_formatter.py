@@ -490,7 +490,7 @@ class ProductFormatter:
             "upc_retailer_id": self.uid,
             "model": self.model,
             "manufacturer_part": self.manufacturer_part,
-            "sell_price": f"{self.selling_price:.2f}" if self.selling_price else "--",
+            "sell_price": f"{self.selling_price:.2f}" if self.selling_price else None,
             "sold_by": self.sold_by,
             "shipped_by": self.shipped_by,
             "description": self.description,

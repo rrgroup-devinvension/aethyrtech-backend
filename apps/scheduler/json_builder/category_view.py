@@ -260,7 +260,7 @@ def category_view_data_builder(brands, keywords, products, task, brand_id=None, 
         }
         logger.info(f"Completed CATEGORY_VIEW JSON build for task {t_id}")
         log_success(task_id=t_id, info={"brand_id": brand_id, "template": template})
-        return save_json_to_file(task, payload, brand_id, brand_name, template)
+        return save_json_to_file(payload, brand_name, template)
     except Exception:
         logger.exception('Failed to build CATEGORY_VIEW JSON')
         log_error(task_id=t_id, error='Failed to build CATEGORY_VIEW JSON')
