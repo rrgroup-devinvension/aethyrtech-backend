@@ -18,7 +18,8 @@ from .views import (
     GenerateContentView,
     ReviewsInsightsDataView,
     UpdateProductContentView,
-    contact_api
+    contact_api,
+    download_brand_file
 )
 
 urlpatterns = [
@@ -40,4 +41,5 @@ urlpatterns = [
     path("generate-content/", GenerateContentView.as_view()),
     path("update-product-content/", UpdateProductContentView.as_view()),
     path('contact/', contact_api),
+    path('download/', download_brand_file)
 ]
