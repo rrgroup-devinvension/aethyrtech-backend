@@ -29,6 +29,7 @@ from rest_framework.exceptions import NotFound, APIException
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def download_brand_file(request):
     try:
         brand_id = request.GET.get("brand_id")
@@ -91,7 +92,10 @@ def download_brand_file(request):
         # RETURN FILE
         # ===============================
         response = FileResponse(open(full_path, "rb"))
-        response["Content-Disposition"] = f'attachment; filename="{os.path.basename(full_path)}"'
+        if file_type == "html":
+            response["Content-Disposition"] = f'inline; filename="{os.path.basename(full_path)}"'
+        else:
+            response["Content-Disposition"] = f'attachment; filename="{os.path.basename(full_path)}"'
 
         return response
 
