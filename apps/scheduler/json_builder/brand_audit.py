@@ -143,7 +143,7 @@ def brand_audit_data_builder(brands, keywords, products, task, brand_id=None, br
             }
         }
         logger.info(f"Completed BRAND_AUDIT JSON build for task {getattr(task, 'id', 'unknown')}")
-        return save_json_to_file(task, audit, brand_id, brand_name, template)
+        return save_json_to_file(audit, brand_name, template)
     except Exception as exc:
         logger.exception("BRAND_AUDIT JSON failed", exc)
         log_error(task_id=t_id, error=str(exc), extra={'template': template, 'brand_id': brand_id})

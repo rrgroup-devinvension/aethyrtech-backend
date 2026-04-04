@@ -128,7 +128,4 @@ def generate_brand_graph(brand: Brand):
         }
 
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        raise e

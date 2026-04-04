@@ -4,49 +4,59 @@ from apps.tasks.services.gen_utils import (
     save_or_update_brand_json
 )
 from apps.brand.models import Brand
+from datetime import datetime
 import random
 
 
 def generate_positive_data(brand: Brand):
     try:
         # ===============================
-        # 1. LOAD DATA (same as PHP)
+        # 1. LOAD DATA (WITH FALLBACK)
         # ===============================
         try:
             pincode_data = serve_brand_template_json(
                 brand, JsonTemplate.CARTESIAN_PRODUCTS_PINCODES.slug
             )
         except Exception:
-            raise Exception("Failed to load pincode data")
+            pincode_data = {"Sheet1": []}
 
         try:
             catalog_data = serve_brand_template_json(
                 brand, JsonTemplate.CATALOG.slug
             )
         except Exception:
-            raise Exception("Failed to load catalog data")
+            catalog_data = {"Sheet1": []}
 
-        keyword_data = serve_brand_template_json(
-            brand, JsonTemplate.KEYWORD_COUNTS.slug
-        )
+        try:
+            keyword_data = serve_brand_template_json(
+                brand, JsonTemplate.KEYWORD_COUNTS.slug
+            )
+        except Exception:
+            keyword_data = {"Sheet1": []}
 
         # ===============================
-        # VALIDATION
+        # 2. VALIDATION
         # ===============================
         if "Sheet1" not in pincode_data:
             raise Exception("cartesian_products_pincodes.json missing 'Sheet1' key.")
 
         rows = pincode_data["Sheet1"]
 
-        brands = list(set([r.get("Brand") for r in rows if r.get("Brand")]))
-        total_listing_count = len(rows)
+        # Avoid division by zero
+        total_listing_count = len(rows) or 1
 
-        total_pins = len(set([r.get("Pincode") for r in rows if r.get("Pincode")]))
+        # Preserve order like PHP array_unique
+        brands = list(dict.fromkeys(
+            r.get("Brand") for r in rows if r.get("Brand")
+        ))
+
+        # IMPORTANT: match PHP behavior (include nulls also)
+        total_pins = len(set(r.get("Pincode") for r in rows))
 
         all_brand_stats = {}
 
         # ===============================
-        # HELPERS (same as PHP)
+        # HELPERS
         # ===============================
         def get_brand_catalog(brand_name):
             for key, items in catalog_data.items():
@@ -80,36 +90,39 @@ def generate_positive_data(brand: Brand):
             return brand_kws
 
         # ===============================
-        # MAIN LOOP
+        # 3. MAIN LOOP
         # ===============================
         for b in brands:
 
             brand_rows = [r for r in rows if r.get("Brand") == b]
-            brand_catalog = get_brand_catalog(b)
-            brand_kws = get_brand_keywords(b)
-
             if not brand_rows:
                 continue
 
+            brand_catalog = get_brand_catalog(b)
+            brand_kws = get_brand_keywords(b)
+
             # -------------------------------
-            # 1. CORE METRICS
+            # CORE METRICS
             # -------------------------------
             share = (len(brand_rows) / total_listing_count) * 100
 
-            avg_price = sum(r.get("Current Price (₹)", 0) for r in brand_rows) / len(brand_rows)
+            # Match PHP behavior: ignore missing values
+            prices = [r["Current Price (₹)"] for r in brand_rows if "Current Price (₹)" in r]
+            avg_price = (sum(prices) / len(prices)) if prices else 0
 
-            brand_pins = len(set([r.get("Pincode") for r in brand_rows]))
+            ratings = [r["Rating"] for r in brand_rows if "Rating" in r]
+            avg_rating = (sum(ratings) / len(ratings)) if ratings else 0
+
+            brand_pins = len(set(r.get("Pincode") for r in brand_rows))
             coverage = (brand_pins / total_pins) * 100 if total_pins else 0
 
-            avg_rating = sum(r.get("Rating", 0) for r in brand_rows) / len(brand_rows)
-
-            health_scores = [p.get("health_score", 50) for p in brand_catalog]
-            avg_health = sum(health_scores) / len(health_scores) if health_scores else 50
+            health_scores = [p.get("health_score") for p in brand_catalog if "health_score" in p]
+            avg_health = (sum(health_scores) / len(health_scores)) if health_scores else 50
 
             # -------------------------------
-            # 2. ANXIETY + CONVERSION
+            # ANXIETY + CONVERSION
             # -------------------------------
-            total_cat = len(brand_catalog) if brand_catalog else 1
+            total_cat = len(brand_catalog) or 1
 
             missing_media = (
                 sum(1 for p in brand_catalog
@@ -125,17 +138,16 @@ def generate_positive_data(brand: Brand):
 
             anxiety = min(
                 5.0,
-                round(3.0 + (missing_reviews / 100 * 1.0) + (missing_media / 100 * 1.0), 1)
+                round(3.0 + (missing_reviews / 100) + (missing_media / 100), 1)
             )
 
-            # EXACT PHP FORMULA
             conversion = round(
                 250 + (avg_rating * 20) - (anxiety * 10) + random.randint(0, 50),
                 1
             )
 
             # -------------------------------
-            # 3. SEO OPPORTUNITIES (DESC)
+            # SEO OPPORTUNITIES
             # -------------------------------
             opportunities = []
 
@@ -147,9 +159,7 @@ def generate_positive_data(brand: Brand):
                     reverse=True
                 )
 
-                top_kws = sorted_kws[:10]
-
-                for kw, stats in top_kws:
+                for kw, stats in sorted_kws[:10]:
                     presence = (
                         (stats["present"] / stats["total"]) * 100
                         if stats["total"] else 0
@@ -177,7 +187,7 @@ def generate_positive_data(brand: Brand):
             }
 
         # ===============================
-        # 3. RANKING
+        # 4. RANKING
         # ===============================
         sorted_brands = sorted(
             all_brand_stats.items(),
@@ -193,11 +203,14 @@ def generate_positive_data(brand: Brand):
             ranked_stats[brand_name] = stats
             rank += 1
 
-        # ===============================
-        # 4. MARKET AVERAGE
-        # ===============================
         values = list(ranked_stats.values())
 
+        if not values:
+            raise Exception("No brand stats generated")
+
+        # ===============================
+        # 5. MARKET AVERAGE
+        # ===============================
         market_avg = {
             "conversion": round(sum(v["conversion"] for v in values) / len(values), 1),
             "share": round(sum(v["share"] for v in values) / len(values), 1),
@@ -210,13 +223,17 @@ def generate_positive_data(brand: Brand):
             ),
         }
 
+        # ===============================
+        # 6. FINAL OUTPUT
+        # ===============================
         output = {
             "brands": ranked_stats,
-            "marketAvg": market_avg
+            "marketAvg": market_avg,
+            "last_updated": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
 
         # ===============================
-        # 5. SAVE
+        # 7. SAVE
         # ===============================
         save_or_update_brand_json(
             brand,
@@ -230,7 +247,4 @@ def generate_positive_data(brand: Brand):
         }
 
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        raise e

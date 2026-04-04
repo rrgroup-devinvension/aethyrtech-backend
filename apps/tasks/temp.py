@@ -171,10 +171,10 @@ def json_build():
         id=1,
         entity_id=1,
         extra_context={
-            "brand_id": 2,
-            "brand_name": "Motorola",
+            "brand_id": 1,
+            "brand_name": "HP",
             "platform_type": ["marketplace", "quick_commerce"],
-            "templates": ["product-reviews", "keyword-counts"]
+            "templates": ["brand-audit"]
         }
     )
     perform_json_build(task)

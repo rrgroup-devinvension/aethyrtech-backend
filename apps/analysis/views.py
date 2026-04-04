@@ -20,6 +20,84 @@ from rest_framework.permissions import AllowAny
 from rest_framework.decorators import api_view, permission_classes
 
 
+import os
+from django.conf import settings
+from django.http import FileResponse
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework.exceptions import NotFound, APIException
+
+
+@api_view(["GET"])
+def download_brand_file(request):
+    try:
+        brand_id = request.GET.get("brand_id")
+        template = request.GET.get("template")
+        file_type = request.GET.get("type", "json")  # json / csv / html
+        prefix = request.GET.get("prefix")  # optional
+
+        if not brand_id or not template:
+            return Response({"error": "brand_id and template are required"}, status=400)
+
+        # ===============================
+        # GET BRAND + JSON ENTRY
+        # ===============================
+        try:
+            brand = Brand.objects.get(id=brand_id)
+        except Brand.DoesNotExist:
+            raise NotFound("Brand not found")
+
+        try:
+            bj = BrandJsonFile.objects.get(brand=brand, template=template)
+        except BrandJsonFile.DoesNotExist:
+            raise NotFound("Data not available")
+
+        if not bj.file_path:
+            raise NotFound("File path not found")
+
+        # ===============================
+        # BASE FOLDER
+        # ===============================
+        base_folder = os.path.dirname(os.path.join(settings.MEDIA_ROOT, bj.file_path))
+
+        # Extract timestamp from main JSON
+        filename = os.path.basename(bj.file_path)
+        timestamp = filename.replace(".json", "").split("-")[-1]
+
+        # ===============================
+        # CASE 1: JSON FILE
+        # ===============================
+        if file_type == "json":
+            full_path = os.path.join(settings.MEDIA_ROOT, bj.file_path)
+
+        else:
+            # ===============================
+            # CASE 2: EXTRA FILE (CSV / HTML)
+            # ===============================
+            if not prefix:
+                return Response({"error": "prefix required for non-json files"}, status=400)
+
+            # Construct expected filename
+            expected_file = f"{prefix}-{timestamp}.{file_type}"
+            full_path = os.path.join(base_folder, expected_file)
+
+        # ===============================
+        # VALIDATION
+        # ===============================
+        if not os.path.exists(full_path):
+            raise NotFound(f"File not found: {full_path}")
+
+        # ===============================
+        # RETURN FILE
+        # ===============================
+        response = FileResponse(open(full_path, "rb"))
+        response["Content-Disposition"] = f'attachment; filename="{os.path.basename(full_path)}"'
+
+        return response
+
+    except Exception as e:
+        raise APIException(str(e))
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def contact_api(request):
@@ -116,7 +194,7 @@ class BrandDashboardDataView(APIView):
             brand = Brand.objects.get(id=brand_id)
         except Brand.DoesNotExist:
             return Response({"error": f"Brand with id {brand_id} not found"}, status=404)
-        return Response(serve_brand_template_json(brand, JsonTemplate.BRAND_DASHBOARD.slug), status=200)
+        return Response(serve_brand_template_json(brand, JsonTemplate.RISK_DATA.slug), status=200)
 
 
 class InsightsDataView(APIView):

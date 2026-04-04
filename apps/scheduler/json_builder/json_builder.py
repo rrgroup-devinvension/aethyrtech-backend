@@ -20,26 +20,20 @@ from apps.scheduler.utility.jsonbuilder_api_logger import log_start, log_success
 logger = logging.getLogger(__name__)
 
 def build_json(brands, keywords, products, task, brand_id, brand_name, template, platform_type):
-    if template == JsonTemplate.BRAND_DASHBOARD.slug:
-        return brand_dashboard_data_builder(task, brand_id, brand_name, template, platform_type)
-    elif template == JsonTemplate.CATEGORY_VIEW.slug:
-        return category_view_data_builder(brands, keywords, products, task, brand_id, brand_name, template, platform_type)
-    elif template == JsonTemplate.BRAND_AUDIT.slug:
+    if template == JsonTemplate.BRAND_AUDIT.slug:
         return brand_audit_data_builder(brands, keywords, products, task, brand_id, brand_name, template, platform_type)
+    elif template == JsonTemplate.CARTESIAN_PRODUCTS_PINCODES.slug:
+        return cartesian_products_pincodes_builder(brands, keywords, products, task, brand_id, brand_name, template, platform_type)
     elif template == JsonTemplate.CATALOG.slug:
         return catalog_data_builder(brands, keywords, products, task, brand_id, brand_name, template, platform_type)
-    elif template == JsonTemplate.REPORTS.slug:
-        return reports_data_builder(task, brand_id, brand_name, template, platform_type)
-    elif template == JsonTemplate.CONTENT_INSIGHTS.slug:
-        return content_insights_data_builder(task, brand_id, brand_name, template, platform_type)
+    elif template == JsonTemplate.CATEGORY_VIEW.slug:
+        return category_view_data_builder(brands, keywords, products, task, brand_id, brand_name, template, platform_type)
     elif template == JsonTemplate.KEYWORD_MATRIX.slug:
         return keyword_matrix_builder(brands, keywords, products, task, brand_id, brand_name, template, platform_type)
     elif template == JsonTemplate.KEYWORD_COUNTS.slug:
         return keyword_counts_builder(brands, keywords, products, task, brand_id, brand_name, template, platform_type)
     elif template == JsonTemplate.PRODUCT_REVIEWS.slug:
         return product_reviews_builder(brands, keywords, products, task, brand_id, brand_name, template, platform_type)
-    elif template == JsonTemplate.CARTESIAN_PRODUCTS_PINCODES.slug:
-        return cartesian_products_pincodes_builder(brands, keywords, products, task, brand_id, brand_name, template, platform_type)
     else:
         raise DataProcessingException(message=f"Unsupported JSON template: {template}")
 
@@ -51,7 +45,7 @@ def perform_json_build(task):
     brand_id = ctx.get("brand_id") or task.entity_id
     brand_name = ctx.get("brand_name") or "Unknown Brand"
     platform_type = ctx.get("platform_type")
-    templates = ctx.get("templates") or [t.slug for t in JsonTemplate]
+    templates = ctx.get("templates") or [t.slug for t in JsonTemplate.get_automatic()]
     failures = []
     brands = get_brands(brand_id)
     brand_keywords = get_brand_platform_keywords()

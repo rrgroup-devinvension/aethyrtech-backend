@@ -32,7 +32,7 @@ class TemplateType(Enum):
 
 class JsonTemplate(Enum):
     # Automatic templates - run in global scheduled tasks
-    BRAND_AUDIT = ("brand-audit", TemplateType.MANUAL)
+    BRAND_AUDIT = ("brand-audit", TemplateType.AUTOMATIC)
     CARTESIAN_PRODUCTS_PINCODES = ("cartesian-products-pincodes", TemplateType.AUTOMATIC)
     CATALOG = ("catalog-data-complete", TemplateType.AUTOMATIC)
     CATEGORY_VIEW = ("category-view", TemplateType.AUTOMATIC)
