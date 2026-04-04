@@ -200,13 +200,14 @@ def generate_risk_data(brand: Brand):
         # 4. BENCHMARK (AVERAGES)
         # ===============================
         values = list(ranked_stats.values())
+        count = len(values) or 1
 
         benchmark = {
-            "anxiety": round(sum(v["anxiety"] for v in values) / len(values), 1),
-            "health_score": round(sum(v["health_score"] for v in values) / len(values)),
-            "description_coverage": round(sum(v["description_coverage"] for v in values) / len(values)),
-            "media_coverage": round(sum(v["media_coverage"] for v in values) / len(values)),
-            "review_coverage": round(sum(v["review_coverage"] for v in values) / len(values)),
+            "anxiety": round(sum(v["anxiety"] for v in values) / count, 1),
+            "health_score": round(sum(v["health_score"] for v in values) / count),
+            "description_coverage": round(sum(v["description_coverage"] for v in values) / count),
+            "media_coverage": round(sum(v["media_coverage"] for v in values) / count),
+            "review_coverage": round(sum(v["review_coverage"] for v in values) / count),
         }
 
         output = {
@@ -229,7 +230,4 @@ def generate_risk_data(brand: Brand):
         }
 
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        raise e

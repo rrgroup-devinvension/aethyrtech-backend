@@ -7,6 +7,7 @@ import os, json
 from rest_framework.exceptions import NotFound, APIException
 from apps.scheduler.json_builder.utils import save_json_to_file
 from django.utils import timezone
+from django.utils.text import slugify
 
 def safe_float(value, default=0.0):
     try:
@@ -16,16 +17,52 @@ def safe_float(value, default=0.0):
     except:
         return default
     
-def save_or_update_brand_json(brand, template_name, json_data):
+def save_or_update_brand_json(brand, template_name, json_data, extra_files=None):
     try:
-        # 1️⃣ Save file first
+        # Save JSON file
         filename, relative_path = save_json_to_file(
             json_data,
             brand.name,
             template_name
         )
 
-        # 2️⃣ Update or Create DB entry
+        # Extract folder + timestamp from JSON filename
+        # filename example: template-20250610123045.json
+        base_name = filename.replace(".json", "")
+        timestamp = base_name.split("-")[-1]
+
+        # Absolute folder path
+        media_sub = getattr(settings, 'SCHEDULER_JSON_MEDIA_SUBPATH', 'jsons')
+        brand_slug = slugify(brand.name)
+        folder = os.path.join(settings.MEDIA_ROOT, media_sub, brand_slug)
+
+        # Save extra files in SAME folder with SAME timestamp
+        if extra_files:
+            import csv
+
+            for file in extra_files:
+                file_ext = file["type"]
+                file_name = file["name"].replace(f".{file_ext}", "")
+
+                # NEW filename with SAME timestamp
+                final_filename = f"{file_name}-{timestamp}.{file_ext}"
+                path = os.path.join(folder, final_filename)
+
+                if file_ext == "csv":
+                    with open(path, "w", newline='', encoding="utf-8-sig") as f:
+                        writer = csv.writer(f)
+
+                        # Only write header if exists
+                        if file.get("header"):
+                            writer.writerow(file["header"])
+
+                        writer.writerows(file.get("rows", []))
+
+                elif file_ext == "html":
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(file.get("content", ""))
+
+        # DB Update
         obj, created = BrandJsonFile.objects.update_or_create(
             brand=brand,
             template=template_name,
@@ -44,7 +81,8 @@ def save_or_update_brand_json(brand, template_name, json_data):
 
     except Exception as exc:
         raise Exception(f"Failed to save/update BrandJsonFile: {str(exc)}")
-    
+
+ 
 def load_json_response(file_path):
     try:
         with open(file_path, 'r', encoding='utf-8') as f:

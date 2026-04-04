@@ -25,7 +25,7 @@ class BaseGenInsightsView(APIView):
 
         if not brand_id:
             return None, Response(
-                {"error": "brandId is required"},
+                {"message": "brandId is required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -34,7 +34,7 @@ class BaseGenInsightsView(APIView):
             return brand, None
         except Brand.DoesNotExist:
             return None, Response(
-                {"error": "Invalid brandId"},
+                {"message": "Invalid brandId"},
                 status=status.HTTP_404_NOT_FOUND
             )
         
@@ -57,7 +57,7 @@ class GenInsightsRegenerateView(BaseGenInsightsView):
         except Exception as e:
             logger.exception("Regenerate failed")
             return Response({
-                "error": str(e)
+                "message": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
 
@@ -75,7 +75,7 @@ class GenInsightsBrandGraphView(BaseGenInsightsView):
             })
         except Exception as e:
             logger.exception("Graph failed")
-            return Response({"error": str(e)}, status=500)
+            return Response({"message": str(e)}, status=500)
         
 
 class GenInsightsRiskView(BaseGenInsightsView):
@@ -91,7 +91,7 @@ class GenInsightsRiskView(BaseGenInsightsView):
                 "message": f"Risk data generated for {brand.name}"
             })
         except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            return Response({"message": str(e)}, status=500)
 
 class GenInsightsPositiveView(BaseGenInsightsView):
 
@@ -106,7 +106,7 @@ class GenInsightsPositiveView(BaseGenInsightsView):
                 "message": f"Positive data generated for {brand.name}"
             })
         except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            return Response({"message": str(e)}, status=500)
 
 class GenInsightsReviewsView(BaseGenInsightsView):
 
@@ -121,7 +121,7 @@ class GenInsightsReviewsView(BaseGenInsightsView):
                 "message": f"Reviews processed for {brand.name}"
             })
         except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            return Response({"message": str(e)}, status=500)
 
 class GenInsightsPlpView(BaseGenInsightsView):
 
@@ -136,7 +136,7 @@ class GenInsightsPlpView(BaseGenInsightsView):
                 "message": f"PLP insights generated for {brand.name}"
             })
         except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            return Response({"message": str(e)}, status=500)
 
 
 class GenInsightsPdpView(BaseGenInsightsView):
@@ -152,7 +152,7 @@ class GenInsightsPdpView(BaseGenInsightsView):
                 "message": f"PDP insights generated for {brand.name}"
             })
         except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            return Response({"message": str(e)}, status=500)
 
 
 class GenInsightsIncentiveView(BaseGenInsightsView):
@@ -168,7 +168,7 @@ class GenInsightsIncentiveView(BaseGenInsightsView):
                 "message": f"Incentive insights generated for {brand.name}"
             })
         except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            return Response({"message": str(e)}, status=500)
 
 
 
