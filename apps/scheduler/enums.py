@@ -35,10 +35,10 @@ class JsonTemplate(Enum):
     BRAND_AUDIT = ("brand-audit", TemplateType.AUTOMATIC)
     CARTESIAN_PRODUCTS_PINCODES = ("cartesian-products-pincodes", TemplateType.AUTOMATIC)
     CATALOG = ("catalog-data-complete", TemplateType.AUTOMATIC)
-    CATEGORY_VIEW = ("category-view", TemplateType.AUTOMATIC)
+    CATEGORY_VIEW = ("category", TemplateType.AUTOMATIC)
     KEYWORD_MATRIX = ("keyword-matrix", TemplateType.AUTOMATIC)
     KEYWORD_COUNTS = ("keyword-counts", TemplateType.AUTOMATIC)
-    PRODUCT_REVIEWS = ("product-reviews", TemplateType.AUTOMATIC)
+    PRODUCT_REVIEWS = ("product-reviews-ratings", TemplateType.AUTOMATIC)
     
     # Manual templates - run only when user clicks specific file
     INSIGHTS = ("insights", TemplateType.MANUAL)

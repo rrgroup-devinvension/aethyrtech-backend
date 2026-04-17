@@ -1,0 +1,20 @@
+[Unit]
+Description=Celery Beat for AethyrTech Backend
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/vhosts/staging.aethyrtech.ai/aethyrtech-backend
+
+ExecStart=/usr/bin/celery -A config beat \
+    --loglevel=info \
+    --logfile=/var/log/aethyrtech/celery_beat.log
+
+Restart=always
+
+StandardOutput=append:/var/log/aethyrtech/celery_beat_stdout.log
+StandardError=append:/var/log/aethyrtech/celery_beat_stderr.log
+
+[Install]
+WantedBy=multi-user.target

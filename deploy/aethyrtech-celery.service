@@ -1,0 +1,21 @@
+[Unit]
+Description=Celery Worker for AethyrTech Backend
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/vhosts/staging.aethyrtech.ai/aethyrtech-backend
+
+ExecStart=/usr/bin/celery -A config worker \
+    --loglevel=info \
+    -Q scheduler,celery \
+    --logfile=/var/log/aethyrtech/celery_worker.log
+
+Restart=always
+
+StandardOutput=append:/var/log/aethyrtech/celery_stdout.log
+StandardError=append:/var/log/aethyrtech/celery_stderr.log
+
+[Install]
+WantedBy=multi-user.target
