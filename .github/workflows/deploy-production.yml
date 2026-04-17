@@ -1,83 +1,68 @@
-name: 🚀 Deploy Spring Boot Backend (Production)
+name: 🚀 Deploy Django Backend (Staging)
 
 on:
   push:
     branches:
       - master
 
-env:
-  JAVA_VERSION: "21"
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    name: Build & Deploy to EC2
+    name: Deploy Django to EC2
 
     steps:
-      # 1️⃣ Checkout code
+      # 1️⃣ Checkout Code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2️⃣ Setup Java
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: temurin
-
-      # 3️⃣ Cache Maven dependencies
-      - name: Cache Maven dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-maven-
-
-      # 4️⃣ Build the application
-      - name: Build the application
-        run: ./mvnw clean package -DskipTests
-
-      # 5️⃣ Upload JAR to EC2 ✅ no tar, direct file
-      - name: Upload JAR to EC2
+      # 2️⃣ Upload Code to Server
+      - name: Upload project to server
         uses: appleboy/scp-action@v0.1.5
         with:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
-          source: "./target/*.jar"
-          target: "/opt/aethyrtech/production"
-          strip_components: 0
-          tar_tmp_path: "false"
+          source: "."
+          target: "/var/www/vhosts/staging.aethyrtech.ai/aethyrtech-backend/"
+          rm: true
 
-      # 6️⃣ Restart Spring Boot service on EC2
-      - name: Restart Spring Boot service
+      # 3️⃣ Setup & Restart Services
+      - name: Setup Django & Restart Services
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
           script: |
-            echo "Stopping service..."
-            sudo systemctl stop aethyrtech-production || true
+            set -e
 
-            echo "Moving and applying JAR..."
-            sudo mv /opt/aethyrtech/production/target/*.jar /opt/aethyrtech/production/aethyrtech-backend.jar
-            sudo chown ubuntu:ubuntu /opt/aethyrtech/production/aethyrtech-backend.jar
+            echo "📂 Navigating to project..."
+            cd /var/www/vhosts/staging.aethyrtech.ai/aethyrtech-backend
 
-            echo "Starting service..."
-            sudo systemctl start aethyrtech-production
+            echo "🐍 Activating virtualenv..."
+            source venv/bin/activate
 
+            echo "📦 Installing dependencies..."
+            pip install -r requirements.txt
+
+            echo "🛠 Running migrations..."
+            python manage.py migrate --noinput
+
+            echo "📁 Collecting static files..."
+            python manage.py collectstatic --noinput
+
+            echo "🔄 Restarting Gunicorn..."
+            sudo systemctl restart aethyrtech-gunicorn
+
+            echo "🔄 Restarting Celery..."
+            sudo systemctl restart aethyrtech-celery || true
+
+            echo "🌐 Restarting Nginx..."
+            sudo systemctl restart nginx
+
+            echo "⏳ Waiting for services..."
             sleep 5
-            sudo systemctl status aethyrtech-production --no-pager
 
-      # # ✅ 7️⃣ Health Check (Optional)
-      # - name: Health Check
-      #   run: |
-      #     sleep 10
-      #     curl -f http://${{ secrets.PROD_HOST }}:8080/actuator/health || exit 1
-
-# 🔐 GitHub Secrets Required:
-# - PROD_HOST:       Public IP of your Production EC2 Server
-# - PROD_USER:       SSH user (Example: ubuntu)
-# - PROD_SSH_KEY:    Private SSH key for connecting to EC2 (.pem)
+            echo "📊 Checking service status..."
+            sudo systemctl status aethyrtech-gunicorn --no-pager
+            sudo systemctl status aethyrtech-celery --no-pager

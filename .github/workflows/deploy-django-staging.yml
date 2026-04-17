@@ -1,4 +1,4 @@
-name: 🚀 Deploy Django + Celery (Staging)
+name: 🚀 Deploy Django Backend (Staging)
 
 on:
   push:
@@ -8,65 +8,61 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    name: Deploy Django to EC2
 
     steps:
-      # 1️⃣ Checkout
+      # 1️⃣ Checkout Code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2️⃣ Setup Python
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      # 3️⃣ Install dependencies (optional validation)
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      # 4️⃣ Upload project to EC2
-      - name: Upload project
+      # 2️⃣ Upload Code to Server
+      - name: Upload project to server
         uses: appleboy/scp-action@v0.1.5
         with:
-          host: ${{ secrets.STAGING_HOST }}
-          username: ${{ secrets.STAGING_USER }}
-          key: ${{ secrets.STAGING_SSH_KEY }}
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
           source: "."
-          target: "/opt/aethyrtech/django-staging"
+          target: "/var/www/vhosts/staging.aethyrtech.ai/aethyrtech-backend/"
+          rm: true
 
-      # 5️⃣ Restart services on EC2
-      - name: Restart Django + Celery
+      # 3️⃣ Setup & Restart Services
+      - name: Setup Django & Restart Services
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.STAGING_HOST }}
-          username: ${{ secrets.STAGING_USER }}
-          key: ${{ secrets.STAGING_SSH_KEY }}
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
           script: |
-            cd /opt/aethyrtech/django-staging
+            set -e
 
-            echo "Pull latest code..."
-            git pull origin staging || true
+            echo "📂 Navigating to project..."
+            cd /var/www/vhosts/staging.aethyrtech.ai/aethyrtech-backend
 
-            echo "Activate virtualenv..."
+            echo "🐍 Activating virtualenv..."
             source venv/bin/activate
 
-            echo "Install dependencies..."
+            echo "📦 Installing dependencies..."
             pip install -r requirements.txt
 
-            echo "Run migrations..."
+            echo "🛠 Running migrations..."
             python manage.py migrate --noinput
 
-            echo "Collect static..."
+            echo "📁 Collecting static files..."
             python manage.py collectstatic --noinput
 
-            echo "Restart services..."
-            sudo systemctl restart django-staging
-            sudo systemctl restart celery-worker-staging
-            sudo systemctl restart celery-beat-staging
+            echo "🔄 Restarting Gunicorn..."
+            sudo systemctl restart aethyrtech-gunicorn
 
-            echo "Status check:"
-            sudo systemctl status django-staging --no-pager
-            sudo systemctl status celery-worker-staging --no-pager
-            sudo systemctl status celery-beat-staging --no-pager
+            echo "🔄 Restarting Celery..."
+            sudo systemctl restart aethyrtech-celery || true
+
+            echo "🌐 Restarting Nginx..."
+            sudo systemctl restart nginx
+
+            echo "⏳ Waiting for services..."
+            sleep 5
+
+            echo "📊 Checking service status..."
+            sudo systemctl status aethyrtech-gunicorn --no-pager
+            sudo systemctl status aethyrtech-celery --no-pager
