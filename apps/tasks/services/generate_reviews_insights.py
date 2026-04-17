@@ -690,14 +690,25 @@ body{{font-family:Inter,sans-serif;background:#f8fafc;color:#1e293b;padding:32px
 </div>
 
 <script>
+window.addEventListener('load', () => {
+    setTimeout(genPDF, 1500); // Increased delay for charts/icons to render
+});
+
 async function genPDF(){
     const btn = document.querySelector(".dl-bar button");
-    btn.textContent = "⏳ Generating...";
-    btn.disabled = true;
+    if (btn) {
+        btn.textContent = "⏳ Generating...";
+        btn.disabled = true;
+    }
 
     try{
         const content = document.getElementById("pdfContent");
-        const canvas = await html2canvas(content,{scale:1.2});
+        const canvas = await html2canvas(content, {
+            scale: 1.5,
+            useCORS: true,
+            allowTaint: true,
+            logging: false
+        });
 
         const { jsPDF } = window.jspdf;
         const pdf = new jsPDF("p","mm","a4");
@@ -738,11 +749,14 @@ async function genPDF(){
         pdf.save("Alerts_Issues_Reviews.pdf");
 
     }catch(e){
+        console.error("PDF generation error:", e);
         alert("PDF failed");
     }
 
-    btn.textContent = "📥 Download as PDF";
-    btn.disabled = false;
+    if (btn) {
+        btn.textContent = "📥 Download as PDF";
+        btn.disabled = false;
+    }
 }
 </script>
 
@@ -758,10 +772,92 @@ def build_tactical_html(brand, llm_data):
     def render_sec(t, items):
         h = f"<h3>{t}</h3>"
         for i, act in enumerate(items):
-            h += f"<div style='margin-bottom:10px;padding:10px;background:#111827;color:white;border-radius:8px'><b>{i+1}. {act.get('action')}</b><br/>Owner: {act.get('owner')} | Impact: {act.get('impact')} | Priority: {act.get('priority')}</div>"
+            h += f"""
+            <div class="action-card">
+                <span class="action-title">{i+1}. {act.get('action')}</span>
+                <div class="action-meta">
+                    <b>Owner:</b> {act.get('owner')} | <b>Impact:</b> {act.get('impact')} | <b>Priority:</b> {act.get('priority')}
+                </div>
+            </div>"""
         return h
-    html = f"<body style='font-family:Arial;background:#0f172a;color:white;padding:20px'><h2>Tactical Action Plan - {brand}</h2>"
+    html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Tactical Action Plan — {brand}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body {{ font-family: 'Inter', sans-serif; background: #0f172a; color: white; padding: 40px; }}
+        .dl-bar {{ text-align: right; margin-bottom: 20px; }}
+        .dl-bar button {{
+            background: linear-gradient(135deg, #6366f1, #4f46e5);
+            color: white; border: none; padding: 10px 20px; border-radius: 8px;
+            font-weight: 700; cursor: pointer;
+        }}
+        h2 {{ color: #818cf8; margin-bottom: 24px; font-size: 28px; }}
+        h3 {{ color: #94a3b8; margin-top: 32px; margin-bottom: 16px; text-transform: uppercase; font-size: 14px; letter-spacing: 0.1em; }}
+        .action-card {{
+            margin-bottom: 16px; padding: 20px; background: #1e293b; 
+            border: 1px solid #334155; border-radius: 12px;
+        }}
+        .action-title {{ font-size: 18px; font-weight: 600; color: #f8fafc; margin-bottom: 8px; display: block; }}
+        .action-meta {{ font-size: 13px; color: #94a3b8; }}
+        .action-meta b {{ color: #cbd5e1; }}
+        @media print {{ .dl-bar {{ display: none; }} }}
+    </style>
+</head>
+<body>
+    <div class="dl-bar">
+        <button onclick="genPDF()">📥 Download as PDF</button>
+    </div>
+    <div id="pdfContent">
+        <h2>Tactical Action Plan — {brand}</h2>
+"""
     html += render_sec("Immediate", tap.get("immediate", []))
     html += render_sec("One Week", tap.get("one_week", []))
     html += render_sec("One Month", tap.get("one_month", []))
-    return html + "</body>"
+    
+    html += """
+    </div>
+    <script>
+    window.addEventListener('load', () => {
+        setTimeout(genPDF, 1500);
+    });
+
+    async function genPDF(){
+        const btn = document.querySelector(".dl-bar button");
+        if(btn) btn.disabled = true;
+
+        try {
+            const content = document.getElementById("pdfContent");
+            const canvas = await html2canvas(content, { 
+                scale: 1.5, 
+                backgroundColor: '#0f172a',
+                useCORS: true,
+                allowTaint: true,
+                logging: false
+            });
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF("p", "mm", "a4");
+
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const imgWidth = pageWidth;
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+            pdf.addImage(canvas.toDataURL("image/png"), 'PNG', 0, 0, imgWidth, imgHeight);
+            pdf.save("Tactical_Action_Plan.pdf");
+        } catch (e) {
+            console.error(e);
+            alert("PDF generation failed");
+        }
+        if(btn) btn.disabled = false;
+    }
+    </script>
+</body>
+</html>
+"""
+    return html

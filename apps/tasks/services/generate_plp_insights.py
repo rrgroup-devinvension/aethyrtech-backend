@@ -185,18 +185,24 @@ Brand's Low Performing Keywords (Opportunities):
 
 Provide insights in the exact following JSON format:
 {{
-    "plp_analysis_text": "",
-    "competitive_analysis_text": "",
-    "top_missing_opportunities": [],
-    "competitive_ranking_pulse": [],
-    "alerts_this_week": []
+    "plp_analysis_text": "A 3-4 sentence analytical summary of the brand's overall search ranking health, share of search, and keyword visibility.",
+    "competitive_analysis_text": "A 3-4 sentence analytical summary comparing {current_brand}'s average search ranking against its top competitors.",
+    "top_missing_opportunities": [
+        {{ "keyword": "Keyword Name", "potential_impact": "High", "recommendation": "Brief recommendation on what to optimize" }}
+    ],
+    "competitive_ranking_pulse": [
+        {{ "competitor": "Competitor Name", "analysis": "Brief one sentence comparison of ranking against this competitor" }}
+    ],
+    "alerts_this_week": [
+        {{ "issue": "Brief description of rank drop or visibility issue", "severity": "critical/high/medium", "pct": 15 }}
+    ]
 }}
 
 IMPORTANT:
-- top_missing_opportunities should have exactly 5 items.
-- competitive_ranking_pulse should have exactly 3 items.
+- top_missing_opportunities should have exactly 5 items based on the low performing keywords.
+- competitive_ranking_pulse should have exactly 3 items analyzing the top competitors.
 - alerts_this_week MUST have exactly 3 items.
-Do NOT include markdown formatting.
+Do NOT include markdown formatting. Return purely the JSON object..
 """
 
         response = LLMService.generate_content(prompt)

@@ -229,16 +229,20 @@ Sample of PDPs Needing Improvement (Low Health Scores):
 
 Provide insights in the exact following JSON format:
 {{
-    "pdp_analysis_text": "",
-    "competitive_analysis_text": "",
-    "content_audit_plan": [],
-    "alerts_this_week": []
+    "pdp_analysis_text": "A 3-4 sentence analytical summary of the brand's overall PDP content health and Value Proposition presentation.",
+    "competitive_analysis_text": "A 3-4 sentence analytical summary comparing {current_brand}'s PDP health, image count, and video penetration against its competitors.",
+    "content_audit_plan": [
+        {{ "area": "E.g. Images/Video", "deficiency": "Brief description of what's lacking", "recommendation": "Brief recommendation on what to optimize" }}
+    ],
+    "alerts_this_week": [
+        {{ "issue": "Brief description of a severe content issue (e.g., extremely low bullet score)", "severity": "critical/high/medium", "pct": 15 }}
+    ]
 }}
 
 IMPORTANT:
-- content_audit_plan should have exactly 4 items.
+- content_audit_plan should have exactly 4 items based on the component scores (Title, Description, Bullets, Images/Video).
 - alerts_this_week MUST have exactly 3 items.
-Do NOT include markdown formatting. Return purely JSON.
+Do NOT include markdown formatting. Return purely the JSON object.
 """
 
         response = LLMService.generate_content(prompt)

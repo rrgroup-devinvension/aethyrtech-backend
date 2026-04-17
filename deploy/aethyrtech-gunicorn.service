@@ -1,0 +1,23 @@
+[Unit]
+Description=Gunicorn for AethyrTech Backend
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/vhosts/staging.aethyrtech.ai/aethyrtech-backend
+
+ExecStart=/var/www/vhosts/staging.aethyrtech.ai/aethyrtech-backend/venv/bin/gunicorn \
+    --workers 3 \
+    --bind 127.0.0.1:8000 \
+    --access-logfile /var/log/aethyrtech/gunicorn_access.log \
+    --error-logfile /var/log/aethyrtech/gunicorn_error.log \
+    config.wsgi:application
+
+Restart=always
+
+StandardOutput=append:/var/log/aethyrtech/gunicorn_stdout.log
+StandardError=append:/var/log/aethyrtech/gunicorn_stderr.log
+
+[Install]
+WantedBy=multi-user.target

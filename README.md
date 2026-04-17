@@ -157,7 +157,7 @@ json builder
 
 python -m debugpy --listen 5678 manage.py runserver
 
-mysql -u root -p compx_db3 < compx_db.sql
+mysql -u root -p atech_new < aethyrtech.sql
 
 mysqldump -u root -p compx_db1 > store_backup.sql
 

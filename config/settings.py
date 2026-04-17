@@ -16,7 +16,7 @@ LLM_CONFIG = {
     "model":  os.getenv("LLM_MODEL", 'gemini-2.5-flash'),
 }
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
 
 INSTALLED_APPS = [
     'django.contrib.admin',
