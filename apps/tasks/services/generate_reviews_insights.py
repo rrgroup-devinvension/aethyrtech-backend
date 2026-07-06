@@ -311,7 +311,7 @@ Return purely JSON (no markdown) with:
         # PLATFORM COMPARISON
         # ===============================
         platform_comparison = {}
-        for pf in ["amazon", "flipkart"]:
+        for pf in ["amazon", "amazon_sa", "flipkart"]:
             if pf in platform_stats:
                 s = platform_stats[pf]
                 total = s["positive"] + s["neutral"] + s["negative"]

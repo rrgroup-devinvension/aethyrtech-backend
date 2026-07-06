@@ -13,66 +13,17 @@ class DummyTask:
         self.extra_context = extra_context
 
 SEARCH_KEYWORDS = [
-    "best 5G phone under 15000",
-    "mobile under 12000",
-    "best phone under 10000",
-    "5G phone under 12k",
-    "best gaming phone under 13k",
-    "mobile with 6GB RAM",
-    "128GB storage under 10k",
-    "best 5G processor mobile",
-    "mobile with 8GB RAM",
-    "best mobile for multitasking",
-    "5G phone with fast charging",
-    "budget mobile for gaming",
-    "mobile with snapdragon",
-    "best mediaTek 5G phone",
-    "5G mobile under 9000",
-    "lag free mobile under 12k",
-    "gaming mobile for bgmi",
-    "best 5G network phone",
-    "mobile with 5G bands",
-    "high speed internet phone",
-    "best phone for uber driver",
-    "mobile for long usage",
-    "budget mobile for free fire",
-    "mobile for movie watching",
-    "5G phone with clean OS",
-    "6000mAh battery mobile",
-    "120Hz display phone",
-    "big battery smartphone",
-    "Amoled display under 15k",
-    "fast charging under 10k",
-    "mobile with 33W charging",
-    "Full HD plus display mobile",
-    "screen with gorilla glass",
-    "slim 5G mobile under 15k",
-    "bezeless display phone",
-    "mobile with punch hole",
-    "bright display for sunlight",
-    "water resistant mobile",
-    "phone with stereo speakers",
-    "mobile with type C port",
-    "phone with 45W charging",
-    "mobile with blue light filter",
-    "7000mAh battery 5G phone",
-    "mobile with eye protection",
-    "leather finish mobile",
-    "mobile with in display sensor",
-    "phone with premium design",
-    "mobile with cooling system",
-    "phone with virtual RAM",
-    "mobile with reverse charging"
+    "air mattress",
 ]
 
 import time
 
 def run_bulk_quickcommerce_dump():
 
-    PINCODE = "110051"
+    PINCODE = "11461"
 
     PLATFORMS = [
-        QuickCommercePlatforms.BLINKIT
+        "noon_ksa",
     ]
 
     DELAY_SECONDS = 2   # <-- change this
@@ -83,7 +34,7 @@ def run_bulk_quickcommerce_dump():
 
         task = DummyTask(
             id=index,
-            entity_id=2,
+            entity_id=5,
             extra_context={
                 "keyword": keyword,
                 "pincode": PINCODE,
@@ -171,10 +122,10 @@ def json_build():
         id=1,
         entity_id=1,
         extra_context={
-            "brand_id": 1,
-            "brand_name": "HP",
+            "brand_id": 5,
+            "brand_name": "Sleepwell",
             "platform_type": ["marketplace", "quick_commerce"],
-            "templates": ["brand-audit"]
+            "templates": ["category"]
         }
     )
     perform_json_build(task)

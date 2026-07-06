@@ -234,7 +234,7 @@ def category_view_data_builder(brands, keywords, products, task, brand_id=None, 
     try:
         top_brands = []
         platforms = get_platform_list(platform_type)
-        platforms = [p for p in platforms]
+        platforms = [p for p in platforms if p in keywords.keys()]
         datasets = []
         for brand in brands:
             health_scores = platform_health_by_brand(products, brand, platforms)

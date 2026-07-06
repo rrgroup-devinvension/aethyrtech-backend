@@ -10,7 +10,9 @@ from apps.scheduler.utility.jsonbuilder_api_logger import log_start, log_success
 logger = logging.getLogger(__name__)
 
 def get_all_quick_products(keywords, pincodes, brands):
-    qs = QuickCommerceProduct.objects.select_related("detail")
+    qs = QuickCommerceProduct.objects.select_related("detail").filter(
+        platform="noon_ksa"
+    )
 
     product_map = {}   # product_uid -> ProductFormatter
     scraper_id = None

@@ -89,14 +89,37 @@ class XByteClient:
                 extra=str(e)
             )
 
-    def input(self, zipcode, keywords_list):
+    def input(self, zipcode, keywords_list, platform):
+
+        if platform in ["noon_ksa"]:
+            print("XBYTE API: Sending brand_input request for keywords:", keywords_list[0])
+            return self._post({
+                "endpoint": "brand_input",
+                "zipcode": zipcode,
+                "frequency": "bi-weekly",
+                "brand_keywords_list": list(keywords_list),
+                "platform": platform
+                
+            })
+        
+        print("XBYTE API: Sending input request for platform:", platform)
+
         return self._post({
             "endpoint": "input",
             "zipcode": zipcode,
             "keywords_list": list(keywords_list),
         })
+        
 
     def result(self, zipcode, keyword, platform):
+        if platform in ["noon_ksa"]:
+            print("XBYTE API: Sending brand_result request for keyword:", keyword)
+            return self._post({
+                "endpoint": "brand_result",
+                "zipcode": zipcode,
+                "brand_keyword": keyword,
+                "platform": platform,
+            })
         return self._post({
             "endpoint": "result",
             "zipcode": zipcode,

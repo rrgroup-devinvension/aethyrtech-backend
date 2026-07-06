@@ -166,6 +166,7 @@ celery -A config beat -l info
 
 celery -A config worker --loglevel=info -Q scheduler,celery
 
+For windows - 
 celery -A config worker --pool=threads --concurrency=4 --loglevel=info
 
 

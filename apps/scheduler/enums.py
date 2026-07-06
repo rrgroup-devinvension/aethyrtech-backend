@@ -7,6 +7,7 @@ class QuickCommercePlatforms(Enum):
     BLINKIT = "blinkit"
     BIGBASKET = "bigbasket"
     AMAZON_FRESH = "amazon_fresh"
+    NOON_KSA = "noon_ksa"
 
     @classmethod
     def values(cls):
@@ -14,6 +15,7 @@ class QuickCommercePlatforms(Enum):
 
 class MarketplacePlatforms(Enum):
     AMAZON = "amazon"
+    AMAZONSA = "amazon_sa"
     FLIPKART = "flipkart"
     VIJAY_SALES = "vijaysales"
     RELIANCE_DIGITAL = "reliancedigital"
