@@ -513,7 +513,8 @@ class DataDumpSyncAllView(APIView):
             try:
                 response = client.input(
                     zipcode=pincode,
-                    keywords_list=list(keywords)
+                    keywords_list=list(keywords),
+                    platform="noon_ksa"
                 )
                 stats['success'] += 1
                 # log success to datadump logger

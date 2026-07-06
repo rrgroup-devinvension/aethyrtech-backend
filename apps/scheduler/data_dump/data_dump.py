@@ -147,6 +147,9 @@ def save_products(search_obj, response):
             "sell_price": detail.get("sell_price"),
             "rating": detail.get("rating"),
             "reviews": detail.get("reviews"),
+            "brand_rating": detail.get("brand_rating"),
+            "brand_reviews": detail.get("brand_reviews"),
+            "brand_review_text": detail.get("brand_review_text"),
             "product_url": item.get("Platform url of the SKU"),
             "thumbnail": item.get("thumbnail_image_url"),
             "main_image": item.get("main_image"),
@@ -186,6 +189,9 @@ def save_products(search_obj, response):
                 "rating", "reviews", "product_url",
                 "thumbnail", "main_image",
                 "detail_page_images",
+                "brand_rating",
+                "brand_reviews",
+                "brand_review_text",
                 "platform", "keyword", "pincode"
             ],
             batch_size=500

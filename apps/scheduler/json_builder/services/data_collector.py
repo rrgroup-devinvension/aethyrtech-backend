@@ -1,5 +1,8 @@
 import logging
 import json
+import pickle
+import tempfile
+import os
 from apps.scheduler.json_builder.utils import mysql_connection
 from apps.scheduler.utility.tasks_utility import match_brands
 from apps.scheduler.json_builder.services.product_formatter import ProductFormatter
@@ -9,15 +12,51 @@ from apps.scheduler.utility.jsonbuilder_api_logger import log_start, log_success
 
 logger = logging.getLogger(__name__)
 
-def get_all_quick_products(keywords, pincodes, brands):
-    qs = QuickCommerceProduct.objects.select_related("detail").filter(
-        platform="noon_ksa"
-    )
+def chunked_queryset(queryset, chunk_size=2000):
+    last_pk = 0
+    while True:
+        chunk = list(queryset.filter(pk__gt=last_pk).order_by('pk')[:chunk_size])
+        if not chunk:
+            break
+        for obj in chunk:
+            yield obj
+        last_pk = chunk[-1].pk
 
-    product_map = {}   # product_uid -> ProductFormatter
+class DiskBackedIterable:
+    def __init__(self, generator_func, *args, **kwargs):
+        fd, self.filepath = tempfile.mkstemp(suffix=".pkl")
+        os.close(fd)
+        with open(self.filepath, 'wb') as f:
+            for item in generator_func(*args, **kwargs):
+                pickle.dump(item, f)
+                
+    def __iter__(self):
+        with open(self.filepath, 'rb') as f:
+            while True:
+                try:
+                    yield pickle.load(f)
+                except EOFError:
+                    break
+                    
+    def __del__(self):
+        try:
+            if os.path.exists(self.filepath):
+                os.remove(self.filepath)
+        except Exception:
+            pass
+
+def get_all_quick_products(keywords, pincodes, brands):
+    qs = QuickCommerceProduct.objects.select_related("detail")
+
+    qs = qs.order_by("product_uid")
+    
     scraper_id = None
     scraped_date = None
-    for p in qs.iterator(chunk_size=500):
+    
+    current_uid = None
+    current_pf = None
+
+    for p in chunked_queryset(qs, chunk_size=1000):
         d = getattr(p, "detail", None)
         if scraped_date is None:
             scraped_date = p.created_at
@@ -37,6 +76,7 @@ def get_all_quick_products(keywords, pincodes, brands):
                 'brand': p.brand
             })
             continue
+            
         product_uid = p.product_uid
         ranking_entry = {
             "platform": p.platform,
@@ -47,28 +87,27 @@ def get_all_quick_products(keywords, pincodes, brands):
         ranking_data = {
             p.pincode or "000000": [ranking_entry]
         }
-        if product_uid in product_map:
-            pf = product_map[product_uid]
-            existing_rankings = pf.rankings or {}
+        
+        if current_uid == product_uid:
+            existing_rankings = current_pf.rankings or {}
             for pin, ranks in ranking_data.items():
                 if pin not in existing_rankings:
                     existing_rankings[pin] = ranks
                 else:
-                    # Avoid duplicate same keyword+platform
-                    existing_keys = {
-                        (r["platform"], r["keyword"])
-                        for r in existing_rankings[pin]
-                    }
-
+                    existing_keys = { (r["platform"], r["keyword"]) for r in existing_rankings[pin] }
                     for r in ranks:
                         key = (r["platform"], r["keyword"])
                         if key not in existing_keys:
                             existing_rankings[pin].append(r)
-
-            pf.set_rankings(existing_rankings)
+            current_pf.set_rankings(existing_rankings)
             continue
-        pf = ProductFormatter()
-        pf.set_basic(
+            
+        if current_pf is not None and getattr(current_pf, "_is_available_correct", False):
+            yield current_pf
+            
+        current_uid = product_uid
+        current_pf = ProductFormatter()
+        current_pf.set_basic(
             uid=p.product_uid,
             keywords=keywords.get(p.platform) or [],
             status=1,
@@ -83,28 +122,32 @@ def get_all_quick_products(keywords, pincodes, brands):
             scraper_id=scraper_id,
             platform_assured=None
         )
-        pf.set_price(p.msrp, p.sell_price)
-        pf.set_media(
+        current_pf.set_price(p.msrp, p.sell_price)
+        current_pf.set_media(
             images=p.detail_page_images,
             thumbnail=p.thumbnail,
             main_image=p.main_image,
             image_count=d.image_count if d else 0,
             video_count=d.video_count if d else 0
         )
-        pf.set_rating_direct(p.rating, p.reviews)
-        pf.set_bullets(d.bullets if d else [])
-        pf.set_category(category=p.category)
-        pf.set_detail(
+        val_rating = p.rating if p.rating and str(p.rating).strip() not in ("0", "0.0", "NA") else p.brand_rating
+        val_reviews = p.reviews if p.reviews and str(p.reviews).strip() not in ("0", "0.0", "NA") else p.brand_reviews
+        
+        current_pf.set_rating_direct(val_rating, val_reviews)
+        current_pf.set_bullets(d.bullets if d else [])
+        current_pf.set_category(category=p.category)
+        current_pf.set_detail(
             model=d.model if d else None,
             manufacturer_part=getattr(d, "manufacturer_part", None),
             sold_by=d.sold_by if d else None,
             shipped_by=d.shipped_by if d else None
         )
-        pf.set_rankings(ranking_data)
-        is_available_correct = pf.set_availability(p.availability)
-        if is_available_correct:
-            product_map[product_uid] = pf
-    return list(product_map.values())
+        current_pf.set_rankings(ranking_data)
+        is_available_correct = current_pf.set_availability(p.availability)
+        current_pf._is_available_correct = is_available_correct
+        
+    if current_pf is not None and getattr(current_pf, "_is_available_correct", False):
+        yield current_pf
 
 def get_all_market_products(keywords, pincodes, brands):
     scraper_id = None
@@ -247,16 +290,22 @@ def get_all_market_products(keywords, pincodes, brands):
             })
     return formatted_products
 
+def get_all_products_generator(platform_type, keywords, pincodes, brands):
+    index = 1
+    if "quick_commerce" in platform_type:
+        for pf in get_all_quick_products(keywords, pincodes, brands):
+            pf.id = index
+            index += 1
+            yield pf
+    if "marketplace" in platform_type:
+        for pf in get_all_market_products(keywords, pincodes, brands):
+            pf.id = index
+            index += 1
+            yield pf
+
 def get_all_products(platform_type, keywords, pincodes, brands):
     platform_type = platform_type or []
     if isinstance(platform_type, str):
         platform_type = [platform_type]
-    products = []
-    if "quick_commerce" in platform_type:
-        products.extend(get_all_quick_products(keywords, pincodes, brands))
-    if "marketplace" in platform_type:
-        products.extend(get_all_market_products(keywords, pincodes, brands))
     
-    for index, pf in enumerate(products, start=1):
-        pf.id = index
-    return products
+    return DiskBackedIterable(get_all_products_generator, platform_type, keywords, pincodes, brands)

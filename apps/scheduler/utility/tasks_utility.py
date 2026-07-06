@@ -32,11 +32,15 @@ def match_brands(brands, input_brand):
     if not brands or not input_brand:
         return None
     ib = input_brand.strip().lower()
+    ib_no_hyphen = ib.replace('-', '')    
     for brand in brands:
         if not brand:
             continue
         pb = brand.strip().lower()
         if re.search(rf"\b{re.escape(pb)}\b", ib):
+            return brand
+        pb_no_hyphen = pb.replace('-', '')
+        if pb_no_hyphen and re.search(rf"\b{re.escape(pb_no_hyphen)}\b", ib_no_hyphen):
             return brand
     return None
 
