@@ -13,7 +13,7 @@ from apps.brand.models import Brand
 from apps.category.models import CategoryKeyword, CategoryPincode
 from apps.scheduler.models import BrandJsonFile
 import logging
-from .utility.service_utility import bulk_create_tasks, update_job_status, ensure_brand_json_files, ensure_keyword_pincode_single, update_entity_tracking_on_complete
+from .utility.service_utility import bulk_create_tasks, update_job_status, ensure_brand_json_files, ensure_keyword_pincode_single, update_entity_tracking_on_complete, ensure_keyword_pincodes_bulk
 from apps.scheduler.enums import JsonTemplate
 from croniter import croniter
 import datetime
@@ -139,6 +139,20 @@ def _create_data_dump_tasks(job, scope_type, scope_id, keyword_id=None, category
             if kw.platform:
                 grouped_keywords[key]['platforms'].add(kw.platform)
             grouped_keywords[key]['categories'].add(kw.category)
+        # Pre-collect all required (keyword, pincode) pairs
+        needed_pairs = set()
+        for data in grouped_keywords.values():
+            keyword_text = data['keyword_text']
+            pincodes_seen = set()
+            for category in data['categories']:
+                for cp in category.category_pincodes.all():
+                    if not cp.pincode or cp.pincode in pincodes_seen:
+                        continue
+                    pincodes_seen.add(cp.pincode)
+                    needed_pairs.add((keyword_text, cp.pincode))
+                    
+        kp_map = ensure_keyword_pincodes_bulk(list(needed_pairs))
+
         for data in grouped_keywords.values():
             keyword_text = data['keyword_text']
             platforms = list(data['platforms'])
@@ -150,7 +164,7 @@ def _create_data_dump_tasks(job, scope_type, scope_id, keyword_id=None, category
                         continue
 
                     pincodes_seen.add(cp.pincode)
-                    kp = ensure_keyword_pincode_single(keyword_text, cp)
+                    kp = kp_map.get((keyword_text, cp.pincode))
 
                     tasks_to_create.append({
                         'task_type': Task.TaskType.DATA_DUMP,
@@ -197,6 +211,20 @@ def _create_data_dump_tasks(job, scope_type, scope_id, keyword_id=None, category
             if kw.platform:
                 grouped_keywords[key]['platforms'].add(kw.platform)
             grouped_keywords[key]['categories'].add(kw.category)
+        # Pre-collect all required (keyword, pincode) pairs
+        needed_pairs = set()
+        for data in grouped_keywords.values():
+            keyword_text = data['keyword_text']
+            pincodes_seen = set()
+            for category in data['categories']:
+                for cp in category.category_pincodes.all():
+                    if not cp.pincode or cp.pincode in pincodes_seen:
+                        continue
+                    pincodes_seen.add(cp.pincode)
+                    needed_pairs.add((keyword_text, cp.pincode))
+                    
+        kp_map = ensure_keyword_pincodes_bulk(list(needed_pairs))
+        
         for data in grouped_keywords.values():
             keyword_text = data['keyword_text']
             platforms = list(data['platforms'])
@@ -207,7 +235,7 @@ def _create_data_dump_tasks(job, scope_type, scope_id, keyword_id=None, category
                     if not cp.pincode or cp.pincode in pincodes_seen:
                         continue
                     pincodes_seen.add(cp.pincode)
-                    kp = ensure_keyword_pincode_single(keyword_text, cp)
+                    kp = kp_map.get((keyword_text, cp.pincode))
                     tasks_to_create.append({
                         'task_type': Task.TaskType.DATA_DUMP,
                         'entity_type': Task.EntityType.KEYWORD_PINCODE,
@@ -274,10 +302,16 @@ def _create_data_dump_tasks(job, scope_type, scope_id, keyword_id=None, category
                         }
                     if kw.platform:
                         grouped_keywords[key]['platforms'].add(kw.platform)
+                needed_pairs = set()
+                for data in grouped_keywords.values():
+                    needed_pairs.add((data['keyword_text'], category_pincode.pincode))
+                    
+                kp_map = ensure_keyword_pincodes_bulk(list(needed_pairs))
+
                 for data in grouped_keywords.values():
                     keyword_text = data['keyword_text']
                     platforms = list(data['platforms'])
-                    kp = ensure_keyword_pincode_single(keyword_text, category_pincode)
+                    kp = kp_map.get((keyword_text, category_pincode.pincode))
 
                     tasks_to_create.append({
                         'task_type': Task.TaskType.DATA_DUMP,

@@ -5,11 +5,12 @@ from apps.scheduler.utility.tasks_utility import match_brand, get_platform_list
 from apps.scheduler.json_builder.keyword_counts import count_occurrence
 from django.utils import timezone
 from apps.scheduler.utility.jsonbuilder_api_logger import log_start, log_success, log_error
+import re
 
 logger = logging.getLogger(__name__)
 
 
-def build_brand_stats(products, brand):
+def build_brand_stats(matched_products, brand):
 
     total_price = 0
     price_count = 0
@@ -19,11 +20,11 @@ def build_brand_stats(products, brand):
     rating_count = 0
     total_reviews = 0
     total_videos = 0
-    found = False
-    for p in products:
-        if not p.brand or not match_brand(brand, p.brand):
-            continue
-        found = True
+    
+    if not matched_products:
+        return None
+        
+    for p in matched_products:
         if p.selling_price:
             total_price += p.selling_price
             price_count += 1
@@ -35,8 +36,7 @@ def build_brand_stats(products, brand):
             rating_count += 1
         total_reviews += p.review_count or 0
         total_videos += p.video_count or 0
-    if not found:
-        return None
+
     avg_price = round(total_price / price_count, 2) if price_count else 0
     avg_discount = round(total_discount / discount_count, 2) if discount_count else 0
     avg_rating = round(total_rating / rating_count, 2) if rating_count else 0
@@ -49,14 +49,12 @@ def build_brand_stats(products, brand):
         "videos": total_videos
     }
 
-def platform_health_by_brand(products, brand, platforms):
+def platform_health_by_brand(matched_products, brand, platforms):
     stats = {
         p: {"total": 0, "count": 0}
         for p in platforms
     }
-    for p in products:
-        if not p.brand or not match_brand(brand, p.brand):
-            continue
+    for p in matched_products:
         platform = (p.platform or "").lower()
         if platform not in stats:
             continue
@@ -76,23 +74,22 @@ def platform_health_by_brand(products, brand, platforms):
 def format_platform_titles(platforms):
     return [p.replace("_", " ").title().replace(" ", "") for p in platforms]
 
-def build_availability_by_brand(products, brands):
+def build_availability_by_brand(brand_products_map, brands):
     result = []
     for brand in brands:
+        matched_products = brand_products_map.get(brand, [])
+        if not matched_products:
+            continue
+            
         available_count = 0
         unavailable_count = 0
-        found = False
-        for p in products:
-            if not p.brand or not match_brand(brand, p.brand):
-                continue
-            found = True
+        for p in matched_products:
             status = (p.availability_status or "").lower()
             if status == "available":
                 available_count += 1
             else:
                 unavailable_count += 1
-        if not found:
-            continue
+                
         result.append({
             "Brand": brand,
             "SKU": str(available_count),
@@ -101,23 +98,24 @@ def build_availability_by_brand(products, brands):
     return result
 
 
-def build_category_data(products, brands):
+def build_category_data(brand_products_map, brands):
     result = []
     total_skus = 0
     total_live = 0
     total_health = 0
     total_health_count = 0
+    
     for brand in brands:
+        matched_products = brand_products_map.get(brand, [])
+        if not matched_products:
+            continue
+            
         sku_count = 0
         live_count = 0
         health_sum = 0
         health_count = 0
-        last_run = None
-        found = False
-        for p in products:
-            if not p.brand or not match_brand(brand, p.brand):
-                continue
-            found = True
+        
+        for p in matched_products:
             sku_count += 1
             # Availability
             if (p.availability_status or "").lower() == "available":
@@ -126,12 +124,7 @@ def build_category_data(products, brands):
             score = p.health_score()
             health_sum += score
             health_count += 1
-            # Last Run Date
-            # if p.scraped_date:
-            #     if not last_run or p.scraped_date > last_run:
-            #         last_run = p.scraped_date
-        if not found:
-            continue
+            
         live_percent = round((live_count / sku_count) * 100) if sku_count else 0
         avg_health = round(health_sum / health_count) if health_count else 0
         result.append({
@@ -147,6 +140,7 @@ def build_category_data(products, brands):
         total_live += live_count
         total_health += health_sum
         total_health_count += health_count
+        
     # ---------- CATEGORY SUMMARY ROW ----------
     category_live_percent = round((total_live / total_skus) * 100) if total_skus else 0
     category_avg_health = round(total_health / total_health_count) if total_health_count else 0
@@ -199,20 +193,36 @@ def prepare_topkeywords(keywords, products):
     """
     if not keywords:
         return []
-    counts = []
-    for idx, kw in enumerate(keywords):
-        if not kw:
+        
+    # Pre-parse all products into sets of words (O(P) regex operations instead of O(P * K))
+    product_word_sets = []
+    for p in products or []:
+        try:
+            t = getattr(p, 'title', '') or ''
+            d = getattr(p, 'description', '') or ''
+            b = " ".join(getattr(p, 'bullets', []) or [])
+            combined = f"{t} {d} {b}".lower()
+            product_words = set(re.findall(r'\w+', combined))
+            if product_words:
+                product_word_sets.append(product_words)
+        except Exception:
             continue
-        total = 0
-        for p in products or []:
-            try:
-                total += count_occurrence(getattr(p, 'title', '') or '', kw)
-                total += count_occurrence(getattr(p, 'description', '') or '', kw)
-                bullets_text = " ".join(getattr(p, 'bullets', []) or [])
-                total += count_occurrence(bullets_text, kw)
-            except Exception:
-                # ignore errors on individual products
-                continue
+            
+    # Pre-parse keywords
+    kw_word_lists = []
+    for kw in keywords:
+        if kw:
+            kw_words = re.findall(r'\w+', kw.lower())
+            if kw_words:
+                kw_word_lists.append((kw, kw_words))
+            
+    counts = []
+    for idx, (kw, kw_words) in enumerate(kw_word_lists):
+        # O(1) hash set lookup
+        total = sum(
+            1 for product_words in product_word_sets
+            if any(w in product_words for w in kw_words)
+        )
         counts.append((kw, total, idx))
 
     # sort by total desc, tie-break by original index asc
@@ -236,12 +246,24 @@ def category_view_data_builder(brands, keywords, products, task, brand_id=None, 
         platforms = get_platform_list(platform_type)
         platforms = [p for p in platforms if p in keywords.keys()]
         datasets = []
+        
+        # O(P*B) Grouping exactly once rather than looping in every aggregator
+        brand_products_map = {b: [] for b in brands}
+        for p in products:
+            if not p.brand: continue
+            for b in brands:
+                if match_brand(b, p.brand):
+                    brand_products_map[b].append(p)
+                    break
+        
         for brand in brands:
-            health_scores = platform_health_by_brand(products, brand, platforms)
+            matched_products = brand_products_map.get(brand, [])
+            health_scores = platform_health_by_brand(matched_products, brand, platforms)
             datasets.append({ "label": brand, "data": health_scores})
 
         for b in brands:
-            stats = build_brand_stats(products, b)
+            matched_products = brand_products_map.get(b, [])
+            stats = build_brand_stats(matched_products, b)
             if stats:
                 top_brands.append(stats)
 
@@ -249,8 +271,8 @@ def category_view_data_builder(brands, keywords, products, task, brand_id=None, 
 
         top_keywords = prepare_topkeywords(combined_keywords, products)
         payload = {
-            "Category Data": build_category_data(products, brands),
-            "Availability": build_availability_by_brand(products, brands),
+            "Category Data": build_category_data(brand_products_map, brands),
+            "Availability": build_availability_by_brand(brand_products_map, brands),
             "PlatformHealthScores": {
                 "labels": format_platform_titles(platforms),
                 "datasets": datasets

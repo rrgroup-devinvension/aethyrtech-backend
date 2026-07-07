@@ -328,6 +328,6 @@ def save_api_response_to_file(task, response, keyword, pincode, platform):
         "path": str(relative_path),
         "size": file_size
     })
-    # task.save(update_fields=["extra_context"])
+    task.save(update_fields=["extra_context"])
     logger.info(f"Saved JSON → {filepath}")
     return str(relative_path), file_size

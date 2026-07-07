@@ -6,24 +6,31 @@ from apps.scheduler.utility.tasks_utility import match_brand
 logger = logging.getLogger(__name__)
 from apps.scheduler.utility.jsonbuilder_api_logger import log_start, log_success, log_error
 
-def get_catalog_list(products, brand_name, is_competitor=False):
-    result = []
-    for p in products:
-        matched_brand = match_brand(brand_name, p.brand)
-        if not p.brand or not matched_brand:
-            continue
-        result.append(p.to_catalog_json(matched_brand, is_competitor))
-    return result
-
 def catalog_data_builder(brands, keywords, products, task, brand_id=None, brand_name=None, template="catalog", platform_type=None):
     t_id = getattr(task, 'id', 'unknown')
     logger.info(f"Starting CATALOG JSON build | Task={t_id}")
     try:
         log_start(task_id=t_id, info={'template': template, 'brand_id': brand_id})
-        payload = {}
-        payload[brands[0]] = get_catalog_list(products, brand_name, False)
-        for b in brands[1:]:
-            payload[b] = get_catalog_list(products, b, True)
+        payload = {b: [] for b in brands}
+        
+        for p in products:
+            if not p.brand:
+                continue
+                
+            matched_brand = None
+            is_competitor = True
+            
+            if match_brand(brand_name, p.brand):
+                matched_brand = brands[0]
+                is_competitor = False
+            else:
+                for b in brands[1:]:
+                    if match_brand(b, p.brand):
+                        matched_brand = b
+                        break
+                        
+            if matched_brand:
+                payload[matched_brand].append(p.to_catalog_json(matched_brand, is_competitor))
         logger.info(f"Completed CATALOG JSON build | Task={t_id}")
         log_success(task_id=t_id, info={'template': template, 'brand_id': brand_id})
         return save_json_to_file(payload, brand_name, template)

@@ -172,7 +172,7 @@ class DashboardDataView(APIView):
         users = User.objects.all()
         brands_count = Brand.objects.count()
         users_count = users.count()
-        scraping_logs = ScrapingLog.objects.all()
+        scraping_logs = ScrapingLog.objects.order_by("-created_at")[:50]
 
         return Response({
             "brands_count": brands_count,

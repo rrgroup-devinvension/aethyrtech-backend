@@ -35,6 +35,10 @@ class ScrapingLog(models.Model):
     class Meta:
         db_table = "scraping_logs"
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status", "platform"]),
+            models.Index(fields=["created_at"]),
+        ]
 
     def __str__(self):
         return f"[{self.platform}] {self.status} (Found: {self.products_found}, Errors: {self.errors_count})"

@@ -46,7 +46,9 @@ class DiskBackedIterable:
             pass
 
 def get_all_quick_products(keywords, pincodes, brands):
-    qs = QuickCommerceProduct.objects.select_related("detail")
+    qs = QuickCommerceProduct.objects.select_related("detail").filter(
+        platform="noon_ksa"
+    )
 
     qs = qs.order_by("product_uid")
     

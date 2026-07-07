@@ -38,20 +38,51 @@ def ensure_keyword_pincode_single(keyword, category_pincode):
         kp = KeywordPincode.objects.create(keyword=keyword_text, pincode=pincode_text)
     return kp
 
+def ensure_keyword_pincodes_bulk(pairs):
+    """
+    Ensure KeywordPincodes exist for a list of (keyword, pincode) tuples.
+    Returns a dictionary mapping (keyword, pincode) to KeywordPincode object.
+    """
+    if not pairs:
+        return {}
+        
+    keywords = set([p[0] for p in pairs])
+    pincodes = set([p[1] for p in pairs])
+    
+    existing = KeywordPincode.objects.filter(keyword__in=keywords, pincode__in=pincodes)
+    existing_map = {(kp.keyword, kp.pincode): kp for kp in existing}
+    
+    to_create = []
+    to_update = []
+    
+    for kw, pin in pairs:
+        if (kw, pin) in existing_map:
+            kp = existing_map[(kw, pin)]
+            if getattr(kp, 'is_deleted', False):
+                kp.is_deleted = False
+                to_update.append(kp)
+        else:
+            to_create.append(KeywordPincode(keyword=kw, pincode=pin))
+            
+    if to_update:
+        KeywordPincode.objects.bulk_update(to_update, ['is_deleted'])
+    if to_create:
+        created = KeywordPincode.objects.bulk_create(to_create)
+        for kp in created:
+            existing_map[(kp.keyword, kp.pincode)] = kp
+            
+    return existing_map
+
 def update_job_status(job):
 
     with transaction.atomic():
 
         job = SchedulerJob.objects.select_for_update().get(id=job.id)
 
-        tasks = job.tasks.all()
-
-        statuses = list(tasks.values_list('status', flat=True))
-
-        has_running = Task.TaskStatus.RUNNING in statuses
-        has_pending = Task.TaskStatus.PENDING in statuses
-        has_success = Task.TaskStatus.SUCCESS in statuses
-        has_failed = Task.TaskStatus.FAILED in statuses
+        has_running = job.tasks.filter(status=Task.TaskStatus.RUNNING).exists()
+        has_pending = job.tasks.filter(status=Task.TaskStatus.PENDING).exists()
+        has_success = job.tasks.filter(status=Task.TaskStatus.SUCCESS).exists()
+        has_failed = job.tasks.filter(status=Task.TaskStatus.FAILED).exists()
 
         if has_running or has_pending:
             job.status = SchedulerJob.JobStatus.RUNNING
@@ -86,8 +117,29 @@ def bulk_create_tasks(job, tasks_config):
     logger.info(f"Created {len(task_objects)} tasks for job {job.id}")
 
     saved_tasks = Task.objects.filter(scheduler_job=job)
+    
+    # Bulk update entity tracking
+    kp_updates = []
+    bj_updates = []
+    
+    bj_brand_ids = [t.entity_id for t in saved_tasks if t.task_type == Task.TaskType.JSON_BUILD and t.entity_type == Task.EntityType.JSON_FILE]
+    bj_task_map = {}
+    if bj_brand_ids:
+        bj_task_map = {b.brand_id: b for b in BrandJsonTask.objects.filter(brand_id__in=bj_brand_ids)}
+        
     for task in saved_tasks:
-        update_entity_tracking_on_start(task)
+        if task.task_type == Task.TaskType.DATA_DUMP and task.entity_type == Task.EntityType.KEYWORD_PINCODE:
+            kp_updates.append(KeywordPincode(id=task.entity_id, last_running_task=task))
+        elif task.task_type == Task.TaskType.JSON_BUILD and task.entity_type == Task.EntityType.JSON_FILE:
+            if task.entity_id and task.entity_id in bj_task_map:
+                bj = bj_task_map[task.entity_id]
+                bj.last_running_task = task
+                bj_updates.append(bj)
+                
+    if kp_updates:
+        KeywordPincode.objects.bulk_update(kp_updates, ['last_running_task'])
+    if bj_updates:
+        BrandJsonTask.objects.bulk_update(bj_updates, ['last_running_task'])
 
 def update_entity_tracking_on_start(task):
     """Update entity's last_running_task when task starts."""

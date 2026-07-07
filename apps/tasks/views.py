@@ -18,7 +18,7 @@ from apps.scheduler import service_layer
 from apps.tasks.serializers import ( SchedulerSerializer, SchedulerJobSerializer, TaskSerializer)
 from apps.brand.models import Brand
 from core.views import BaseViewSet
-from django.db.models import Q
+from django.db.models import Q, OuterRef, Subquery
 import logging
 import json
 from apps.scheduler.exceptions import ExternalAPIException
@@ -214,52 +214,116 @@ class TaskViewSet(BaseViewSet):
 class JsonBuilderBrandListView(APIView):
     permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
     def get(self, request):
-        # json_build()
-        # export_qc_products_to_excel()
-        # run_bulk_quickcommerce_dump()
-        # data_dump()
+        brand_qs = Brand.objects.filter(is_deleted=False).order_by('name')
         
-        brands = Brand.objects.filter(is_deleted=False).order_by('name')
+        page_size_str = request.query_params.get('size', '20')
+        page_str = request.query_params.get('page', '1')
+        
+        try:
+            page_size = int(page_size_str)
+            if page_size <= 0: page_size = 20
+        except ValueError:
+            page_size = 20
+            
+        try:
+            page = int(page_str)
+            if page <= 0: page = 1
+        except ValueError:
+            page = 1
+            
+        total_count = brand_qs.count()
+        
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        
+        brands = list(brand_qs[start_idx:end_idx])
+        brand_ids = [b.id for b in brands]
         json_templates = [t.slug for t in JsonTemplate]
+        
+        # 1. Bulk get/create BrandJsonTask
+        existing_brand_tasks = BrandJsonTask.objects.filter(brand_id__in=brand_ids).select_related('last_running_task', 'last_completed_task')
+        brand_task_map = {bt.brand_id: bt for bt in existing_brand_tasks}
+        
+        missing_brand_tasks = []
+        for b in brands:
+            if b.id not in brand_task_map:
+                missing_brand_tasks.append(BrandJsonTask(brand=b))
+        if missing_brand_tasks:
+            created_tasks = BrandJsonTask.objects.bulk_create(missing_brand_tasks)
+            for bt in created_tasks:
+                brand_task_map[bt.brand_id] = bt
+                
+        # 2. Bulk get/create BrandJsonFile
+        existing_json_files = BrandJsonFile.objects.filter(brand_id__in=brand_ids)
+        json_file_map = {(jf.brand_id, jf.template): jf for jf in existing_json_files}
+        
+        missing_json_files = []
+        for b in brands:
+            for template in json_templates:
+                if (b.id, template) not in json_file_map:
+                    missing_json_files.append(BrandJsonFile(brand=b, template=template))
+        if missing_json_files:
+            created_files = BrandJsonFile.objects.bulk_create(missing_json_files)
+            for jf in created_files:
+                json_file_map[(jf.brand_id, jf.template)] = jf
+                
+        # 3. Bulk fetch latest jobs (Subquery)
+        json_file_ids = [str(jf.id) for jf in json_file_map.values()]
+        brand_id_strs = [str(b_id) for b_id in brand_ids]
+        
         job_qs = SchedulerJob.objects.filter(task_group=SchedulerJob.TaskGroup.JSON_BUILD)
         global_job = job_qs.filter(scope_type=SchedulerJob.ScopeType.GLOBAL).order_by('-created_at').first()
+        
+        latest_job_subquery = SchedulerJob.objects.filter(
+            task_group=SchedulerJob.TaskGroup.JSON_BUILD,
+            scope_type=OuterRef('scope_type'),
+            scope_id=OuterRef('scope_id')
+        ).order_by('-created_at').values('id')[:1]
+        
+        all_job_scopes = brand_id_strs + json_file_ids
+        
+        relevant_jobs = SchedulerJob.objects.filter(
+            task_group=SchedulerJob.TaskGroup.JSON_BUILD,
+            scope_id__in=all_job_scopes,
+            id=Subquery(latest_job_subquery)
+        )
+        
+        brand_job_map = {}
+        json_job_map = {}
+        for j in relevant_jobs:
+            if j.scope_type == SchedulerJob.ScopeType.BRAND:
+                brand_job_map[j.scope_id] = j
+            elif j.scope_type == SchedulerJob.ScopeType.JSON:
+                json_job_map[j.scope_id] = j
+
+        # 4. Build response
         result = []
         for brand in brands:
-            brand_task, _ = BrandJsonTask.objects.get_or_create(brand=brand)
+            brand_task = brand_task_map[brand.id]
             brand_running_task = None
             brand_completed_task = None
             brand_status = Task.TaskStatus.PENDING
+            
             if brand_task.last_running_task:
                 t = brand_task.last_running_task
                 brand_status = t.status or Task.TaskStatus.RUNNING
                 brand_running_task = {"id": t.id,"status": t.status,"started_at": t.started_at,"ended_at": t.ended_at,}
-                brand_completed_task = None
-            # FAILED SECOND PRIORITY
             elif brand_task.error_message:
                 brand_status = Task.TaskStatus.FAILED
-                brand_running_task = None
-                brand_completed_task = None
-
-            # SUCCESS THIRD PRIORITY
             elif brand_task.last_completed_task:
                 t = brand_task.last_completed_task
                 brand_status = t.status or Task.TaskStatus.SUCCESS
                 brand_completed_task = {"id": t.id,"status": t.status,"started_at": t.started_at,"ended_at": t.ended_at,}
-                brand_running_task = None
-            # --------------------------------------------------
-            # BRAND JOB (UNCHANGED)
-            # --------------------------------------------------
+
             brand_last_job = None
-            brand_specific_job = job_qs.filter(scope_type=SchedulerJob.ScopeType.BRAND,scope_id=str(brand.id)).order_by('-created_at').first()
+            brand_specific_job = brand_job_map.get(str(brand.id))
             if brand_specific_job:
                 if not global_job or brand_specific_job.created_at > global_job.created_at:
                     brand_last_job = SchedulerJobSerializer(brand_specific_job).data
+            
             json_files = []
             for template in json_templates:
-                json_file, _ = BrandJsonFile.objects.get_or_create(
-                    brand=brand,
-                    template=template
-                )
+                json_file = json_file_map[(brand.id, template)]
                 file_status = Task.TaskStatus.PENDING
                 if json_file.last_run_status:
                     file_status = json_file.last_run_status
@@ -267,11 +331,10 @@ class JsonBuilderBrandListView(APIView):
                     file_status = Task.TaskStatus.FAILED
                 elif json_file.last_completed_time:
                     file_status = Task.TaskStatus.SUCCESS
+                    
                 json_last_job = None
-                json_scoped_job = job_qs.filter(
-                    scope_type=SchedulerJob.ScopeType.JSON,
-                    scope_id=str(json_file.id)
-                ).order_by('-created_at').first()
+                json_scoped_job = json_job_map.get(str(json_file.id))
+                
                 if json_scoped_job:
                     is_latest = True
                     if brand_specific_job and json_scoped_job.created_at <= brand_specific_job.created_at:
@@ -280,6 +343,7 @@ class JsonBuilderBrandListView(APIView):
                         is_latest = False
                     if is_latest:
                         json_last_job = SchedulerJobSerializer(json_scoped_job).data
+                        
                 json_files.append({
                     "id": json_file.id,
                     "template": json_file.template,
@@ -292,6 +356,7 @@ class JsonBuilderBrandListView(APIView):
                     "error_message": json_file.error_message,
                     "last_job": json_last_job
                 })
+                
             result.append({
                 "id": brand.id,
                 "name": brand.name,
@@ -303,7 +368,13 @@ class JsonBuilderBrandListView(APIView):
                 "last_job": brand_last_job,
                 "json_files": json_files
             })
-        return Response(result, status=200)
+            
+        return Response({
+            "results": result,
+            "count": total_count,
+            "page": page,
+            "page_size": page_size
+        }, status=status.HTTP_200_OK)
 
 class DataDumpKeywordListView(APIView):
     permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
@@ -336,6 +407,33 @@ class DataDumpKeywordListView(APIView):
         if category_id:
             keyword_qs = keyword_qs.filter(category_id=category_id)
 
+        distinct_qs = keyword_qs.values_list('keyword', flat=True).distinct()
+        
+        # Paginate distinct keywords
+        page_size_str = request.query_params.get('size', '20')
+        page_str = request.query_params.get('page', '1')
+        
+        try:
+            page_size = int(page_size_str)
+            if page_size <= 0: page_size = 20
+        except ValueError:
+            page_size = 20
+            
+        try:
+            page = int(page_str)
+            if page <= 0: page = 1
+        except ValueError:
+            page = 1
+            
+        total_count = distinct_qs.count()
+        
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        
+        paginated_keyword_texts = list(distinct_qs[start_idx:end_idx])
+        
+        # Now fetch the full objects just for these keywords
+        keyword_qs = keyword_qs.filter(keyword__in=paginated_keyword_texts)
         keyword_qs = keyword_qs.prefetch_related(
             Prefetch(
                 'category__category_pincodes',
@@ -346,14 +444,16 @@ class DataDumpKeywordListView(APIView):
         keywords = list(keyword_qs)
 
         # -------------------------------------------------
-        # 2. PRE-COLLECT KEYWORDS + PINCODES
+        # 2. PRE-COLLECT KEYWORDS + PINCODES + EXACT COMPOSITES
         # -------------------------------------------------
         keyword_texts = {k.keyword for k in keywords}
-        pincode_texts = {
-            cp.pincode
-            for k in keywords
-            for cp in k.category.category_pincodes.all()
-        }
+        pincode_texts = set()
+        exact_composite_scopes = set()
+        
+        for k in keywords:
+            for cp in k.category.category_pincodes.all():
+                pincode_texts.add(cp.pincode)
+                exact_composite_scopes.add(f"{cp.pincode}::KW::{k.keyword}")
 
         # -------------------------------------------------
         # 3. BULK FETCH KeywordPincode (MAJOR FIX)
@@ -367,45 +467,37 @@ class DataDumpKeywordListView(APIView):
         kp_map = {(kp.keyword, kp.pincode): kp for kp in kp_records}
 
         # -------------------------------------------------
-        # 4. JOB FETCH OPTIMIZED
+        # 4. JOB FETCH OPTIMIZED (SUBQUERY)
         # -------------------------------------------------
-        job_qs = SchedulerJob.objects.filter(
-            task_group=SchedulerJob.TaskGroup.DATA_DUMP
-        )
-
-        global_job = job_qs.filter(
+        global_job = SchedulerJob.objects.filter(
+            task_group=SchedulerJob.TaskGroup.DATA_DUMP,
             scope_type=SchedulerJob.ScopeType.GLOBAL
         ).order_by('-created_at').first()
 
-        keyword_jobs = job_qs.filter(
-            scope_type=SchedulerJob.ScopeType.KEYWORD,
-            scope_id__in=keyword_texts
+        all_scopes = set(keyword_texts) | pincode_texts | exact_composite_scopes
+        
+        latest_job_subquery = SchedulerJob.objects.filter(
+            task_group=SchedulerJob.TaskGroup.DATA_DUMP,
+            scope_type=OuterRef('scope_type'),
+            scope_id=OuterRef('scope_id')
+        ).order_by('-created_at').values('id')[:1]
+
+        relevant_jobs = SchedulerJob.objects.filter(
+            task_group=SchedulerJob.TaskGroup.DATA_DUMP,
+            scope_id__in=all_scopes,
+            id=Subquery(latest_job_subquery)
         )
 
-        # Pincode jobs
-        starts_q = Q()
-        for p in pincode_texts:
-            starts_q |= Q(scope_id__startswith=f"{p}::KW::")
-
-        pincode_jobs = job_qs.filter(
-            scope_type=SchedulerJob.ScopeType.PINCODE
-        ).filter(Q(scope_id__in=pincode_texts) | starts_q)
-
-        # Latest job maps
         kw_job_map = {}
-        for j in keyword_jobs:
-            if j.scope_id:
-                sid = str(j.scope_id)
-                if sid not in kw_job_map or j.created_at > kw_job_map[sid].created_at:
-                    kw_job_map[sid] = j
-
         pin_kw_map = {}
-        for j in pincode_jobs:
-            if j.scope_id and "::KW::" in j.scope_id:
-                pincode_text, kw_text = j.scope_id.split("::KW::", 1)
-                key = (pincode_text, kw_text)
-                if key not in pin_kw_map or j.created_at > pin_kw_map[key].created_at:
-                    pin_kw_map[key] = j
+        
+        for j in relevant_jobs:
+            if j.scope_type == SchedulerJob.ScopeType.KEYWORD:
+                kw_job_map[j.scope_id] = j
+            elif j.scope_type == SchedulerJob.ScopeType.PINCODE:
+                if "::KW::" in j.scope_id:
+                    pincode_text, kw_text = j.scope_id.split("::KW::", 1)
+                    pin_kw_map[(pincode_text, kw_text)] = j
 
         # -------------------------------------------------
         # 5. GROUP KEYWORDS
@@ -483,14 +575,19 @@ class DataDumpKeywordListView(APIView):
                 "last_job": SchedulerJobSerializer(keyword_last_job).data if keyword_last_job else None,
             })
 
-        return Response(result, status=status.HTTP_200_OK)
+        return Response({
+            "results": result,
+            "count": total_count,
+            "page": page,
+            "page_size": page_size
+        }, status=status.HTTP_200_OK)
 
 class DataDumpSyncAllView(APIView):
     permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
 
     def get(self, request):
         pincode_map: dict[str, set[str]] = {}
-        qs = CategoryKeyword.objects.select_related('category').all()
+        qs = CategoryKeyword.objects.select_related('category').prefetch_related('category__category_pincodes').all()
         category_id = request.query_params.get('category_id')
         if category_id:
             try:
@@ -498,7 +595,7 @@ class DataDumpSyncAllView(APIView):
             except Exception:
                 qs = qs.filter(category_id=category_id)
         for kw in qs:
-            for cp in CategoryPincode.objects.filter(category=kw.category).iterator():
+            for cp in kw.category.category_pincodes.all():
                 if not cp or not cp.pincode:
                     continue
                 pincode_map.setdefault(cp.pincode, set()).add(kw.keyword)

@@ -108,11 +108,11 @@ class SchedulerJobSerializer(serializers.ModelSerializer):
         }
 
     def get_success_list(self, obj):
-        qs = self._task_qs(obj).filter(status=Task.TaskStatus.SUCCESS)
+        qs = self._task_qs(obj).filter(status=Task.TaskStatus.SUCCESS)[:20]
         return [self._serialize_task_brief(t) for t in qs]
 
     def get_failed_list(self, obj):
-        qs = self._task_qs(obj).filter(status=Task.TaskStatus.FAILED)
+        qs = self._task_qs(obj).filter(status=Task.TaskStatus.FAILED)[:20]
         return [self._serialize_task_brief(t) for t in qs]
 
 

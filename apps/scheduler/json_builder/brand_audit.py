@@ -26,63 +26,70 @@ def get_audit_data(brands, products):
     - Status class based on health score
     """
 
+    brand_stats = {brand: {
+        "sku_count": 0,
+        "live_count": 0,
+        "health_sum": 0,
+        "health_count": 0,
+        "last_run": None
+    } for brand in brands}
+
+    for p in products:
+        if not p.brand:
+            continue
+            
+        matched_brand = None
+        for brand in brands:
+            if match_brand(brand, p.brand):
+                matched_brand = brand
+                break
+                
+        if not matched_brand:
+            continue
+            
+        stats = brand_stats[matched_brand]
+        stats["sku_count"] += 1
+        
+        if (p.availability_status or "").lower() == "available":
+            stats["live_count"] += 1
+            
+        try:
+            score = p.health_score()
+        except Exception:
+            score = 0
+            
+        stats["health_sum"] += score
+        stats["health_count"] += 1
+        
+        if getattr(p, "scraped_date", None):
+            sd = p.scraped_date
+            if isinstance(sd, datetime):
+                sd = sd.date()
+            if not stats["last_run"] or sd > stats["last_run"]:
+                stats["last_run"] = sd
+
     rows = []
-
     for brand in brands:
-        sku_count = 0
-        live_count = 0
-        health_sum = 0
-        health_count = 0
-        last_run = None
-        found = False
-
-        for p in products:
-            if not p.brand or not match_brand(brand, p.brand):
-                continue
-            found = True
-            sku_count += 1
-            # Availability
-            if (p.availability_status or "").lower() == "available":
-                live_count += 1
-            # Health score 
-            try:
-                score = p.health_score()
-            except Exception:
-                score = 0
-            health_sum += score
-            health_count += 1
-            # Last run date
-            # Last run date
-            if getattr(p, "scraped_date", None):
-                sd = p.scraped_date
-                # Convert datetime -> date
-                if isinstance(sd, datetime):
-                    sd = sd.date()
-                if not last_run or sd > last_run:
-                    last_run = sd
-                    if not found:
-                        continue
-        # ---------- Calculations ----------
+        stats = brand_stats[brand]
         live_percent = 100
-        avg_health = round(health_sum / health_count) if health_count else 0
-        # Format last run
-        if last_run:
-            last_run_str = last_run.strftime("%d/%m/%Y")
+        avg_health = round(stats["health_sum"] / stats["health_count"]) if stats["health_count"] else 0
+        
+        if stats["last_run"]:
+            last_run_str = stats["last_run"].strftime("%d/%m/%Y")
         else:
             last_run_str = datetime.now().strftime("%d/%m/%Y")
-
-        # Status class (you can tweak thresholds)
+            
         if avg_health < 40:
             status_class = "status-red"
         elif avg_health < 70:
             status_class = "status-yellow"
         else:
             status_class = "status-green"
-
+            
         rows.append({
             "Audit Name": brand,
             "Frequency": "One Time",
-            "SKUs": str(sku_count),
+            "SKUs": str(stats["sku_count"]),
             "Last Run": last_run_str,
             "% Live": f"{live_percent}%",
             "Avg Health": str(avg_health),

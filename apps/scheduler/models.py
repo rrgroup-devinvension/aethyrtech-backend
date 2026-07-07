@@ -113,6 +113,11 @@ class Task(TimeStampedModel, AuditableMixin):
 
     class Meta:
         db_table = "scheduler_task"
+        indexes = [
+            models.Index(fields=["status"]),
+            models.Index(fields=["task_type"]),
+            models.Index(fields=["entity_type", "entity_id"]),
+        ]
 
     def __str__(self):
         return f"Task {self.id} [{self.task_type}] for {self.entity_type}:{self.entity_id}"
@@ -190,6 +195,10 @@ class QuickCommerceSearch(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     class Meta:
         db_table = "qc_search"
+        indexes = [
+            models.Index(fields=["task_id"]),
+            models.Index(fields=["keyword", "pincode", "platform"]),
+        ]
 
 class QuickCommerceProduct(models.Model):
     search = models.ForeignKey(
@@ -224,6 +233,8 @@ class QuickCommerceProduct(models.Model):
         indexes = [
             models.Index(fields=['product_uid']),
             models.Index(fields=['title']),
+            models.Index(fields=["keyword", "pincode", "platform"]),
+            models.Index(fields=["brand"]),
         ]
 
 class QuickCommerceProductDetail(models.Model):

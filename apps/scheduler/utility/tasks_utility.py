@@ -73,7 +73,7 @@ def get_brand_platform_keywords():
         category = brand.category
         category_platform_types = category.platform_type or []
         # ensure keywords are processed in ascending order, tie-breaking by id
-        for ck in category.category_keywords.all().order_by('order', 'id'):
+        for ck in sorted(category.category_keywords.all(), key=lambda k: (k.order or 0, k.id)):
             platform = ck.platform or "all"
             keyword = ck.keyword            
             if platform and platform != "all":
@@ -97,7 +97,7 @@ def get_brand_platform_pincodes():
     for brand in brands:
         category = brand.category
         category_platform_types = category.platform_type or []
-        for cp in category.category_pincodes.all().order_by('id'):
+        for cp in sorted(category.category_pincodes.all(), key=lambda p: p.id):
             platform = getattr(cp, "platform", None) or "all"
             pincode = cp.pincode
             if not pincode:
