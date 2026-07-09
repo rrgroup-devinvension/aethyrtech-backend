@@ -8,7 +8,7 @@ from django.db import transaction
 from apps.scheduler.data_dump.quickcommerce_client import QuickCommerceClient
 from apps.scheduler.data_dump.utils import normalize_reviews, normalize_rating, normalize_price, split_images
 from apps.scheduler.models import QuickCommerceSearch, QuickCommerceProduct, QuickCommerceProductDetail
-from apps.scheduler.enums import QuickCommercePlatforms
+from apps.platform.models import Platform
 from apps.scheduler.exceptions import SchedulerBaseException, DataProcessingException, ExternalAPIException
 logger = logging.getLogger(__name__)
 from apps.scheduler.utility.datadump_api_logger import log_success as dd_log_success, log_error as dd_log_error
@@ -23,21 +23,23 @@ def perform_data_dump(task):
 
     print("Received Task → Keyword: {}, Pincode: {}, Platforms: {}".format(keyword, pincode, platforms))
 
-    for platform in QuickCommercePlatforms:
+    quick_commerce_platforms = Platform.objects.filter(status='active', platform_type='quick_commerce').values_list('value', flat=True)
+
+    for platform_name in quick_commerce_platforms:
         try:
-            platform_name = platform.value
             if platform_name not in platforms:
-                dd_log_success(pincode=pincode, keywords=[keyword], response={"platform": platform.value, "status": "skipped"})
+                dd_log_success(pincode=pincode, keywords=[keyword], response={"platform": platform_name, "status": "skipped"})
                 continue
             response = QuickCommerceClient.fetch_results(
                 keyword=keyword,
                 pincode=pincode,
-                platform=platform.value
+                platform=platform_name
             )
             # Log datadump success for this platform
-            dd_log_success(pincode=pincode, keywords=[keyword], response={"platform": platform.value, "status": "results_present"})
+            dd_log_success(pincode=pincode, keywords=[keyword], response={"platform": platform_name, "status": "results_present"})
             file_path, file_size = save_api_response_to_file(
                 task=task,
+
                 response=response,
                 keyword=keyword,
                 pincode=pincode,

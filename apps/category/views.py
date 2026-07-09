@@ -4,6 +4,7 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from core.views import BaseViewSet
+from apps.platform.models import Platform
 from .models import Category, CategoryPincode, CategoryKeyword
 from .serializers import (
     CategorySerializer, CategoryDetailSerializer,
@@ -45,6 +46,9 @@ class CategoryViewSet(BaseViewSet):
         pincode_value = request.data.get('pincode_value', '').strip()
         city = request.data.get('city', '').strip()
         state = request.data.get('state', '').strip()
+        address = request.data.get('address', '').strip()
+        lat = request.data.get('lat')
+        lng = request.data.get('lng')
         
         if not pincode_value:
             return Response(
@@ -56,19 +60,48 @@ class CategoryViewSet(BaseViewSet):
         obj, created = CategoryPincode.objects.get_or_create(
             category=category,
             pincode=pincode_value,
-            defaults={'city': city, 'state': state}
+            defaults={'city': city, 'state': state, 'address': address, 'lat': lat, 'lng': lng}
         )
         
-        # Update city/state if provided and exists
-        if not created and (city or state):
-            if city:
-                obj.city = city
-            if state:
-                obj.state = state
+        # Update if provided and exists
+        if not created:
+            if city: obj.city = city
+            if state: obj.state = state
+            if address: obj.address = address
+            if lat is not None: obj.lat = lat
+            if lng is not None: obj.lng = lng
             obj.save()
         
         serializer = CategoryPincodeSerializer(obj)
         return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+    @action(detail=True, methods=['patch', 'put'], url_path='pincodes/update/(?P<pincode_id>[^/.]+)')
+    def update_pincode(self, request, pk=None, pincode_id=None):
+        category = self.get_object()
+        try:
+            category_pincode = CategoryPincode.objects.get(category=category, id=pincode_id)
+        except CategoryPincode.DoesNotExist:
+            return Response({'detail': 'Pincode not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = CategoryPincodeSerializer(category_pincode, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['patch', 'put'], url_path='keywords/update/(?P<keyword_id>[^/.]+)')
+    def update_keyword(self, request, pk=None, keyword_id=None):
+        category = self.get_object()
+        try:
+            category_keyword = CategoryKeyword.objects.get(category=category, id=keyword_id)
+        except CategoryKeyword.DoesNotExist:
+            return Response({'detail': 'Keyword not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = CategoryKeywordSerializer(category_keyword, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'], url_path='pincodes/upload-csv')
     def upload_pincodes_csv(self, request, pk=None):
@@ -288,6 +321,9 @@ class CategoryViewSet(BaseViewSet):
             to_update = []
             seen_in_csv = set()
             
+            # Fetch valid platform values from DB
+            valid_platforms = set(Platform.objects.filter(status='active').values_list('value', flat=True))
+            
             for row in csv_reader:
                 keyword = row.get('keyword', '').strip()
                 platform = row.get('platform', '').strip()
@@ -295,6 +331,10 @@ class CategoryViewSet(BaseViewSet):
                 
                 if not keyword or not platform:
                     skipped_count += 1
+                    continue
+                    
+                if platform not in valid_platforms:
+                    errors.append(f"Invalid platform '{platform}' found for keyword '{keyword}'.")
                     continue
                     
                 key = (keyword, platform)
@@ -325,6 +365,12 @@ class CategoryViewSet(BaseViewSet):
                         order=order_int
                     ))
                     
+            if errors:
+                return Response({
+                    'detail': 'Upload aborted. Please fix the errors in your CSV file.',
+                    'errors': errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+
             if to_create:
                 try:
                     CategoryKeyword.objects.bulk_create(to_create, ignore_conflicts=True)

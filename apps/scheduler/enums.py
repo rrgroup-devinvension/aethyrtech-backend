@@ -1,31 +1,6 @@
 from enum import Enum
 
 
-class QuickCommercePlatforms(Enum):
-    INSTAMART = "instamart"
-    ZEPTO = "zepto"
-    BLINKIT = "blinkit"
-    BIGBASKET = "bigbasket"
-    AMAZON_FRESH = "amazon_fresh"
-    NOON_KSA = "noon_ksa"
-
-    @classmethod
-    def values(cls):
-        return [item.value for item in cls]
-
-class MarketplacePlatforms(Enum):
-    AMAZON = "amazon"
-    AMAZONSA = "amazon_sa"
-    FLIPKART = "flipkart"
-    VIJAY_SALES = "vijaysales"
-    RELIANCE_DIGITAL = "reliancedigital"
-    CROMA = "croma"
-
-    @classmethod
-    def values(cls):
-        return [item.value for item in cls]
-
-
 class TemplateType(Enum):
     """Template execution type: AUTOMATIC (scheduled) or MANUAL (click-triggered)"""
     AUTOMATIC = "automatic"
@@ -76,4 +51,4 @@ class JsonTemplate(Enum):
         """Get all template slugs"""
         return [item.slug for item in cls]
 
-__all__ = ["JsonTemplate", "TemplateType", "QuickCommercePlatforms", "MarketplacePlatforms"]
+__all__ = ["JsonTemplate", "TemplateType"]

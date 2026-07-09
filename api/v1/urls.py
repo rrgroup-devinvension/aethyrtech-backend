@@ -10,4 +10,5 @@ urlpatterns = [
     path("scheduler/", include("apps.tasks.urls")),
     path("", include("apps.category.urls")),
     path("", include("apps.brand.urls")),
+    path("", include("apps.platform.urls")),
 ]

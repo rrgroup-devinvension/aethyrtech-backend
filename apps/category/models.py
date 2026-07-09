@@ -26,9 +26,12 @@ class CategoryPincode(TimeStampedModel):
     """Association between Category and Pincode."""
     
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='category_pincodes')
-    pincode = models.CharField(max_length=10)
+    pincode = models.CharField(max_length=10, blank=True, null=True)
     city = models.CharField(max_length=100, blank=True)
     state = models.CharField(max_length=100, blank=True)
+    address = models.TextField(blank=True, null=True)
+    lat = models.FloatField(blank=True, null=True)
+    lng = models.FloatField(blank=True, null=True)
 
     class Meta:
         db_table = "category_pincode"

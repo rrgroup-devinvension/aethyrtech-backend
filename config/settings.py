@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'apps.scheduler',
     'apps.tasks',
     'apps.analysis',
+    'apps.platform',
 ]
 
 REST_FRAMEWORK = {

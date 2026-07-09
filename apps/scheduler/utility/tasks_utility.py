@@ -4,8 +4,8 @@ import logging
 from apps.brand.models import Competitor, Brand
 from apps.category.models import CategoryKeyword
 import re
-from apps.scheduler.enums import QuickCommercePlatforms, MarketplacePlatforms
 from collections import defaultdict
+from apps.platform.models import Platform
 
 logger = logging.getLogger(__name__)
 
@@ -47,22 +47,25 @@ def match_brands(brands, input_brand):
 def get_all_keywords():
     return list(CategoryKeyword.objects.values_list('keyword', flat=True))
 
-PLATFORM_GROUP_MAP = {
-    "quick_commerce": [p.value for p in QuickCommercePlatforms],
-    "marketplace": [p.value for p in MarketplacePlatforms],
-}
+def get_platform_group_map():
+    map_data = defaultdict(list)
+    for p in Platform.objects.filter(status='active'):
+        map_data[p.platform_type].append(p.value)
+    return dict(map_data)
 
 def get_platform_list(platform_types: list[str]):
     result = set()
+    group_map = get_platform_group_map()
     for p_type in platform_types:
-        platforms = PLATFORM_GROUP_MAP.get(p_type)
+        platforms = group_map.get(p_type)
         if not platforms:
-            raise ValueError(f"Invalid platform group: {p_type}")
+            continue
         result.update(platforms)
     return list(result)
 
 def get_brand_platform_keywords():
     result = defaultdict(lambda: defaultdict(list))
+    platform_group_map = get_platform_group_map()
     brands = Brand.objects.filter(
         is_active=True,
         category__isnull=False
@@ -81,13 +84,14 @@ def get_brand_platform_keywords():
                 continue
             if platform == "all" or not platform:
                 for platform_type in category_platform_types:
-                    platforms = PLATFORM_GROUP_MAP.get(platform_type, [])
+                    platforms = platform_group_map.get(platform_type, [])
                     for p in platforms:
                         result[brand.name][p].append(keyword)
     return {b: dict(p) for b, p in result.items()}
 
 def get_brand_platform_pincodes():
     result = defaultdict(lambda: defaultdict(list))
+    platform_group_map = get_platform_group_map()
     brands = Brand.objects.filter(
         is_active=True,
         category__isnull=False
@@ -107,7 +111,7 @@ def get_brand_platform_pincodes():
                 continue
             if platform == "all" or not platform:
                 for platform_type in category_platform_types:
-                    platforms = PLATFORM_GROUP_MAP.get(platform_type, [])
+                    platforms = platform_group_map.get(platform_type, [])
                     for p in platforms:
                         result[brand.name][p].append(pincode)
 

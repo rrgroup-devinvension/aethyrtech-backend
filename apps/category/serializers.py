@@ -15,8 +15,20 @@ class CategoryKeywordSerializer(BaseSerializer):
 class CategoryPincodeSerializer(BaseSerializer):
     class Meta(BaseSerializer.Meta):
         model = CategoryPincode
-        fields = ('id', 'category', 'pincode', 'city', 'state', 'created_at', 'updated_at')
+        fields = ('id', 'category', 'pincode', 'city', 'state', 'address', 'lat', 'lng', 'created_at', 'updated_at')
         read_only_fields = ('id', 'created_at', 'updated_at')
+
+    def validate(self, data):
+        pincode = data.get('pincode', '')
+        address = data.get('address', '')
+        
+        if not pincode and not address:
+            raise serializers.ValidationError({"non_field_errors": ["Either pincode or address must be provided."]})
+            
+        if not pincode:
+            data['pincode'] = None
+            
+        return super().validate(data)
 
 
 class CategorySerializer(BaseSerializer):

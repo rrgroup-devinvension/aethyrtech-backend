@@ -4,7 +4,7 @@ import time
 from apps.scheduler.json_builder.utils import save_json_to_file, mysql_connection
 from django.utils import timezone
 from apps.scheduler.exceptions import DataProcessingException
-from apps.scheduler.enums import QuickCommercePlatforms, MarketplacePlatforms
+from apps.platform.models import Platform
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +38,11 @@ def brand_dashboard_data_builder(task, brand_id=None, brand_name=None, template=
     ctx = task.extra_context or {}
     brand_id = ctx.get('brand_id') or brand_id or getattr(task, 'entity_id', None)
     brand_name = ctx.get('brand_name') or brand_name or f"brand-{brand_id or 'unknown'}"
-    platform_type = ctx.get('platform_type') or platform_type
+    platform_type = ctx.get('platform_type') or platform_type or []
 
     platforms_live = 0
-    if "marketplace" in platform_type:
-        platforms_live += len(MarketplacePlatforms)
-    if "quick_commerce" in platform_type:
-        platforms_live += len(QuickCommercePlatforms)
+    if platform_type:
+        platforms_live = Platform.objects.filter(status='active', platform_type__in=platform_type).count()
     
     
     try:

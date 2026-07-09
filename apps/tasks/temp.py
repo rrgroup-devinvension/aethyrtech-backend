@@ -3,7 +3,6 @@ from apps.scheduler.data_dump.data_dump import perform_data_dump
 from apps.scheduler.models import QuickCommerceProduct
 import pandas as pd
 from django.utils.timezone import localtime, is_aware
-from apps.scheduler.enums import QuickCommercePlatforms
 
 
 class DummyTask:
@@ -138,7 +137,7 @@ def data_dump():
             "keyword": "Full HD plus display mobile",
             "pincode": "110017",
             "platforms": [
-                QuickCommercePlatforms.BLINKIT
+                "blinkit"
             ]
         }
     )
