@@ -27,33 +27,55 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
-    'core',
-    'api',
-    'apps.auths',
-    'apps.users',
-    'apps.brand',
-    'apps.category',
-    'apps.scheduler',
-    'apps.tasks',
-    'apps.analysis',
-    'apps.platform',
+    'django_filters',
+    'drf_spectacular',
+    
+    # Global Utilities
+    'shared',
+    
+    # Core Cloud
+    'core.analytics',
+    'core.authentication',
+    'core.categories',
+    'core.llm_providers',
+    'core.organizations',
+    'core.users',
+    
+    # Experience Cloud
+    'experience_cloud.analytics',
+    'experience_cloud.api_provider',
+    'experience_cloud.catalog',
+    'experience_cloud.executions',
+    'experience_cloud.json_generator',
+    'experience_cloud.market_data',
+    
+    # Identity & Media Clouds (Roots)
+    'identity_cloud',
+    'media_cloud',
+
+
 ]
 
 REST_FRAMEWORK = {
-    "DEFAULT_PAGINATION_CLASS": "core.pagination.DefaultPageNumberPagination",
-    'DEFAULT_RENDERER_CLASSES': (
-        'shared.response.StandardJSONRenderer',
-    ),
-    'EXCEPTION_HANDLER': 'shared.exceptions.exception_handler',
+    "DEFAULT_PAGINATION_CLASS": "shared.pagination.StandardResultsSetPagination",
     "PAGE_SIZE": 20,
+    "DEFAULT_RENDERER_CLASSES": (
+        "shared.response.StandardJSONRenderer",
+    ),
+    "EXCEPTION_HANDLER": "shared.exceptions.custom_exception_handler",
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
+    ],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.SessionAuthentication",
         "rest_framework.authentication.BasicAuthentication",
-        "rest_framework.authentication.TokenAuthentication",
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
 }
 
@@ -93,6 +115,7 @@ SIMPLE_JWT = {
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
+    "shared.middlewares.RequestLogMiddleware",
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -100,6 +123,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    "shared.middlewares.IdempotencyMiddleware",
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -164,7 +188,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-AUTH_USER_MODEL = 'users.User'
+AUTH_USER_MODEL = 'core_users.User'
 
 # Scheduler defaults
 # Base folder under MEDIA_ROOT where JSONs will be saved
@@ -205,3 +229,91 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'your@gmail.com'
 EMAIL_HOST_PASSWORD = 'app-password'
+
+# ============================================================================
+# Caching (Redis)
+# ============================================================================
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": os.getenv("REDIS_URL", "redis://localhost:6379/1"),
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        }
+    }
+}
+
+# ============================================================================
+# API Documentation (DRF Spectacular)
+# ============================================================================
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Aethyrtech API',
+    'DESCRIPTION': 'Domain-Driven API for Aethyrtech Cloud',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+}
+
+# ============================================================================
+# Logging Configuration
+# ============================================================================
+import os
+LOGS_DIR = os.path.join(BASE_DIR, 'logs')
+os.makedirs(LOGS_DIR, exist_ok=True)
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '[{asctime}] {levelname} [{module}] {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S'
+        },
+        'simple': {
+            'format': '[{asctime}] {levelname} {message}',
+            'style': '{',
+            'datefmt': '%H:%M:%S'
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+        'file_info': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(LOGS_DIR, 'django_info.log'),
+            'maxBytes': 1024 * 1024 * 10,  # 10 MB limit per file
+            'backupCount': 5,  # Keep up to 5 backups
+            'formatter': 'verbose',
+        },
+        'file_error': {
+            'level': 'ERROR',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(LOGS_DIR, 'django_error.log'),
+            'maxBytes': 1024 * 1024 * 10,  # 10 MB limit per file
+            'backupCount': 5,  # Keep up to 5 backups
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console', 'file_info', 'file_error'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'django.request': {
+            'handlers': ['console', 'file_info', 'file_error'],
+            'level': 'INFO',
+            'propagate': False, # Prevent duplicate logging in 'django'
+        },
+        # Catch-all for any other custom loggers in your apps
+        '': {
+            'handlers': ['console', 'file_info', 'file_error'],
+            'level': 'INFO',
+        }
+    },
+}
+

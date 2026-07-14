@@ -20,14 +20,14 @@ class StandardJSONRenderer(JSONRenderer):
             paginated_response = {
                 "success": True,
                 "data": data.get("results"),
-                "currentPage": data.get("page", 1),
-                "pageSize": data.get("page_size", len(data.get("results", []))),
-                "totalPages": (data.get("count") + data.get("page_size", 25) - 1) // data.get("page_size", 25),
+                "current_page": data.get("page", 1),
+                "page_size": data.get("page_size", len(data.get("results", []))),
+                "total_pages": data.get("pages", 1),
                 "total": data.get("count"),
-                "hasNext": data.get("page", 1) < data.get("pages", 1),
-                "hasPrevious": data.get("page", 1) > 1,
-                "isFirst": data.get("page", 1) == 1,
-                "isLast": data.get("page", 1) >= data.get("pages", 1),
+                "has_next": data.get("page", 1) < data.get("pages", 1),
+                "has_previous": data.get("page", 1) > 1,
+                "is_first": data.get("page", 1) == 1,
+                "is_last": data.get("page", 1) >= data.get("pages", 1),
                 "message": "",
                 "timestamp": now()
             }
@@ -46,27 +46,3 @@ class StandardJSONRenderer(JSONRenderer):
         # For error responses, let exception handler handle formatting
         return super().render(data, accepted_media_type, renderer_context)
 
-
-class StandardResultsSetPagination(PageNumberPagination):
-    """
-    Unified paginated response.
-    """
-    page_size = 25
-    page_size_query_param = "page_size"
-    max_page_size = 200
-
-    def get_paginated_response(self, data):
-        return Response({
-            "success": True,
-            "data": data,
-            "currentPage": self.page.number,
-            "pageSize": self.page.paginator.per_page,
-            "totalPages": self.page.paginator.num_pages,
-            "total": self.page.paginator.count,
-            "hasNext": self.page.has_next(),
-            "hasPrevious": self.page.has_previous(),
-            "isFirst": self.page.number == 1,
-            "isLast": self.page.number == self.page.paginator.num_pages,
-            "message": "",
-            "timestamp": now()
-        })

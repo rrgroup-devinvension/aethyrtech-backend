@@ -1,14 +1,8 @@
 from django.urls import path, include
-from .routers import urlpatterns as router_urls
-from apps.users.views import ProfileView, ChangePasswordView
 
 urlpatterns = [
-    path("", include(router_urls)),
-    path("analysis/", include("apps.analysis.urls")),
-    path("auth/", include("apps.auths.urls")),
-    path("users/", include("apps.users.urls")),
-    path("scheduler/", include("apps.tasks.urls")),
-    path("", include("apps.category.urls")),
-    path("", include("apps.brand.urls")),
-    path("", include("apps.platform.urls")),
+    path('core/', include('core.api.v1.urls')),
+    path('experience-cloud/', include('experience_cloud.api.v1.urls')),
+    path('identity-cloud/', include('identity_cloud.api.v1.urls')),
+    path('media-cloud/', include('media_cloud.api.v1.urls')),
 ]

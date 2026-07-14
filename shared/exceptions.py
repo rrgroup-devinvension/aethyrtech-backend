@@ -1,6 +1,5 @@
 from rest_framework.views import exception_handler as drf_exception_handler
 from rest_framework import status
-from django.utils.timezone import now
 from rest_framework.exceptions import ValidationError, PermissionDenied, NotAuthenticated
 import logging
 
@@ -11,25 +10,14 @@ class APIError(Exception):
         self.message = message
         self.status_code = status_code
 
-# with logging in files
-
-from rest_framework.views import exception_handler as drf_exception_handler
-from rest_framework.exceptions import ValidationError, PermissionDenied, NotAuthenticated
-from django.utils.timezone import now
-import logging
-
-logger = logging.getLogger(__name__)
-
-def exception_handler(exc, context):
+def custom_exception_handler(exc, context):
     """
-    Custom exception handler with user-friendly messages.
+    Custom exception handler that guarantees { status: "error", message: "...", errors: [...] } format.
     """
     response = drf_exception_handler(exc, context)
 
     if response is not None:
         request = context.get("request")
-
-        # Log error details
         logger.error(
             "Exception at %s: %s",
             request.path if request else "unknown path",
@@ -37,76 +25,36 @@ def exception_handler(exc, context):
             exc_info=True,
         )
 
-        # 1️⃣ Handle ValidationError
+        data = response.data
+        formatted_data = {
+            "success": False,
+            "message": "An error occurred.",
+            "errors": []
+        }
+
         if isinstance(exc, ValidationError):
-            data = response.data
+            formatted_data["message"] = "Validation failed."
+            if isinstance(data, dict):
+                for field, errors in data.items():
+                    if isinstance(errors, list):
+                        for error in errors:
+                            formatted_data["errors"].append({"field": field, "message": str(error)})
+                    else:
+                        formatted_data["errors"].append({"field": field, "message": str(errors)})
+            elif isinstance(data, list):
+                for error in data:
+                    formatted_data["errors"].append({"field": "non_field_errors", "message": str(error)})
 
-            # If it's a "non_field_errors" case (like invalid credentials)
-            if "non_field_errors" in data:
-                message = _friendly_message(str(data["non_field_errors"][0]))
-                response.data = {
-                    "success": False,
-                    "errorCode": "validationerror",
-                    "message": message,
-                    "path": request.path if request else None,
-                    "timestamp": now(),
-                }
-            else:
-                # Field-specific validation errors
-                response.data = {
-                    "success": False,
-                    "errorCode": "validationerror",
-                    "message": "The data you entered is invalid. Please check and try again.",
-                    "errors": data,
-                    "path": request.path if request else None,
-                    "timestamp": now(),
-                }
-
-        # 2️⃣ Forbidden
         elif isinstance(exc, PermissionDenied):
-            response.data = {
-                "success": False,
-                "errorCode": "forbidden",
-                "message": "You do not have permission to perform this action.",
-                "path": request.path if request else None,
-                "timestamp": now(),
-            }
+            formatted_data["message"] = "You do not have permission to perform this action."
 
-        # 3️⃣ Unauthorized
         elif isinstance(exc, NotAuthenticated):
-            response.data = {
-                "success": False,
-                "errorCode": "unauthorized",
-                "message": "You must be logged in to access this resource.",
-                "path": request.path if request else None,
-                "timestamp": now(),
-            }
+            formatted_data["message"] = "You must be logged in to access this resource."
 
-        # 4️⃣ Generic fallback
         else:
-            raw_message = response.data.get("detail", str(exc))
-            user_friendly_message = _friendly_message(raw_message)
-            response.data = {
-                "success": False,
-                "errorCode": getattr(exc, "default_code", "error"),
-                "message": user_friendly_message,
-                "path": request.path if request else None,
-                "timestamp": now(),
-            }
+            raw_message = data.get("detail", str(exc))
+            formatted_data["message"] = str(raw_message)
+
+        response.data = formatted_data
 
     return response
-
-
-def _friendly_message(raw_message: str) -> str:
-    """
-    Convert raw DRF error messages into user-friendly ones.
-    """
-    mapping = {
-        "Invalid email or password": "The email or password you entered is incorrect.",
-        "This field is required.": "Please fill out all required fields.",
-        "User account is inactive": "Your account is currently disabled. Contact support.",
-        "Not found.": "The requested resource could not be found.",
-        "A server error occurred.": "Something went wrong on our side. Please try again later.",
-        "Invalid token.": "Your session has expired. Please log in again."
-    }
-    return mapping.get(raw_message, raw_message)

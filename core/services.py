@@ -1,0 +1,1 @@
+# INTERNAL API: How other domains request Core data
