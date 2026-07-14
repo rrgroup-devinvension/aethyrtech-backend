@@ -146,10 +146,11 @@ def _create_data_dump_tasks(job, scope_type, scope_id, keyword_id=None, category
             pincodes_seen = set()
             for category in data['categories']:
                 for cp in category.category_pincodes.all():
-                    if not cp.pincode or cp.pincode in pincodes_seen:
+                    display_pin = cp.pincode if cp.pincode else cp.address
+                    if not display_pin or display_pin in pincodes_seen:
                         continue
-                    pincodes_seen.add(cp.pincode)
-                    needed_pairs.add((keyword_text, cp.pincode))
+                    pincodes_seen.add(display_pin)
+                    needed_pairs.add((keyword_text, display_pin))
                     
         kp_map = ensure_keyword_pincodes_bulk(list(needed_pairs))
 
@@ -160,20 +161,21 @@ def _create_data_dump_tasks(job, scope_type, scope_id, keyword_id=None, category
             pincodes_seen = set()
             for category in categories:
                 for cp in category.category_pincodes.all():
-                    if not cp.pincode or cp.pincode in pincodes_seen:
+                    display_pin = cp.pincode if cp.pincode else cp.address
+                    if not display_pin or display_pin in pincodes_seen:
                         continue
 
-                    pincodes_seen.add(cp.pincode)
-                    kp = kp_map.get((keyword_text, cp.pincode))
+                    pincodes_seen.add(display_pin)
+                    kp = kp_map.get((keyword_text, display_pin))
 
                     tasks_to_create.append({
                         'task_type': Task.TaskType.DATA_DUMP,
                         'entity_type': Task.EntityType.KEYWORD_PINCODE,
                         'entity_id': kp.id,
-                        'entity_name': f"{keyword_text} - {cp.pincode}",
+                        'entity_name': f"{keyword_text} - {display_pin}",
                         'extra_context': {
                             'keyword': keyword_text,
-                            'pincode': cp.pincode,
+                            'pincode': display_pin,
                             'platforms': platforms
                         }
                     })
@@ -183,10 +185,19 @@ def _create_data_dump_tasks(job, scope_type, scope_id, keyword_id=None, category
             category_keywords = CategoryKeyword.objects.filter(
                 category_id=category_id,
                 category__is_deleted=False,
-                category__platform_type__contains=["quick_commerce"]
-            ).select_related('category').prefetch_related(
-                'category__category_pincodes'
-            )
+                category__platform_type__contains=["quick_commerce"],
+                
+                # Filter for specific platforms
+                platform__in=["amazon_uae", "noon_uae"],
+                
+                # Filter related CategoryPincode: 
+                # Pincode is null AND address is not empty/null
+                category__category_pincodes__pincode__isnull=True,
+                category__category_pincodes__address__isnull=False
+            ).exclude(
+                # Ensure address is not an empty string
+                category__category_pincodes__address=""
+            ).select_related('category').prefetch_related('category__category_pincodes')
         # ⭐ CASE 2 — Single keyword execution (existing behaviour)
         else:
             category_keywords = CategoryKeyword.objects.filter(
@@ -218,10 +229,11 @@ def _create_data_dump_tasks(job, scope_type, scope_id, keyword_id=None, category
             pincodes_seen = set()
             for category in data['categories']:
                 for cp in category.category_pincodes.all():
-                    if not cp.pincode or cp.pincode in pincodes_seen:
+                    display_pin = cp.pincode if cp.pincode else cp.address
+                    if not display_pin or display_pin in pincodes_seen:
                         continue
-                    pincodes_seen.add(cp.pincode)
-                    needed_pairs.add((keyword_text, cp.pincode))
+                    pincodes_seen.add(display_pin)
+                    needed_pairs.add((keyword_text, display_pin))
                     
         kp_map = ensure_keyword_pincodes_bulk(list(needed_pairs))
         
@@ -232,18 +244,19 @@ def _create_data_dump_tasks(job, scope_type, scope_id, keyword_id=None, category
             pincodes_seen = set()
             for category in categories:
                 for cp in category.category_pincodes.all():
-                    if not cp.pincode or cp.pincode in pincodes_seen:
+                    display_pin = cp.pincode if cp.pincode else cp.address
+                    if not display_pin or display_pin in pincodes_seen:
                         continue
-                    pincodes_seen.add(cp.pincode)
-                    kp = kp_map.get((keyword_text, cp.pincode))
+                    pincodes_seen.add(display_pin)
+                    kp = kp_map.get((keyword_text, display_pin))
                     tasks_to_create.append({
                         'task_type': Task.TaskType.DATA_DUMP,
                         'entity_type': Task.EntityType.KEYWORD_PINCODE,
                         'entity_id': kp.id,
-                        'entity_name': f"{keyword_text} - {cp.pincode}",
+                        'entity_name': f"{keyword_text} - {display_pin}",
                         'extra_context': {
                             'keyword': keyword_text,
-                            'pincode': cp.pincode,
+                            'pincode': display_pin,
                             'platforms': platforms
                         }
                     })
@@ -261,7 +274,8 @@ def _create_data_dump_tasks(job, scope_type, scope_id, keyword_id=None, category
                 category_keywords = CategoryKeyword.objects.filter(
                     keyword=str(keyword_id),
                     category=category_pincode.category,
-                    category__platform_type__contains=["quick_commerce"]
+                    category__platform_type__contains=["quick_commerce"],
+                    platform__in=["amazon_uae", "noon_uae"]
                 )
 
                 if not category_keywords.exists():
@@ -272,14 +286,16 @@ def _create_data_dump_tasks(job, scope_type, scope_id, keyword_id=None, category
 
                 kp = ensure_keyword_pincode_single(keyword_id, category_pincode)
 
+                display_pin = category_pincode.pincode if category_pincode.pincode else category_pincode.address
+
                 tasks_to_create.append({
                     'task_type': Task.TaskType.DATA_DUMP,
                     'entity_type': Task.EntityType.KEYWORD_PINCODE,
                     'entity_id': kp.id,
-                    'entity_name': f"{keyword_id} - {category_pincode.pincode}",
+                    'entity_name': f"{keyword_id} - {display_pin}",
                     'extra_context': {
                         'keyword': keyword_id,
-                        'pincode': category_pincode.pincode,
+                        'pincode': display_pin,
                         'platforms': list(platforms)
                     }
                 })
@@ -303,24 +319,26 @@ def _create_data_dump_tasks(job, scope_type, scope_id, keyword_id=None, category
                     if kw.platform:
                         grouped_keywords[key]['platforms'].add(kw.platform)
                 needed_pairs = set()
+                display_pin = category_pincode.pincode if category_pincode.pincode else category_pincode.address
+
                 for data in grouped_keywords.values():
-                    needed_pairs.add((data['keyword_text'], category_pincode.pincode))
+                    needed_pairs.add((data['keyword_text'], display_pin))
                     
                 kp_map = ensure_keyword_pincodes_bulk(list(needed_pairs))
 
                 for data in grouped_keywords.values():
                     keyword_text = data['keyword_text']
                     platforms = list(data['platforms'])
-                    kp = kp_map.get((keyword_text, category_pincode.pincode))
+                    kp = kp_map.get((keyword_text, display_pin))
 
                     tasks_to_create.append({
                         'task_type': Task.TaskType.DATA_DUMP,
                         'entity_type': Task.EntityType.KEYWORD_PINCODE,
                         'entity_id': kp.id,
-                        'entity_name': f"{keyword_text} - {category_pincode.pincode}",
+                        'entity_name': f"{keyword_text} - {display_pin}",
                         'extra_context': {
                             'keyword': keyword_text,
-                            'pincode': category_pincode.pincode,
+                            'pincode': display_pin,
                             'platforms': platforms
                         }
                     })

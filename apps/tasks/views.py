@@ -215,6 +215,10 @@ class JsonBuilderBrandListView(APIView):
     permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
     def get(self, request):
         brand_qs = Brand.objects.filter(is_deleted=False).order_by('name')
+        # json_build()
+        # export_qc_products_to_excel()
+        # run_bulk_quickcommerce_dump()
+        # data_dump()
         
         page_size_str = request.query_params.get('size', '20')
         page_str = request.query_params.get('page', '1')
@@ -452,8 +456,11 @@ class DataDumpKeywordListView(APIView):
         
         for k in keywords:
             for cp in k.category.category_pincodes.all():
-                pincode_texts.add(cp.pincode)
-                exact_composite_scopes.add(f"{cp.pincode}::KW::{k.keyword}")
+                display_pin = cp.pincode if cp.pincode else cp.address
+                if not display_pin:
+                    continue
+                pincode_texts.add(display_pin)
+                exact_composite_scopes.add(f"{display_pin}::KW::{k.keyword}")
 
         # -------------------------------------------------
         # 3. BULK FETCH KeywordPincode (MAJOR FIX)
@@ -534,11 +541,14 @@ class DataDumpKeywordListView(APIView):
 
             for keyword in data["keyword_objects"]:
                 for cp in keyword.category.category_pincodes.all():
-
-                    if cp.pincode in merged_pincodes:
+                    display_pin = cp.pincode if cp.pincode else cp.address
+                    if not display_pin:
                         continue
 
-                    kp = kp_map.get((keyword.keyword, cp.pincode))
+                    if display_pin in merged_pincodes:
+                        continue
+
+                    kp = kp_map.get((keyword.keyword, display_pin))
 
                     running_task_info = None
                     if kp and kp.last_running_task:
@@ -550,14 +560,14 @@ class DataDumpKeywordListView(APIView):
                             "ended_at": task_obj.ended_at,
                         }
 
-                    p_kw = pin_kw_map.get((cp.pincode, keyword.keyword))
+                    p_kw = pin_kw_map.get((display_pin, keyword.keyword))
                     pincode_last_job = None
                     if p_kw and (not global_job or p_kw.created_at > global_job.created_at):
                         pincode_last_job = p_kw
 
-                    merged_pincodes[cp.pincode] = {
+                    merged_pincodes[display_pin] = {
                         "id": cp.id,
-                        "pincode": cp.pincode,
+                        "pincode": display_pin,
                         "city": cp.city,
                         "state": cp.state,
                         "last_synced": kp.last_synced if kp else None,
@@ -596,9 +606,10 @@ class DataDumpSyncAllView(APIView):
                 qs = qs.filter(category_id=category_id)
         for kw in qs:
             for cp in kw.category.category_pincodes.all():
-                if not cp or not cp.pincode:
+                display_pin = cp.pincode if cp.pincode else cp.address
+                if not display_pin:
                     continue
-                pincode_map.setdefault(cp.pincode, set()).add(kw.keyword)
+                pincode_map.setdefault(display_pin, set()).add(kw.keyword)
         stats = {
             'total': len(pincode_map),
             'success': 0,

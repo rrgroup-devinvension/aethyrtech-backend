@@ -168,9 +168,9 @@ celery -A config worker --loglevel=info -Q scheduler,celery
 
 For windows - 
 celery -A config worker --pool=threads --concurrency=4 --loglevel=info
+python -m celery -A config worker --pool=threads --concurrency=4 --loglevel=info
 
-
-
+php -S localhost:8002
 
 
 SELECT *

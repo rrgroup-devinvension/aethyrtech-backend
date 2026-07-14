@@ -11,6 +11,7 @@ from .services.generate_brand_graph import generate_brand_graph
 from .services.generate_reviews_insights import generate_reviews_insights
 from .services.generate_risk_data import generate_risk_data
 from .services.generate_positive_data import generate_positive_data
+from .services.generate_action_plans import generate_action_plans
 from apps.brand.models import Brand
 import logging
 
@@ -172,4 +173,19 @@ class GenInsightsIncentiveView(BaseGenInsightsView):
 
 
 
+class GenInsightsActionPlansView(BaseGenInsightsView):
+
+    def post(self, request):
+        brand, error = self.get_brand(request)
+        if error:
+            return error
+
+        target = request.data.get('target', 'all')
+        
+        try:
+            result = generate_action_plans(brand, target)
+            return Response(result)
+        except Exception as e:
+            logger.exception("Action plans generation failed")
+            return Response({"message": str(e)}, status=500)
 

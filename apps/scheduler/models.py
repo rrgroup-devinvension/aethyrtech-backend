@@ -124,7 +124,7 @@ class Task(TimeStampedModel, AuditableMixin):
 
 class KeywordPincode(SoftDeleteModel, AuditableMixin):
     keyword = models.CharField(max_length=255)
-    pincode = models.CharField(max_length=32)
+    pincode = models.CharField(max_length=255)
     at_synced_with_xbyte = models.DateTimeField(null=True, blank=True)
     synced_with_xbyte = models.BooleanField(null=True, blank=True)
     
@@ -183,7 +183,7 @@ class BrandJsonFile(SoftDeleteModel, AuditableMixin):
 class QuickCommerceSearch(models.Model):
     task_id = models.BigIntegerField()
     keyword = models.CharField(max_length=255)
-    pincode = models.CharField(max_length=10)
+    pincode = models.CharField(max_length=255)
     platform = models.CharField(max_length=50)
     request_time = models.DateTimeField(null=True)
     response_time = models.DateTimeField(null=True)
@@ -223,9 +223,9 @@ class QuickCommerceProduct(models.Model):
     brand_rating = models.CharField(max_length=50, null=True, blank=True)
     brand_reviews = models.CharField(max_length=50, null=True, blank=True)
     brand_review_text = models.TextField(max_length=1000, null=True, blank=True)
-    product_url = models.TextField(max_length=1000)
-    thumbnail = models.TextField(max_length=1000)
-    main_image = models.TextField(max_length=1000)
+    product_url = models.TextField(max_length=1000, null=True, blank=True)
+    thumbnail = models.TextField(max_length=1000, null=True, blank=True)
+    main_image = models.TextField(max_length=1000, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

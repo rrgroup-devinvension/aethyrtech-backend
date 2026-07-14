@@ -20,6 +20,7 @@ from .views_gen_insights import (
     GenInsightsPlpView,
     GenInsightsPdpView,
     GenInsightsIncentiveView,
+    GenInsightsActionPlansView,
 )
 
 # Router for ViewSets
@@ -42,4 +43,5 @@ urlpatterns = [
     path('gen-insights/plp', GenInsightsPlpView.as_view()),
     path('gen-insights/pdp', GenInsightsPdpView.as_view()),
     path('gen-insights/incentive', GenInsightsIncentiveView.as_view()),
+    path('gen-insights/action-plans', GenInsightsActionPlansView.as_view()),
 ]

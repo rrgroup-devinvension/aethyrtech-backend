@@ -122,18 +122,36 @@ class CategoryViewSet(BaseViewSet):
             csv_pincodes = []
             for row in csv_reader:
                 pincode_value = row.get('pincode', '').strip()
+                address_value = row.get('address', '').strip()
                 city = row.get('city', '').strip()
                 state = row.get('state', '').strip()
-                if not pincode_value:
+                lat_value = row.get('lat', '').strip()
+                lng_value = row.get('lng', '').strip()
+                
+                if not pincode_value and not address_value:
                     continue
+                    
+                lat = None
+                if lat_value:
+                    try: lat = float(lat_value)
+                    except ValueError: pass
+                    
+                lng = None
+                if lng_value:
+                    try: lng = float(lng_value)
+                    except ValueError: pass
+
                 csv_pincodes.append({
-                    'pincode': pincode_value,
+                    'pincode': pincode_value if pincode_value else None,
+                    'address': address_value if address_value else None,
                     'city': city,
-                    'state': state
+                    'state': state,
+                    'lat': lat,
+                    'lng': lng
                 })
 
-            csv_set = {p['pincode'] for p in csv_pincodes}
-            csv_map = {p['pincode']: p for p in csv_pincodes}
+            csv_set = {(p['pincode'], p['address']) for p in csv_pincodes}
+            csv_map = {(p['pincode'], p['address']): p for p in csv_pincodes}
 
             added_count = 0
             removed_count = 0
@@ -142,35 +160,43 @@ class CategoryViewSet(BaseViewSet):
 
             # Current pincodes associated with this category
             current_assocs = CategoryPincode.objects.filter(category=category)
-            current_set = set([cp.pincode for cp in current_assocs])
+            current_set = set([(cp.pincode, cp.address) for cp in current_assocs])
 
             # Determine which to add and which to remove to synchronize
             to_add = csv_set - current_set
             to_remove = current_set - csv_set
 
             # Add or update associations
-            current_dict = {cp.pincode: cp for cp in current_assocs}
+            current_dict = {(cp.pincode, cp.address): cp for cp in current_assocs}
             to_create = []
             to_update = []
             
-            for pincode_value in to_add:
-                pincode_data = csv_map.get(pincode_value, {})
+            for key in to_add:
+                pincode_data = csv_map.get(key, {})
                 to_create.append(CategoryPincode(
                     category=category,
-                    pincode=pincode_value,
+                    pincode=pincode_data.get('pincode'),
+                    address=pincode_data.get('address'),
                     city=pincode_data.get('city', ''),
-                    state=pincode_data.get('state', '')
+                    state=pincode_data.get('state', ''),
+                    lat=pincode_data.get('lat'),
+                    lng=pincode_data.get('lng')
                 ))
 
             # Update existing if city or state changes
-            for pincode_value, pincode_data in csv_map.items():
-                if pincode_value in current_dict:
-                    cp = current_dict[pincode_value]
+            for key, pincode_data in csv_map.items():
+                if key in current_dict:
+                    cp = current_dict[key]
                     new_city = pincode_data.get('city', '')
                     new_state = pincode_data.get('state', '')
-                    if cp.city != new_city or cp.state != new_state:
+                    new_lat = pincode_data.get('lat')
+                    new_lng = pincode_data.get('lng')
+                    
+                    if cp.city != new_city or cp.state != new_state or cp.lat != new_lat or cp.lng != new_lng:
                         cp.city = new_city
                         cp.state = new_state
+                        cp.lat = new_lat
+                        cp.lng = new_lng
                         to_update.append(cp)
 
             if to_create:
@@ -182,15 +208,27 @@ class CategoryViewSet(BaseViewSet):
                     
             if to_update:
                 try:
-                    CategoryPincode.objects.bulk_update(to_update, fields=['city', 'state'])
+                    CategoryPincode.objects.bulk_update(to_update, fields=['city', 'state', 'lat', 'lng'])
                 except Exception as e:
                     errors.append(f"Bulk update failed: {str(e)}")
 
             # Remove associations not present in CSV
             if to_remove:
+                from django.db.models import Q
                 try:
-                    deleted_count, _ = CategoryPincode.objects.filter(category=category, pincode__in=to_remove).delete()
-                    removed_count = deleted_count
+                    q_objects = Q()
+                    for p_code, p_addr in to_remove:
+                        if p_code is None and p_addr is None: continue
+                        condition = Q()
+                        if p_code is None: condition &= Q(pincode__isnull=True)
+                        else: condition &= Q(pincode=p_code)
+                        if p_addr is None: condition &= Q(address__isnull=True)
+                        else: condition &= Q(address=p_addr)
+                        q_objects |= condition
+                    
+                    if q_objects:
+                        deleted_count, _ = CategoryPincode.objects.filter(category=category).filter(q_objects).delete()
+                        removed_count = deleted_count
                 except Exception as e:
                     errors.append(f"Bulk delete failed: {str(e)}")
 

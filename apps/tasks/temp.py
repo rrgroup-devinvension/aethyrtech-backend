@@ -123,7 +123,7 @@ def json_build():
         extra_context={
             "brand_id": 5,
             "brand_name": "Sleepwell",
-            "platform_type": ["marketplace", "quick_commerce"],
+            "platform_type": ["quick_commerce"],
             "templates": ["category"]
         }
     )

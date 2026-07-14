@@ -24,10 +24,15 @@ def ensure_keyword_pincode_single(keyword, category_pincode):
     else:
         keyword_text = str(keyword)
 
-    if hasattr(category_pincode, 'pincode'):
+    if hasattr(category_pincode, 'pincode') and hasattr(category_pincode, 'address'):
+        pincode_text = category_pincode.pincode if category_pincode.pincode else category_pincode.address
+    elif hasattr(category_pincode, 'pincode'):
         pincode_text = category_pincode.pincode
     else:
         pincode_text = str(category_pincode)
+
+    if not pincode_text:
+        return None
 
     kp = KeywordPincode.objects.filter(keyword=keyword_text, pincode=pincode_text).first()
     if kp:
@@ -67,9 +72,10 @@ def ensure_keyword_pincodes_bulk(pairs):
     if to_update:
         KeywordPincode.objects.bulk_update(to_update, ['is_deleted'])
     if to_create:
-        created = KeywordPincode.objects.bulk_create(to_create)
-        for kp in created:
-            existing_map[(kp.keyword, kp.pincode)] = kp
+        KeywordPincode.objects.bulk_create(to_create)
+        # Re-fetch all objects to get their populated IDs (since bulk_create on MySQL does not set IDs)
+        all_objects = KeywordPincode.objects.filter(keyword__in=keywords, pincode__in=pincodes)
+        existing_map = {(kp.keyword, kp.pincode): kp for kp in all_objects}
             
     return existing_map
 

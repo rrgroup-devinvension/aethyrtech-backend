@@ -43,27 +43,27 @@ def perform_data_dump(task):
                 response=response,
                 keyword=keyword,
                 pincode=pincode,
-                platform=platform.value
+                platform=platform_name
             )
             search_obj = save_search_meta(
                 task=task,
                 response=response,
                 keyword=keyword,
                 pincode=pincode,
-                platform=platform.value,
+                platform=platform_name,
                 file_path=file_path,
                 file_size=file_size
             )
             save_products(search_obj, response)
         except SchedulerBaseException as exc:
             failures.append({
-                "platform": platform.value,
+                "platform": platform_name,
                 "code": exc.error_code,
                 "message": exc.user_message,
             })
         except Exception as exc:
             failures.append({
-                "platform": platform.value,
+                "platform": platform_name,
                 "code": "SYSTEM_ERROR",
                 "message": str(exc)
             })
@@ -258,8 +258,8 @@ def _sync_product_details(search_obj, incoming_map):
             "shipped_by": detail.get("shipped_by"),
             "description": detail.get("description"),
             "bullets": detail.get("bullets", []),
-            "image_count": detail.get("images", 0),
-            "video_count": detail.get("videos", 0),
+            "image_count": detail.get("images") or 0,
+            "video_count": detail.get("videos") or 0,
         }
         existing = detail_map.get(product.id)
         if existing:

@@ -24,10 +24,10 @@ class StandardJSONRenderer(JSONRenderer):
                 "pageSize": data.get("page_size", len(data.get("results", []))),
                 "totalPages": (data.get("count") + data.get("page_size", 25) - 1) // data.get("page_size", 25),
                 "total": data.get("count"),
-                "hasNext": data.get("next") is not None,
-                "hasPrevious": data.get("previous") is not None,
-                "isFirst": data.get("previous") is None,
-                "isLast": data.get("next") is None,
+                "hasNext": data.get("page", 1) < data.get("pages", 1),
+                "hasPrevious": data.get("page", 1) > 1,
+                "isFirst": data.get("page", 1) == 1,
+                "isLast": data.get("page", 1) >= data.get("pages", 1),
                 "message": "",
                 "timestamp": now()
             }

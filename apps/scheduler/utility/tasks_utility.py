@@ -78,6 +78,8 @@ def get_brand_platform_keywords():
         # ensure keywords are processed in ascending order, tie-breaking by id
         for ck in sorted(category.category_keywords.all(), key=lambda k: (k.order or 0, k.id)):
             platform = ck.platform or "all"
+            if platform not in ["noon_ksa", "amazon_sa"]:
+                continue
             keyword = ck.keyword            
             if platform and platform != "all":
                 result[brand.name][platform].append(keyword)
@@ -103,17 +105,17 @@ def get_brand_platform_pincodes():
         category_platform_types = category.platform_type or []
         for cp in sorted(category.category_pincodes.all(), key=lambda p: p.id):
             platform = getattr(cp, "platform", None) or "all"
-            pincode = cp.pincode
-            if not pincode:
+            display_pin = cp.pincode if cp.pincode else cp.address
+            if not display_pin:
                 continue
             if platform and platform != "all":
-                result[brand.name][platform].append(pincode)
+                result[brand.name][platform].append(display_pin)
                 continue
             if platform == "all" or not platform:
                 for platform_type in category_platform_types:
                     platforms = platform_group_map.get(platform_type, [])
                     for p in platforms:
-                        result[brand.name][p].append(pincode)
+                        result[brand.name][p].append(display_pin)
 
     return {b: dict(p) for b, p in result.items()}
 
@@ -132,7 +134,7 @@ def get_brand_pincodes():
         if not category:
             continue
         for cp in category.category_pincodes.all():
-            pincode = str(cp.pincode).strip()
-            if pincode:
-                result[brand.name].add(pincode)
+            display_pin = str(cp.pincode).strip() if cp.pincode else cp.address
+            if display_pin:
+                result[brand.name].add(display_pin)
     return {brand: sorted(list(pincodes)) for brand, pincodes in result.items()}

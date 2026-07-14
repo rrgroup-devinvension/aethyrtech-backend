@@ -26,6 +26,7 @@ class JsonTemplate(Enum):
     PLP_INSIGHTS = ("plp_insights", TemplateType.MANUAL)
     PDP_INSIGHTS = ("pdp_insights", TemplateType.MANUAL)
     INCENTIVE_INSIGHTS = ("incentive_insights", TemplateType.MANUAL)
+    ACTION_PLANS = ("action_plans", TemplateType.MANUAL)
     
     def __init__(self, slug, template_type):
         self.slug = slug
