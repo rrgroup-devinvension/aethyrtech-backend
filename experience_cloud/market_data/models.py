@@ -76,7 +76,7 @@ class Product(BaseModel):
     run_date = models.TextField(null=True, blank=True)
 
     class Meta:
-        db_table = 'Products'
+        db_table = 'products'
         indexes = [
             # Core indexes
             models.Index(fields=['product_uid', 'platform'], name='idx_prod_uid_platform'),
@@ -85,7 +85,6 @@ class Product(BaseModel):
             models.Index(fields=['created_at'], name='idx_product_created_at'),
             
             # Restored indexes for faster text searches
-            models.Index(fields=['title'], name='idx_product_title'),
             models.Index(fields=['brand'], name='idx_product_brand'),
         ]
 

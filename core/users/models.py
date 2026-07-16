@@ -1,5 +1,5 @@
 from django.db import models
-from django.contrib.auth.models import AbstractBaseUser
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from shared.base.models import BaseModel, TimeStampedModel
 
 class Role(BaseModel):
@@ -7,6 +7,7 @@ class Role(BaseModel):
         ('INTERNAL', 'Internal'),
         ('ORGANIZATION', 'Organization'),
     ]
+    code = models.CharField(max_length=50, unique=True, null=True)
     name = models.CharField(max_length=100)
     role_type = models.CharField(max_length=50, choices=ROLE_CHOICES, null=True, blank=True)
     permissions = models.JSONField(null=True, blank=True)
@@ -14,8 +15,22 @@ class Role(BaseModel):
     class Meta:
         db_table = 'roles'
 
+class UserManager(BaseUserManager):
+    def create_user(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError('The Email field must be set')
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        return self.create_user(email, password, **extra_fields)
+
 
 class User(AbstractBaseUser, TimeStampedModel):
+    objects = UserManager()
     USER_TYPE_CHOICES = [
         ('INTERNAL', 'Internal'),
         ('ORGANIZATION', 'Organization'),
@@ -48,5 +63,5 @@ class UserManagedOrganization(BaseModel):
     organization = models.ForeignKey('core_organizations.Organization', on_delete=models.CASCADE)
 
     class Meta:
-        db_table = 'UserManagedOrganizations'
+        db_table = 'user_managed_organizations'
         unique_together = ('user', 'organization')

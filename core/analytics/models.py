@@ -19,7 +19,7 @@ class TokenUsageLog(BaseModel):
     estimated_cost = models.DecimalField(max_digits=10, decimal_places=6, default=0.00)
 
     class Meta:
-        db_table = 'TokenUsageLogs'
+        db_table = 'token_usage_logs'
         indexes = [
             models.Index(fields=['timestamp']),
             models.Index(fields=['brand_id', 'timestamp']),
@@ -42,7 +42,7 @@ class TokenUsageSummary(BaseModel):
     estimated_cost = models.DecimalField(max_digits=12, decimal_places=6, default=0.00)
 
     class Meta:
-        db_table = 'TokenUsageSummaries'
+        db_table = 'token_usage_summaries'
         constraints = [
             models.UniqueConstraint(
                 fields=['date', 'provider', 'type', 'brand_id'], 

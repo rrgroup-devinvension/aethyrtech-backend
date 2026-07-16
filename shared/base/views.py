@@ -23,3 +23,13 @@ class UserOwnedMixin:
         if not (self.request.user and (self.request.user.is_staff or owner == self.request.user)):
             raise PermissionDenied("You do not have permission to edit this resource.")
         serializer.save()
+
+from rest_framework import viewsets
+
+class BaseViewSet(UUIDLookupMixin, viewsets.ModelViewSet):
+    """
+    Standard base ViewSet for all models in Aethyrtech.
+    Uses UUID lookup by default.
+    """
+    pass
+

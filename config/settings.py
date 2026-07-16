@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     
     # Global Utilities
     'shared',
+    'scripts',
     
     # Core Cloud
     'core.analytics',
@@ -154,8 +155,18 @@ DATABASES = {
         'PASSWORD': os.getenv("DB_PASSWORD"),
         'HOST': os.getenv("DB_HOST"),
         'PORT': os.getenv("DB_PORT"),
+    },
+    'xbytesdata': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': os.getenv("XBYTES_DB_NAME", "xbytesdata"),
+        'USER': os.getenv("XBYTES_DB_USER", os.getenv("DB_USER")),
+        'PASSWORD': os.getenv("XBYTES_DB_PASSWORD", os.getenv("DB_PASSWORD")),
+        'HOST': os.getenv("XBYTES_DB_HOST", os.getenv("DB_HOST")),
+        'PORT': os.getenv("XBYTES_DB_PORT", os.getenv("DB_PORT")),
     }
 }
+
+DATABASE_ROUTERS = ['config.routers.XBytesDataRouter']
 
 
 AUTH_PASSWORD_VALIDATORS = [

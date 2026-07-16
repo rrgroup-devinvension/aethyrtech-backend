@@ -25,7 +25,7 @@ class APIUsageLog(BaseModel):
     response_size = models.IntegerField(null=True, blank=True, help_text="Size in bytes")
 
     class Meta:
-        db_table = 'APIUsageLogs'
+        db_table = 'api_usage_logs'
         indexes = [
             models.Index(fields=['timestamp']),
             models.Index(fields=['brand_id', 'timestamp']),
@@ -53,7 +53,7 @@ class APIUsageSummary(BaseModel):
     total_cost = models.DecimalField(max_digits=12, decimal_places=6, default=0.00)
 
     class Meta:
-        db_table = 'APIUsageSummaries'
+        db_table = 'api_usage_summaries'
         # Unique constraint ensures we only have one summary row per dimension combination per day
         constraints = [
             models.UniqueConstraint(

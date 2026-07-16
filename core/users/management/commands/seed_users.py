@@ -12,10 +12,11 @@ class Command(BaseCommand):
         admin_email = os.getenv("ADMIN_EMAIL", "admin@aethyrtech.com")
         admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
         
-        # 2. Create the internal Admin role first
+        # 2. Fetch the admin role (should be created by seed_roles.py)
         admin_role, _ = Role.objects.get_or_create(
-            name="Super Admin",
+            code="admin",
             defaults={
+                "name": "Administrator",
                 "role_type": "INTERNAL",
                 "permissions": {"all": True}
             }

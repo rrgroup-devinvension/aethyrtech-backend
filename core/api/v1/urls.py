@@ -6,5 +6,5 @@ urlpatterns = [
     path('llm/', include('core.llm_providers.urls')),
     path('users/', include('core.users.urls')),
     path('categories/', include('core.categories.urls')),
-    path('organizations/', include('core.organizations.urls')),
+    path('', include('core.organizations.urls')),
 ]

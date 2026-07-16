@@ -1,7 +1,7 @@
 from django.db import models
-from shared.base.models import BaseModel, SoftDeleteModel
+from shared.base.models import BaseModel, SoftDeleteModel, AuditableMixin
 
-class Organization(SoftDeleteModel):
+class Organization(AuditableMixin, SoftDeleteModel):
     name = models.CharField(max_length=255)
     description = models.TextField(null=True, blank=True)
     status = models.CharField(max_length=50, default='Active')
@@ -13,11 +13,14 @@ class Organization(SoftDeleteModel):
         ]
 
 
-class Brand(SoftDeleteModel):
+class Brand(AuditableMixin, SoftDeleteModel):
     name = models.CharField(max_length=255)
+    code = models.CharField(max_length=100, null=True, blank=True, db_index=True)
     description = models.TextField(null=True, blank=True)
     logo = models.CharField(max_length=1024, null=True, blank=True)
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, null=True, blank=True)
+    category = models.ForeignKey('core_categories.Category', on_delete=models.CASCADE, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         db_table = 'brands'
@@ -25,6 +28,7 @@ class Brand(SoftDeleteModel):
 
 class Region(SoftDeleteModel):
     name = models.CharField(max_length=255)
+    code = models.CharField(max_length=100, null=True, blank=True, db_index=True)
     brand = models.ForeignKey(Brand, on_delete=models.CASCADE)
 
     class Meta:
@@ -32,7 +36,8 @@ class Region(SoftDeleteModel):
 
 class Competitor(BaseModel):
     name = models.CharField(max_length=255)
-    region = models.ForeignKey(Region, on_delete=models.CASCADE, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    region = models.ForeignKey(Region, on_delete=models.CASCADE, null=True, blank=True, related_name='competitors')
 
     class Meta:
         db_table = 'competitors'

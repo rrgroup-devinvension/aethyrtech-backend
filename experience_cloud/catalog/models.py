@@ -3,6 +3,7 @@ from shared.base.models import BaseModel
 
 class Platform(BaseModel):
     name = models.CharField(max_length=255)
+    code = models.CharField(max_length=100, null=True, blank=True, db_index=True)
     value = models.CharField(max_length=255, unique=True, null=True, blank=True)
     platform_type = models.CharField(max_length=100, null=True, blank=True)
     source = models.CharField(max_length=255, null=True, blank=True)
