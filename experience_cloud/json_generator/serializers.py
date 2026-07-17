@@ -6,7 +6,7 @@ from experience_cloud.executions.serializers import JsonFileTaskSerializer
 class JsonTemplateSerializer(BaseModelSerializer):
     class Meta(BaseModelSerializer.Meta):
         model = JsonTemplate
-        fields = ('id', 'name', 'template', 'process_type', 'format', 'created_at', 'updated_at')
+        fields = ('id', 'name', 'template', 'process_type', 'format', 'is_active', 'created_at', 'updated_at')
         read_only_fields = ('id', 'created_at', 'updated_at')
 
 

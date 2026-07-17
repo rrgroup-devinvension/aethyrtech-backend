@@ -9,6 +9,7 @@ class JsonTemplate(BaseModel):
     template = models.CharField(max_length=255, unique=True)
     process_type = models.CharField(max_length=50, choices=PROCESS_CHOICES, null=True, blank=True)
     format = models.CharField(max_length=50, choices=FORMAT_CHOICES, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         db_table = 'json_templates'

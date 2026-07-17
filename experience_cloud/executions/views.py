@@ -52,6 +52,22 @@ class SchedulerViewSet(BaseViewSet):
             logger.error(f"Failed to start execution: {str(e)}")
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(summary="Set status of a scheduler")
+    @action(detail=True, methods=['post'], url_path='set-status')
+    def set_status(self, request, pk=None, **kwargs):
+        scheduler = self.get_object()
+        new_status = request.data.get('status')
+        if not new_status or new_status not in ['Active', 'Inactive']:
+            return Response({'error': 'Invalid status provided. Must be Active or Inactive.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        scheduler.status = new_status
+        scheduler.save(update_fields=['status'])
+        
+        return Response({
+            'message': 'Status updated successfully',
+            'status': scheduler.status
+        }, status=status.HTTP_200_OK)
+
 
 @extend_schema_view(
     list=extend_schema(summary="List Active Executions"),

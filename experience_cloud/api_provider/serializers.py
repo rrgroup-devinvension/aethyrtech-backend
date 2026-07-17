@@ -1,9 +1,14 @@
-from shared.base.serializers import BaseModelSerializer
+from rest_framework import serializers
 from .models import ApiProvider
 
-class ApiProviderSerializer(BaseModelSerializer):
-    class Meta(BaseModelSerializer.Meta):
+class ApiProviderSerializer(serializers.ModelSerializer):
+    class Meta:
         model = ApiProvider
-        fields = BaseModelSerializer.Meta.fields + (
-            'name', 'base_url', 'headers', 'authentication', 'status'
+        fields = (
+            'id', 'created_at', 'updated_at',
+            'name', 'code', 'base_url', 'api_version', 'auth_type', 'default_headers',
+            'credentials', 'timeout', 'retry_count', 'retry_delay', 
+            'health_check_path', 'status', 'health_check_status', 'last_health_check',
+            'description'
         )
+        read_only_fields = ('id', 'created_at', 'updated_at')

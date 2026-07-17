@@ -2,13 +2,21 @@ from django.db import models
 from shared.base.models import BaseModel
 
 class Scheduler(BaseModel):
+    SCHEDULER_TYPES = [('DATA_DUMP', 'Data Dump'), ('JSON_BUILD', 'Json Build')]
+    
     name = models.CharField(max_length=255)
-    type = models.CharField(max_length=50, null=True, blank=True)
+    type = models.CharField(max_length=50, choices=SCHEDULER_TYPES, null=True, blank=True)
     cron = models.CharField(max_length=100, null=True, blank=True)
     configuration = models.JSONField(null=True, blank=True)
     status = models.CharField(max_length=50, default='Active')
     last_run = models.DateTimeField(null=True, blank=True)
     next_run = models.DateTimeField(null=True, blank=True)
+    timezone = models.CharField(max_length=50, default='UTC')
+    retry_count = models.IntegerField(default=3)
+    retry_delay_seconds = models.IntegerField(default=300)
+    timeout_seconds = models.IntegerField(default=3600)
+    concurrency_policy = models.CharField(max_length=50, choices=[('ALLOW', 'Allow'), ('SKIP', 'Skip'), ('REPLACE', 'Replace')], default='SKIP')
+    notify_emails = models.JSONField(default=list, blank=True)
 
     class Meta:
         db_table = 'schedulers'

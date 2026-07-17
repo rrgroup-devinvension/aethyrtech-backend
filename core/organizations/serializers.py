@@ -28,7 +28,7 @@ class OrganizationSerializer(BaseModelSerializer):
 class CompetitorSerializer(BaseModelSerializer):
     class Meta:
         model = Competitor
-        fields = ('id', 'created_at', 'updated_at', 'region', 'name', 'description')
+        fields = ('id', 'created_at', 'updated_at', 'region', 'name', 'description', 'is_active')
         read_only_fields = ('id', 'created_at', 'updated_at')
 
 
@@ -44,7 +44,7 @@ class BrandSerializer(BaseModelSerializer):
             "category", "category_name",
             "is_active", "logo",
         )
-        read_only_fields = BaseModelSerializer.Meta.read_only_fields + ("is_active", "organization_name", "category_name")
+        read_only_fields = BaseModelSerializer.Meta.read_only_fields + ("organization_name", "category_name")
 
     def validate_name(self, value):
         """
@@ -63,5 +63,5 @@ class RegionSerializer(BaseModelSerializer):
 
     class Meta(BaseModelSerializer.Meta):
         model = Region
-        fields = BaseModelSerializer.Meta.fields + ('name', 'code', 'brand', 'brand_name')
+        fields = BaseModelSerializer.Meta.fields + ('name', 'code', 'brand', 'brand_name', 'is_active')
         read_only_fields = BaseModelSerializer.Meta.read_only_fields + ('brand_name',)

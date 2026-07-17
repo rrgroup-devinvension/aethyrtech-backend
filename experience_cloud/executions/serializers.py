@@ -12,8 +12,11 @@ from .models import (
 class SchedulerSerializer(BaseModelSerializer):
     class Meta(BaseModelSerializer.Meta):
         model = Scheduler
-        fields = ('id', 'created_at', 'updated_at') + (
-            'name', 'type', 'cron', 'configuration', 'status', 'last_run', 'next_run'
+        fields = (
+            'id', 'created_at', 'updated_at', 
+            'name', 'type', 'cron', 'configuration', 'status', 'last_run', 'next_run',
+            'timezone', 'retry_count', 'retry_delay_seconds', 'timeout_seconds', 
+            'concurrency_policy', 'notify_emails'
         )
         read_only_fields = BaseModelSerializer.Meta.read_only_fields + ('last_run', 'next_run')
 

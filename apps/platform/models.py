@@ -17,7 +17,8 @@ class Platform(SoftDeleteModel, TimeStampedModel, AuditableMixin):
     name = models.CharField(max_length=200, unique=True)
     value = models.CharField(max_length=200, unique=True)
     platform_type = models.CharField(max_length=50, choices=PLATFORM_TYPE_CHOICES)
-    source = models.CharField(max_length=100, null=True, blank=True)
+    api_provider = models.CharField(max_length=200, null=True, blank=True)
+    json_configuration = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
 
     class Meta:

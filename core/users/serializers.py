@@ -48,7 +48,7 @@ class UserCreateUpdateSerializer(BaseModelSerializer):
 
     class Meta:
         model = User
-        fields = ("id", "created_at", "updated_at", "name", "email", "role", "organization", "managed_organization_ids", "password")
+        fields = ("id", "created_at", "updated_at", "name", "email", "role", "organization", "managed_organization_ids", "password", "is_active")
         extra_kwargs = {
             "password": {"write_only": True, "required": False}
         }

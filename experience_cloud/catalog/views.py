@@ -38,7 +38,8 @@ class LocationViewSet(BaseViewSet):
     queryset = Location.objects.all().select_related('region', 'platform', 'category')
     serializer_class = LocationSerializer
     search_fields = ('pincode', 'address')
-    ordering_fields = ('pincode', 'created_at', 'updated_at')
+    ordering_fields = ('pincode', 'address', 'platform__name', 'category__name', 'created_at', 'updated_at')
+    filterset_fields = ['platform', 'category', 'region']
 
     @extend_schema(summary="Upload Locations CSV")
     @action(detail=False, methods=['post'], url_path='upload-csv')
@@ -73,7 +74,8 @@ class KeywordViewSet(BaseViewSet):
     queryset = Keyword.objects.all().select_related('region', 'platform', 'category')
     serializer_class = KeywordSerializer
     search_fields = ('keyword',)
-    ordering_fields = ('keyword', 'display_order', 'created_at')
+    ordering_fields = ('keyword', 'platform__name', 'category__name', 'display_order', 'created_at')
+    filterset_fields = ['platform', 'category', 'region']
 
     @extend_schema(summary="Upload Keywords CSV")
     @action(detail=False, methods=['post'], url_path='upload-csv')

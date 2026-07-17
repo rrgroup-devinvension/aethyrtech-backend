@@ -2,6 +2,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from shared.base.views import BaseViewSet
 from .models import JsonTemplate, RegionJsonFile
 from .serializers import JsonTemplateSerializer, RegionJsonFileSerializer
@@ -15,6 +17,16 @@ class JsonTemplateViewSet(BaseViewSet):
     """CRUD operations for JsonTemplate."""
     queryset = JsonTemplate.objects.all().order_by('name')
     serializer_class = JsonTemplateSerializer
+
+    @action(detail=True, methods=['post'], url_path='set-status')
+    def set_status(self, request, *args, **kwargs):
+        instance = self.get_object()
+        is_active = request.data.get('is_active')
+        if is_active is not None:
+            instance.is_active = is_active
+            instance.save(update_fields=['is_active'])
+            return Response({'status': 'status updated', 'is_active': instance.is_active})
+        return Response({'error': 'is_active field is required'}, status=400)
     permission_classes = [IsAuthenticated]
     search_fields = ('name', 'template')
 
@@ -24,6 +36,9 @@ class RegionJsonFileViewSet(BaseViewSet):
     queryset = RegionJsonFile.objects.all()
     serializer_class = RegionJsonFileSerializer
     permission_classes = [IsAuthenticated]
+    search_fields = ('template__name', 'file_name')
+    ordering_fields = ('last_generated_at', 'template__name', 'file_name')
+    filterset_fields = ['region']
     
     def get_queryset(self):
         qs = super().get_queryset()
