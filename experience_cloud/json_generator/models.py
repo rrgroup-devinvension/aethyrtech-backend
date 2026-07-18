@@ -23,7 +23,9 @@ class RegionJsonFile(BaseModel):
     checksum = models.CharField(max_length=255, null=True, blank=True)
     generation_duration = models.FloatField(null=True, blank=True)
     last_generated_at = models.DateTimeField(null=True, blank=True)
-    task = models.ForeignKey('experience_cloud_executions.JsonFileTask', on_delete=models.SET_NULL, null=True, blank=True, related_name='generated_files')
+    task_id = models.CharField(max_length=255, null=True, blank=True)
+    status = models.CharField(max_length=50, null=True, blank=True)
+    error_message = models.TextField(null=True, blank=True)
 
     class Meta:
         db_table = 'region_json_files'

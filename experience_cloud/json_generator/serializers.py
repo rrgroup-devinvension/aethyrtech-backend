@@ -11,7 +11,6 @@ class JsonTemplateSerializer(BaseModelSerializer):
 
 
 class RegionJsonFileSerializer(BaseModelSerializer):
-    task = JsonFileTaskSerializer(read_only=True)
     template_name = serializers.CharField(source='template.name', read_only=True)
     
     class Meta(BaseModelSerializer.Meta):
@@ -19,7 +18,8 @@ class RegionJsonFileSerializer(BaseModelSerializer):
         fields = (
             'id', 'region', 'template', 'template_name', 
             'file_name', 'file_path', 'file_size', 'checksum', 
-            'generation_duration', 'last_generated_at', 'task',
+            'generation_duration', 'last_generated_at', 'task_id',
+            'status', 'error_message',
             'created_at', 'updated_at'
         )
-        read_only_fields = ('id', 'created_at', 'updated_at', 'task', 'template_name')
+        read_only_fields = ('id', 'created_at', 'updated_at', 'template_name')

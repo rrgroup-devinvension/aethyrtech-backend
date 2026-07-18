@@ -4,7 +4,7 @@ import uuid
 
 
 class ApiDump(BaseModel):
-    task = models.ForeignKey('experience_cloud_executions.DataDumpTask', on_delete=models.SET_NULL, null=True, blank=True)
+    task_id = models.CharField(max_length=255, null=True, blank=True)
     keyword = models.ForeignKey('experience_cloud_catalog.Keyword', on_delete=models.SET_NULL, null=True, blank=True)
     platform = models.ForeignKey('experience_cloud_catalog.Platform', on_delete=models.SET_NULL, null=True, blank=True)
     location = models.ForeignKey('experience_cloud_catalog.Location', on_delete=models.SET_NULL, null=True, blank=True)
@@ -13,6 +13,7 @@ class ApiDump(BaseModel):
     products_found = models.IntegerField(default=0)
     response_time = models.FloatField(null=True, blank=True)
     status = models.CharField(max_length=50, null=True, blank=True)
+    error_message = models.TextField(null=True, blank=True)
 
     class Meta:
         db_table = 'api_dumps'

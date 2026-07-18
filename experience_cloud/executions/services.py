@@ -60,6 +60,9 @@ class ExecutionManager:
             started_at=timezone.now()
         )
         
+        # Import here to avoid circular imports if needed, though we can import at top. 
+        from experience_cloud.json_generator.models import RegionJsonFile
+
         # Create tasks in DB and dispatch to Celery per Region
         for region_id, files in region_groups.items():
             task_ids = []
@@ -71,6 +74,13 @@ class ExecutionManager:
                     status='PENDING'
                 )
                 task_ids.append(task.id)
+                
+                if 'file_id' in file_data:
+                    RegionJsonFile.objects.filter(id=file_data['file_id']).update(
+                        task_id=str(task.id),
+                        status='RUNNING',
+                        error_message=None
+                    )
             
             # The Magic Dispatch. No imports from json_generate needed.
             current_app.send_task(
@@ -119,12 +129,22 @@ class ExecutionManager:
             started_at=timezone.now()
         )
         
+        # Import inside method
+        from experience_cloud.market_data.models import ApiDump
+
         # 2. Create tasks and dispatch individually
         for loc_id in locations_to_process:
             task = DataDumpTask.objects.create(
                 execution=execution,
                 metadata={'location_id': loc_id},
                 status='PENDING'
+            )
+            
+            # Create matching ApiDump to track status per location
+            ApiDump.objects.create(
+                task_id=str(task.id),
+                location_id=loc_id,
+                status='RUNNING'
             )
             
             # Dispatch to the data_dump app worker
@@ -210,3 +230,6 @@ class ExecutionManager:
                         )
                     )
                 TaskHistory.objects.bulk_create(history_tasks)
+                
+                # Delete active execution (cascades to active tasks) to complete archival
+                execution.delete()

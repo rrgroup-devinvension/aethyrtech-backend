@@ -104,14 +104,22 @@ class HierarchyLocationListView(APIView):
             region_id=region_id
         )
         
-        data = [
-            {
+        from experience_cloud.market_data.models import ApiDump
+        
+        data = []
+        for loc in locations:
+            # Find the latest ApiDump for this location
+            latest_dump = ApiDump.objects.filter(location_id=loc.id).order_by('-created_at').first()
+            
+            data.append({
                 "id": loc.id,
                 "pincode": loc.pincode,
                 "address": loc.address,
-            }
-            for loc in locations
-        ]
+                "latest_status": latest_dump.status if latest_dump else None,
+                "latest_products": latest_dump.products_found if latest_dump else 0,
+                "latest_error": latest_dump.error_message if latest_dump else None,
+            })
+            
         return Response({"results": data})
 
 

@@ -46,7 +46,7 @@ class RegionJsonFileViewSet(BaseViewSet):
         if region_id:
             # Auto-create missing files for this region
             templates = JsonTemplate.objects.all()
-            existing_files = qs.filter(region_id=region_id).select_related('template', 'task')
+            existing_files = qs.filter(region_id=region_id).select_related('template')
             existing_template_ids = [f.template_id for f in existing_files]
             
             missing = []
@@ -57,7 +57,7 @@ class RegionJsonFileViewSet(BaseViewSet):
             if missing:
                 RegionJsonFile.objects.bulk_create(missing)
                 # Re-fetch after creation
-                existing_files = super().get_queryset().filter(region_id=region_id).select_related('template', 'task')
+                existing_files = super().get_queryset().filter(region_id=region_id).select_related('template')
                 
             return existing_files.order_by('template__name')
             
@@ -83,18 +83,27 @@ class RegionJsonFileViewSet(BaseViewSet):
             
         # Group files by region
         region_groups = {}
-        # Fetch actual files that match the requested scope
         if scope_type == 'REGION':
-            files = RegionJsonFile.objects.filter(region_id=scope_id).select_related('template')
+            files = RegionJsonFile.objects.filter(region_id=scope_id)
         elif scope_type == 'FILE':
-            files = RegionJsonFile.objects.filter(id=scope_id).select_related('template')
+            files = RegionJsonFile.objects.filter(id=scope_id)
+        elif scope_type == 'BRAND':
+            files = RegionJsonFile.objects.filter(region__brand_id=scope_id)
+        elif scope_type == 'ORGANIZATION':
+            files = RegionJsonFile.objects.filter(region__brand__organization_id=scope_id)
         else:
-            files = RegionJsonFile.objects.none() # Extend this for ORGANIZATION and BRAND scopes as needed
+            files = RegionJsonFile.objects.none()
+            
+        # Exclude files that are already running or pending to prevent duplicate tasks
+        files = files.exclude(status__in=['RUNNING', 'PENDING']).select_related('template')
 
         for f in files:
             if f.region_id not in region_groups:
                 region_groups[f.region_id] = []
-            region_groups[f.region_id].append({'template': f.template.name if f.template else 'Unknown'})
+            region_groups[f.region_id].append({
+                'template': f.template.name if f.template else 'Unknown',
+                'file_id': f.id
+            })
             
         if not region_groups:
             return Response({'error': 'No files found for this scope'}, status=status.HTTP_404_NOT_FOUND)
@@ -117,3 +126,88 @@ class RegionJsonFileViewSet(BaseViewSet):
             'execution_id': execution.id,
             'status': execution.status
         }, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='stop')
+    def stop_json_build(self, request, id=None, **kwargs):
+        file = self.get_object()
+        
+        if file.status not in ['RUNNING', 'PENDING']:
+            return Response({'error': 'Task is not running or pending'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        from experience_cloud.executions.models import JsonFileTask
+        from experience_cloud.executions.services import ExecutionManager
+        from celery import current_app
+        from django.utils import timezone
+        
+        task = JsonFileTask.objects.filter(id=file.task_id).first()
+        
+        file.status = 'STOPPED'
+        file.error_message = 'Manually stopped by user'
+        file.save(update_fields=['status', 'error_message'])
+        
+        if task:
+            task.status = 'STOPPED'
+            task.error_message = 'Manually stopped by user'
+            task.completed_at = timezone.now()
+            task.save(update_fields=['status', 'error_message', 'completed_at'])
+            
+            if task.celery_task_id:
+                current_app.control.revoke(task.celery_task_id, terminate=True)
+                
+            ExecutionManager._check_and_finalize(task.execution_id, JsonFileTask)
+            
+        return Response({'message': 'Task stopped successfully', 'status': 'STOPPED'})
+
+from rest_framework.views import APIView
+from django.db.models import Count, Q, Sum
+from django.db.models.functions import Coalesce
+
+class JsonGenerationStatsView(APIView):
+    """
+    Returns aggregated JSON generation status counts at the Organization, Brand, and Region levels.
+    This solves N+1 problems and ensures UI performance remains high.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        # Base queries to count the statuses
+        pending_q = Q(status='PENDING') | Q(status__isnull=True) | Q(status='')
+        
+        region_stats = RegionJsonFile.objects.values('region_id').annotate(
+            total=Count('id'),
+            running=Count('id', filter=Q(status='RUNNING')),
+            pending=Count('id', filter=pending_q),
+            success=Count('id', filter=Q(status='SUCCESS')),
+            failed=Count('id', filter=Q(status='FAILED')),
+            stopped=Count('id', filter=Q(status='STOPPED')),
+            total_size=Coalesce(Sum('file_size'), 0),
+            total_duration=Coalesce(Sum('generation_duration'), 0.0)
+        )
+        
+        brand_stats = RegionJsonFile.objects.values('region__brand_id').annotate(
+            total=Count('id'),
+            running=Count('id', filter=Q(status='RUNNING')),
+            pending=Count('id', filter=pending_q),
+            success=Count('id', filter=Q(status='SUCCESS')),
+            failed=Count('id', filter=Q(status='FAILED')),
+            stopped=Count('id', filter=Q(status='STOPPED')),
+            total_size=Coalesce(Sum('file_size'), 0),
+            total_duration=Coalesce(Sum('generation_duration'), 0.0)
+        )
+        
+        org_stats = RegionJsonFile.objects.values('region__brand__organization_id').annotate(
+            total=Count('id'),
+            running=Count('id', filter=Q(status='RUNNING')),
+            pending=Count('id', filter=pending_q),
+            success=Count('id', filter=Q(status='SUCCESS')),
+            failed=Count('id', filter=Q(status='FAILED')),
+            stopped=Count('id', filter=Q(status='STOPPED')),
+            total_size=Coalesce(Sum('file_size'), 0),
+            total_duration=Coalesce(Sum('generation_duration'), 0.0)
+        )
+
+        return Response({
+            'organizations': {str(item['region__brand__organization_id']): item for item in org_stats if item['region__brand__organization_id']},
+            'brands': {str(item['region__brand_id']): item for item in brand_stats if item['region__brand_id']},
+            'regions': {str(item['region_id']): item for item in region_stats if item['region_id']}
+        })
