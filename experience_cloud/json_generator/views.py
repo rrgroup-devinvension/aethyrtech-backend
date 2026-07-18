@@ -81,22 +81,37 @@ class RegionJsonFileViewSet(BaseViewSet):
         if scope_type not in valid_scopes:
             return Response({'error': f'scope_type must be one of {valid_scopes}'}, status=status.HTTP_400_BAD_REQUEST)
             
-        # Create an ActiveExecution to track this manual trigger
-        execution = ActiveExecution.objects.create(
-            execution_type='JSON_BUILD',
+        # Group files by region
+        region_groups = {}
+        # Fetch actual files that match the requested scope
+        if scope_type == 'REGION':
+            files = RegionJsonFile.objects.filter(region_id=scope_id).select_related('template')
+        elif scope_type == 'FILE':
+            files = RegionJsonFile.objects.filter(id=scope_id).select_related('template')
+        else:
+            files = RegionJsonFile.objects.none() # Extend this for ORGANIZATION and BRAND scopes as needed
+
+        for f in files:
+            if f.region_id not in region_groups:
+                region_groups[f.region_id] = []
+            region_groups[f.region_id].append({'template': f.template.name if f.template else 'Unknown'})
+            
+        if not region_groups:
+            return Response({'error': 'No files found for this scope'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Import locally to avoid circular dependencies if needed (though we only import ExecutionManager, which shouldn't import this file)
+        from experience_cloud.executions.services import ExecutionManager
+        
+        execution = ExecutionManager.start_json_build(
+            user=request.user,
             scope_type=scope_type,
-            scope_id=str(scope_id),
-            status='RUNNING',
-            started_at=timezone.now(),
-            created_by=request.user
+            scope_id=scope_id,
+            region_groups=region_groups
         )
         
-        # Here we would typically enqueue a Celery task that processes this execution.
-        # Since celery isn't explicitly set up in this snippet, we will mock task creation 
-        # so the UI can see the status immediately.
-        
-        # In a real background worker, it would query the relevant RegionJsonFiles and create JsonFileTask for each.
-        
+        if not execution:
+            return Response({'error': 'Failed to create execution'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         return Response({
             'message': 'JSON build triggered successfully',
             'execution_id': execution.id,

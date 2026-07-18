@@ -10,14 +10,6 @@ def trigger_data_dump(scope_type, scope_id, request_user=None):
     Creates an ActiveExecution of type DATA_DUMP and generates
     the corresponding DataDumpTask entries.
     """
-    execution = ActiveExecution.objects.create(
-        execution_type='DATA_DUMP',
-        scope_type=scope_type,
-        status='PENDING',
-        created_by=request_user,
-        started_at=timezone.now(),
-        configuration={'scope_id': scope_id}
-    )
     
     # We need to collect combinations of Keyword + Location
     keywords = Keyword.objects.all()
@@ -70,6 +62,10 @@ def trigger_data_dump(scope_type, scope_id, request_user=None):
         locations = Location.objects.none()
 
     # Pre-fetch locations and map them by (category_id, platform_id, region_id)
+    # Actually, we just need a flat list of location_ids for ExecutionManager
+    location_ids = []
+    
+    # Using the same mapping logic to ensure we only get valid keyword/location matches
     loc_map = {}
     for loc in locations:
         key = (loc.category_id, loc.platform_id, loc.region_id)
@@ -77,35 +73,30 @@ def trigger_data_dump(scope_type, scope_id, request_user=None):
             loc_map[key] = []
         loc_map[key].append(loc)
         
-    tasks_to_create = []
-    
     for kw in keywords:
         key = (kw.category_id, kw.platform_id, kw.region_id)
         matched_locations = loc_map.get(key, [])
-        
         for loc in matched_locations:
-            tasks_to_create.append(
-                DataDumpTask(
-                    execution=execution,
-                    status='PENDING',
-                    metadata={
-                        'keyword_id': kw.id,
-                        'location_id': loc.id
-                    }
-                )
-            )
+            location_ids.append(loc.id)
             
-    if tasks_to_create:
-        DataDumpTask.objects.bulk_create(tasks_to_create)
-        execution.total_tasks = len(tasks_to_create)
-        execution.save(update_fields=['total_tasks'])
+    # Deduplicate location IDs
+    location_ids = list(set(location_ids))
+    
+    if not location_ids:
+        logger.warning(f"No locations found for scope {scope_type}:{scope_id}")
+        return None
         
-        # Here we would normally dispatch the tasks to Celery.
-        # For example: process_data_dump_execution.apply_async((execution.id,))
-        # Since this is a structural setup, we just log it for now.
-        logger.info(f"Created {len(tasks_to_create)} DataDumpTasks for execution {execution.id}")
-    else:
-        execution.status = 'STOPPED'
-        execution.save(update_fields=['status'])
+    from experience_cloud.executions.services import ExecutionManager
+    
+    execution = ExecutionManager.start_data_dump(
+        user=request_user,
+        scope_type=scope_type,
+        scope_id=scope_id,
+        location_ids=location_ids
+    )
+    
+    if not execution:
+        logger.info(f"Execution {scope_type}:{scope_id} was requested but all locations are already running.")
+        return None
         
     return execution

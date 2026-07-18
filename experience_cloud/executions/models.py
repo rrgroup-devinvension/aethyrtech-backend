@@ -30,6 +30,7 @@ class BaseExecution(BaseModel):
     scheduler = models.ForeignKey(Scheduler, on_delete=models.SET_NULL, null=True, blank=True)
     execution_type = models.CharField(max_length=50, choices=EXECUTION_TYPES, null=True, blank=True)
     scope_type = models.CharField(max_length=50, choices=SCOPE_TYPES, null=True, blank=True)
+    scope_id = models.CharField(max_length=255, null=True, blank=True)
     configuration = models.JSONField(null=True, blank=True)
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, null=True, blank=True)
     total_tasks = models.IntegerField(default=0)

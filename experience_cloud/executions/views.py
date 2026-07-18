@@ -14,7 +14,7 @@ from .serializers import (
     SchedulerSerializer, ActiveExecutionSerializer, ExecutionHistorySerializer,
     DataDumpTaskSerializer, JsonFileTaskSerializer, TaskHistorySerializer
 )
-from .services import ExecutionService
+from .services import ExecutionManager
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class SchedulerViewSet(BaseViewSet):
         logger.info(f"Manual run triggered for scheduler: {scheduler.id}")
         
         try:
-            execution = ExecutionService.create_execution(
+            execution = ExecutionManager.create_execution_from_scheduler(
                 scheduler=scheduler,
                 user=request.user
             )
@@ -92,7 +92,7 @@ class ActiveExecutionViewSet(BaseViewSet):
                 'error': f'Execution is not running. Current status: {execution.status}'
             }, status=status.HTTP_400_BAD_REQUEST)
             
-        stopped_execution = ExecutionService.stop_execution(execution)
+        stopped_execution = ExecutionManager.stop_execution(execution)
         serializer = self.get_serializer(stopped_execution)
         return Response({
             'message': 'Execution stopped successfully',

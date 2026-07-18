@@ -132,11 +132,18 @@ class RunDataDumpView(APIView):
             
         execution = trigger_data_dump(scope_type, scope_id, request.user)
         
+        if not execution:
+            return Response({
+                "message": "All requested locations are already running.",
+                "execution_id": None,
+                "total_tasks": 0
+            }, status=status.HTTP_200_OK)
+        
         return Response({
             "message": "Data Dump triggered successfully",
             "execution_id": execution.id,
             "total_tasks": execution.total_tasks
-        })
+        }, status=status.HTTP_201_CREATED)
 
 class ProductsListView(generics.ListAPIView):
     """
