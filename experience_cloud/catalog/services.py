@@ -1,289 +1,233 @@
-import csv
 import io
+import pandas as pd
 import logging
+from django.db import transaction
+from django.http import HttpResponse
 from .models import Location, Keyword, Platform
 from core.organizations.models import Region, Brand
 from core.categories.models import Category
 
 logger = logging.getLogger(__name__)
 
-class CatalogService:
+class BulkDataService:
     @staticmethod
-    def _resolve_context(row, category_id, region_id, platform_id):
-        # Resolve Platform
-        platform = None
-        if platform_id:
-            platform = Platform.objects.filter(id=platform_id).first()
-        if not platform:
-            p_code = row.get('platform', '').strip()
-            if p_code:
-                platform = Platform.objects.filter(code=p_code).first()
-
-        # Resolve Region and Brand
-        region = None
-        brand = None
-        if region_id:
-            region = Region.objects.filter(id=region_id).select_related('brand').first()
-            if region:
-                brand = region.brand
-        if not region:
-            r_code = row.get('region', '').strip()
-            b_code = row.get('brand', '').strip()
-            if r_code and b_code:
-                region = Region.objects.filter(code=r_code, brand__code=b_code).select_related('brand').first()
-            elif r_code:
-                region = Region.objects.filter(code=r_code).select_related('brand').first()
-            if region:
-                brand = region.brand
-
-        # Resolve Category
+    def _resolve_context(category_id, region_id, platform_id):
+        platform = Platform.objects.filter(id=platform_id).first() if platform_id else None
+        region = Region.objects.filter(id=region_id).select_related('brand').first() if region_id else None
+        
         category = None
         if category_id:
             category = Category.objects.filter(id=category_id).first()
-        elif brand and brand.category_id:
-            category = Category.objects.filter(id=brand.category_id).first()
+        elif region and region.brand and region.brand.category_id:
+            category = Category.objects.filter(id=region.brand.category_id).first()
 
         return category, region, platform
 
     @staticmethod
-    def process_locations_csv(csv_file, category_id=None, region_id=None, platform_id=None):
-        try:
-            decoded_file = csv_file.read().decode('utf-8')
-            csv_reader = csv.DictReader(io.StringIO(decoded_file))
-
-            # Group rows by (category_id, region_id, platform_id)
-            groups = {}
-            skipped_count = 0
-            errors = []
-
-            for row in csv_reader:
-                pincode_value = row.get('pincode', '').strip()
-                address_value = row.get('location', '').strip() or row.get('address', '').strip()
-                lat_value = row.get('lat', '').strip()
-                lng_value = row.get('lng', '').strip()
-                
-                if not pincode_value and not address_value:
-                    skipped_count += 1
-                    continue
-
-                cat, reg, plat = CatalogService._resolve_context(row, category_id, region_id, platform_id)
-                if not cat or not reg or not plat:
-                    skipped_count += 1
-                    errors.append(f"Row {pincode_value or address_value}: Unable to resolve category, region, or platform.")
-                    continue
-
-                lat = None
-                if lat_value:
-                    try: lat = float(lat_value)
-                    except ValueError: pass
-                    
-                lng = None
-                if lng_value:
-                    try: lng = float(lng_value)
-                    except ValueError: pass
-
-                group_key = (cat.id, reg.id, plat.id)
-                if group_key not in groups:
-                    groups[group_key] = {
-                        'category': cat, 'region': reg, 'platform': plat, 'items': []
-                    }
-
-                groups[group_key]['items'].append({
-                    'pincode': pincode_value if pincode_value else None,
-                    'address': address_value if address_value else None,
-                    'lat': lat,
-                    'lng': lng
-                })
-
-            added_count = 0
-            removed_count = 0
-
-            for key, group in groups.items():
-                cat = group['category']
-                reg = group['region']
-                plat = group['platform']
-                items = group['items']
-
-                csv_set = {(p['pincode'], p['address']) for p in items}
-                csv_map = {(p['pincode'], p['address']): p for p in items}
-
-                current_assocs = Location.objects.filter(category=cat, region=reg, platform=plat)
-                current_set = set([(cp.pincode, cp.address) for cp in current_assocs])
-
-                to_add = csv_set - current_set
-                to_remove = current_set - csv_set
-
-                current_dict = {(cp.pincode, cp.address): cp for cp in current_assocs}
-                to_create = []
-                to_update = []
-                
-                for k in to_add:
-                    p_data = csv_map.get(k, {})
-                    to_create.append(Location(
-                        category=cat,
-                        region=reg,
-                        platform=plat,
-                        pincode=p_data.get('pincode'),
-                        address=p_data.get('address'),
-                        lat=p_data.get('lat'),
-                        lng=p_data.get('lng')
-                    ))
-
-                for k, p_data in csv_map.items():
-                    if k in current_dict:
-                        cp = current_dict[k]
-                        new_lat = p_data.get('lat')
-                        new_lng = p_data.get('lng')
-                        
-                        if cp.lat != new_lat or cp.lng != new_lng:
-                            cp.lat = new_lat
-                            cp.lng = new_lng
-                            to_update.append(cp)
-
-                if to_create:
-                    try:
-                        Location.objects.bulk_create(to_create, ignore_conflicts=True)
-                        added_count += len(to_create)
-                    except Exception as e:
-                        errors.append(f"Bulk create failed: {str(e)}")
-                        
-                if to_update:
-                    try:
-                        Location.objects.bulk_update(to_update, fields=['lat', 'lng'])
-                    except Exception as e:
-                        errors.append(f"Bulk update failed: {str(e)}")
-
-                if to_remove:
-                    from django.db.models import Q
-                    try:
-                        q_objects = Q()
-                        for p_code, p_addr in to_remove:
-                            if p_code is None and p_addr is None: continue
-                            condition = Q()
-                            if p_code is None: condition &= Q(pincode__isnull=True)
-                            else: condition &= Q(pincode=p_code)
-                            if p_addr is None: condition &= Q(address__isnull=True)
-                            else: condition &= Q(address=p_addr)
-                            q_objects |= condition
-                        
-                        if q_objects:
-                            deleted_count, _ = Location.objects.filter(
-                                category=cat, region=reg, platform=plat
-                            ).filter(q_objects).delete()
-                            removed_count += deleted_count
-                    except Exception as e:
-                        errors.append(f"Bulk delete failed: {str(e)}")
-
-            return {
-                'detail': 'Locations CSV sync processed successfully',
-                'added': added_count,
-                'removed': removed_count,
-                'skipped': skipped_count,
-                'errors': errors
-            }
-        except Exception as e:
-            logger.error(f"Error processing CSV: {str(e)}")
-            raise e
+    def generate_export_filename(prefix, category_id, region_id, platform_id):
+        cat, reg, plat = BulkDataService._resolve_context(category_id, region_id, platform_id)
+        
+        parts = [prefix]
+        if reg and reg.brand:
+            parts.append(reg.brand.name.replace(' ', '_').lower())
+        if reg:
+            parts.append(reg.name.replace(' ', '_').lower())
+        if cat:
+            parts.append(cat.name.replace(' ', '_').lower())
+            
+        return "_".join(parts)
 
     @staticmethod
-    def process_keywords_csv(csv_file, category_id=None, region_id=None, platform_id=None):
+    def process_locations_file(file, filename, category_id=None, region_id=None, platform_id=None):
+        cat, reg, plat = BulkDataService._resolve_context(category_id, region_id, platform_id)
+        if not cat or not reg or not plat:
+            raise ValueError("Category, Region, and Platform are required for upload.")
+
         try:
-            decoded_file = csv_file.read().decode('utf-8')
-            csv_reader = csv.DictReader(io.StringIO(decoded_file))
-            
-            groups = {}
-            skipped_count = 0
-            errors = []
-            
-            for row in csv_reader:
-                keyword = row.get('keyword', '').strip()
-                order_val = row.get('order', '').strip() if row.get('order') is not None else ''
-                
-                if not keyword:
-                    skipped_count += 1
-                    continue
-                
-                cat, reg, plat = CatalogService._resolve_context(row, category_id, region_id, platform_id)
-                if not cat or not reg or not plat:
-                    skipped_count += 1
-                    errors.append(f"Row {keyword}: Unable to resolve category, region, or platform.")
-                    continue
-                
-                order_int = 0
-                if order_val != '':
-                    try:
-                        order_int = int(order_val)
-                    except ValueError:
-                        order_int = 0
-
-                group_key = (cat.id, reg.id, plat.id)
-                if group_key not in groups:
-                    groups[group_key] = {
-                        'category': cat, 'region': reg, 'platform': plat, 'items': []
-                    }
-                
-                groups[group_key]['items'].append({
-                    'keyword': keyword,
-                    'order': order_int
-                })
-
-            added_count = 0
-            
-            for key, group in groups.items():
-                cat = group['category']
-                reg = group['region']
-                plat = group['platform']
-                items = group['items']
-                
-                current_keywords = Keyword.objects.filter(category=cat, region=reg, platform=plat)
-                current_dict = {kw.keyword: kw for kw in current_keywords}
-                
-                to_create = []
-                to_update = []
-                seen_in_csv = set()
-                
-                for item in items:
-                    kw_text = item['keyword']
-                    if kw_text in seen_in_csv:
-                        skipped_count += 1
-                        continue
-                    seen_in_csv.add(kw_text)
-                    
-                    if kw_text in current_dict:
-                        obj = current_dict[kw_text]
-                        if obj.display_order != item['order']:
-                            obj.display_order = item['order']
-                            to_update.append(obj)
-                        else:
-                            skipped_count += 1
-                    else:
-                        to_create.append(Keyword(
-                            category=cat,
-                            region=reg,
-                            platform=plat,
-                            keyword=kw_text,
-                            display_order=item['order']
-                        ))
-
-                if to_create:
-                    try:
-                        Keyword.objects.bulk_create(to_create, ignore_conflicts=True)
-                        added_count += len(to_create)
-                    except Exception as e:
-                        errors.append(f"Bulk create failed: {str(e)}")
-                        
-                if to_update:
-                    try:
-                        Keyword.objects.bulk_update(to_update, fields=['display_order'])
-                    except Exception as e:
-                        errors.append(f"Bulk update failed: {str(e)}")
-                    
-            return {
-                'detail': 'Keywords CSV processed successfully', 
-                'added': added_count, 
-                'skipped': skipped_count, 
-                'errors': errors
-            }
+            if filename.endswith('.csv'):
+                df = pd.read_csv(file)
+            elif filename.endswith('.xlsx'):
+                df = pd.read_excel(file)
+            else:
+                raise ValueError("Only .csv and .xlsx files are supported.")
         except Exception as e:
-            logger.error(f"Error processing CSV: {str(e)}")
-            raise e
+            raise ValueError(f"Error reading file: {str(e)}")
+
+        df = df.where(pd.notnull(df), None)
+        
+        records_to_create = []
+        records_to_update = []
+        csv_pincodes_addresses = set()
+        
+        with transaction.atomic():
+            current_locations = Location.objects.filter(category=cat, region=reg, platform=plat)
+            current_dict = {(loc.pincode, loc.address): loc for loc in current_locations}
+            
+            for index, row in df.iterrows():
+                pincode_val = row.get('pincode')
+                if pd.notna(pincode_val):
+                    if isinstance(pincode_val, float) and pincode_val == int(pincode_val):
+                        pincode_val = int(pincode_val)
+                    pincode = str(pincode_val).strip()
+                    if not pincode: pincode = None
+                else:
+                    pincode = None
+                    
+                address_val = row.get('address')
+                if pd.notna(address_val):
+                    if isinstance(address_val, float) and address_val == int(address_val):
+                        address_val = int(address_val)
+                    address = str(address_val).strip()
+                    if not address: address = None
+                else:
+                    address = None
+                if not pincode and not address:
+                    continue
+                
+                lat = row.get('lat')
+                if pd.isna(lat):
+                    lat = None
+                lng = row.get('lng')
+                if pd.isna(lng):
+                    lng = None
+                
+                csv_pincodes_addresses.add((pincode, address))
+                
+                if (pincode, address) in current_dict:
+                    loc = current_dict[(pincode, address)]
+                    loc.lat = lat
+                    loc.lng = lng
+                    loc.is_active = True
+                    records_to_update.append(loc)
+                else:
+                    records_to_create.append(Location(
+                        category=cat, region=reg, platform=plat,
+                        pincode=pincode, address=address, lat=lat, lng=lng, is_active=True
+                    ))
+            
+            records_to_deactivate = []
+            for key, loc in current_dict.items():
+                if key not in csv_pincodes_addresses and loc.is_active:
+                    loc.is_active = False
+                    records_to_deactivate.append(loc)
+                    
+            if records_to_create:
+                Location.objects.bulk_create(records_to_create, ignore_conflicts=True)
+            if records_to_update:
+                Location.objects.bulk_update(records_to_update, ['lat', 'lng', 'is_active'])
+            if records_to_deactivate:
+                Location.objects.bulk_update(records_to_deactivate, ['is_active'])
+
+        return {
+            'detail': 'Locations processed successfully',
+            'added': len(records_to_create),
+            'updated': len(records_to_update),
+            'deactivated': len(records_to_deactivate)
+        }
+
+    @staticmethod
+    def process_keywords_file(file, filename, category_id=None, region_id=None, platform_id=None):
+        cat, reg, plat = BulkDataService._resolve_context(category_id, region_id, platform_id)
+        if not cat or not reg or not plat:
+            raise ValueError("Category, Region, and Platform are required for upload.")
+
+        try:
+            if filename.endswith('.csv'):
+                df = pd.read_csv(file)
+            elif filename.endswith('.xlsx'):
+                df = pd.read_excel(file)
+            else:
+                raise ValueError("Only .csv and .xlsx files are supported.")
+        except Exception as e:
+            raise ValueError(f"Error reading file: {str(e)}")
+
+        df = df.where(pd.notnull(df), None)
+        
+        records_to_create = []
+        records_to_update = []
+        csv_keywords = set()
+        
+        with transaction.atomic():
+            current_keywords = Keyword.objects.filter(category=cat, region=reg, platform=plat)
+            current_dict = {kw.keyword: kw for kw in current_keywords}
+            
+            for index, row in df.iterrows():
+                kw_val = row.get('keyword')
+                if pd.notna(kw_val):
+                    if isinstance(kw_val, float) and kw_val == int(kw_val):
+                        kw_val = int(kw_val)
+                    keyword = str(kw_val).strip()
+                    if not keyword: keyword = None
+                else:
+                    keyword = None
+                if not keyword:
+                    continue
+                
+                order = index + 1
+                
+                csv_keywords.add(keyword)
+                
+                if keyword in current_dict:
+                    kw = current_dict[keyword]
+                    if kw.display_order != order or not kw.is_active:
+                        kw.display_order = order
+                        kw.is_active = True
+                        records_to_update.append(kw)
+                else:
+                    records_to_create.append(Keyword(
+                        category=cat, region=reg, platform=plat,
+                        keyword=keyword, display_order=order, is_active=True
+                    ))
+            
+            records_to_deactivate = []
+            for k, kw in current_dict.items():
+                if k not in csv_keywords and kw.is_active:
+                    kw.is_active = False
+                    records_to_deactivate.append(kw)
+                    
+            if records_to_create:
+                Keyword.objects.bulk_create(records_to_create, ignore_conflicts=True)
+            if records_to_update:
+                Keyword.objects.bulk_update(records_to_update, ['display_order', 'is_active'])
+            if records_to_deactivate:
+                Keyword.objects.bulk_update(records_to_deactivate, ['is_active'])
+
+        return {
+            'detail': 'Keywords processed successfully',
+            'added': len(records_to_create),
+            'updated': len(records_to_update),
+            'deactivated': len(records_to_deactivate)
+        }
+
+    @staticmethod
+    def generate_export_response(queryset, filename, columns, format_type):
+        df = pd.DataFrame(list(queryset.values(*[c[0] for c in columns])))
+        if not df.empty:
+            df.columns = [c[1] for c in columns]
+        else:
+            df = pd.DataFrame(columns=[c[1] for c in columns])
+
+        if format_type == 'csv':
+            response = HttpResponse(content_type='text/csv')
+            response['Content-Disposition'] = f'attachment; filename="{filename}.csv"'
+            df.to_csv(response, index=False)
+        else:
+            response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = f'attachment; filename="{filename}.xlsx"'
+            with pd.ExcelWriter(response, engine='xlsxwriter') as writer:
+                df.to_excel(writer, index=False)
+        return response
+
+    @staticmethod
+    def generate_template_response(filename, columns, format_type):
+        df = pd.DataFrame(columns=columns)
+        if format_type == 'csv':
+            response = HttpResponse(content_type='text/csv')
+            response['Content-Disposition'] = f'attachment; filename="{filename}.csv"'
+            df.to_csv(response, index=False)
+        else:
+            response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = f'attachment; filename="{filename}.xlsx"'
+            with pd.ExcelWriter(response, engine='xlsxwriter') as writer:
+                df.to_excel(writer, index=False)
+        return response

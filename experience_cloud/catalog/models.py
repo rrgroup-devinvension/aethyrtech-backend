@@ -23,6 +23,7 @@ class Location(BaseModel):
     region = models.ForeignKey('core_organizations.Region', on_delete=models.CASCADE)
     platform = models.ForeignKey(Platform, on_delete=models.CASCADE)
     category = models.ForeignKey('core_categories.Category', on_delete=models.CASCADE)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         db_table = 'locations'
@@ -39,6 +40,7 @@ class Keyword(BaseModel):
     region = models.ForeignKey('core_organizations.Region', on_delete=models.CASCADE)
     platform = models.ForeignKey(Platform, on_delete=models.CASCADE)
     display_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         db_table = 'keywords'

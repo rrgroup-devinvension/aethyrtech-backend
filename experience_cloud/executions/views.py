@@ -120,6 +120,7 @@ class DataDumpTaskViewSet(BaseViewSet):
     serializer_class = DataDumpTaskSerializer
     search_fields = ('status', 'api_dump_id', 'celery_task_id')
     ordering_fields = ('created_at', 'started_at', 'completed_at', 'status')
+    filterset_fields = ['execution', 'status']
 
 
 class JsonFileTaskViewSet(BaseViewSet):
@@ -127,6 +128,7 @@ class JsonFileTaskViewSet(BaseViewSet):
     serializer_class = JsonFileTaskSerializer
     search_fields = ('status', 'region_json_id', 'celery_task_id')
     ordering_fields = ('created_at', 'started_at', 'completed_at', 'status')
+    filterset_fields = ['execution', 'status']
 
 
 class TaskHistoryViewSet(BaseViewSet):
@@ -134,3 +136,4 @@ class TaskHistoryViewSet(BaseViewSet):
     serializer_class = TaskHistorySerializer
     search_fields = ('status', 'task_type', 'resource_id', 'celery_task_id')
     ordering_fields = ('created_at', 'started_at', 'completed_at', 'status')
+    filterset_fields = ['execution', 'status', 'task_type']

@@ -22,6 +22,7 @@ class HierarchyCategoryListView(APIView):
             {
                 "id": cat.id,
                 "name": cat.name,
+                "platforms_count": Keyword.objects.filter(category_id=cat.id).values('platform_id').distinct().count()
             }
             for cat in categories
         ]
@@ -47,6 +48,7 @@ class HierarchyPlatformListView(APIView):
                 "id": plat.id,
                 "name": plat.name,
                 "code": plat.code,
+                "keywords_count": Keyword.objects.filter(category_id=category_id, platform_id=plat.id).count()
             }
             for plat in platforms
         ]
@@ -74,6 +76,7 @@ class HierarchyKeywordListView(APIView):
                 "keyword": kw.keyword,
                 "region_id": kw.region_id,
                 "region_name": kw.region.name if kw.region else None,
+                "locations_count": Location.objects.filter(category_id=category_id, platform_id=platform_id, region_id=kw.region_id).count()
             }
             for kw in keywords
         ]

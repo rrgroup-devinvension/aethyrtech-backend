@@ -35,6 +35,7 @@ class CompetitorSerializer(BaseModelSerializer):
 class BrandSerializer(BaseModelSerializer):
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
+    regions_count = serializers.SerializerMethodField()
     
     class Meta(BaseModelSerializer.Meta):
         model = Brand
@@ -42,9 +43,12 @@ class BrandSerializer(BaseModelSerializer):
             "name", "code", "description",
             "organization", "organization_name",
             "category", "category_name",
-            "is_active", "logo",
+            "is_active", "logo", "regions_count",
         )
-        read_only_fields = BaseModelSerializer.Meta.read_only_fields + ("organization_name", "category_name")
+        read_only_fields = BaseModelSerializer.Meta.read_only_fields + ("organization_name", "category_name", "regions_count")
+
+    def get_regions_count(self, obj):
+        return obj.region_set.count()
 
     def validate_name(self, value):
         """
@@ -60,8 +64,13 @@ class BrandSerializer(BaseModelSerializer):
 
 class RegionSerializer(BaseModelSerializer):
     brand_name = serializers.CharField(source='brand.name', read_only=True)
+    files_count = serializers.SerializerMethodField()
 
     class Meta(BaseModelSerializer.Meta):
         model = Region
-        fields = BaseModelSerializer.Meta.fields + ('name', 'code', 'brand', 'brand_name', 'is_active')
-        read_only_fields = BaseModelSerializer.Meta.read_only_fields + ('brand_name',)
+        fields = BaseModelSerializer.Meta.fields + ('name', 'code', 'brand', 'brand_name', 'is_active', 'files_count')
+        read_only_fields = BaseModelSerializer.Meta.read_only_fields + ('brand_name', 'files_count')
+
+    def get_files_count(self, obj):
+        from experience_cloud.json_generator.models import JsonTemplate
+        return JsonTemplate.objects.count()

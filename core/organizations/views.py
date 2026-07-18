@@ -58,6 +58,13 @@ class BrandViewSet(BaseViewSet):
     search_fields = ("name", "description")
     ordering_fields = ("name", "created_at", "updated_at")
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        org_id = self.request.query_params.get('organization')
+        if org_id:
+            queryset = queryset.filter(organization_id=org_id)
+        return queryset
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
@@ -116,7 +123,12 @@ class CompetitorViewSet(BaseViewSet):
         queryset = super().get_queryset()
         brand_id = self.request.query_params.get('brand')
         if brand_id:
-            queryset = queryset.filter(brand_id=brand_id)
+            queryset = queryset.filter(region__brand_id=brand_id)
+            
+        region_id = self.request.query_params.get('region')
+        if region_id:
+            queryset = queryset.filter(region_id=region_id)
+            
         return queryset
 
 @extend_schema_view(

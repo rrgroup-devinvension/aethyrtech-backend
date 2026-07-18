@@ -3,11 +3,13 @@ from shared.base.serializers import BaseModelSerializer
 from .models import Platform, Location, Keyword
 
 class PlatformSerializer(BaseModelSerializer):
+    api_provider_name = serializers.CharField(source='api_provider.name', read_only=True, allow_null=True)
+    
     class Meta(BaseModelSerializer.Meta):
         model = Platform
         fields = (
             'id', 'created_at', 'updated_at', 
-            'name', 'code', 'value', 'platform_type', 'api_provider', 'json_configuration', 'status'
+            'name', 'code', 'value', 'platform_type', 'api_provider', 'api_provider_name', 'json_configuration', 'status'
         )
         read_only_fields = ('id', 'created_at', 'updated_at')
 
@@ -21,7 +23,7 @@ class LocationSerializer(BaseModelSerializer):
         fields = (
             'id', 'created_at', 'updated_at',
             'pincode', 'address', 'lat', 'lng', 'region', 'region_name',
-            'platform', 'platform_name', 'category', 'category_name'
+            'platform', 'platform_name', 'category', 'category_name', 'is_active'
         )
         read_only_fields = ('id', 'created_at', 'updated_at')
         
@@ -47,6 +49,6 @@ class KeywordSerializer(BaseModelSerializer):
         fields = (
             'id', 'created_at', 'updated_at',
             'keyword', 'category', 'category_name', 'region', 'region_name',
-            'platform', 'platform_name', 'display_order'
+            'platform', 'platform_name', 'display_order', 'is_active'
         )
         read_only_fields = ('id', 'created_at', 'updated_at')

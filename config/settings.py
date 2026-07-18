@@ -87,6 +87,10 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
     "noauth",
 ]
 
+CORS_EXPOSE_HEADERS = [
+    "Content-Disposition",
+]
+
 from datetime import timedelta
 
 SIMPLE_JWT = {
