@@ -58,6 +58,10 @@ def trigger_data_dump(scope_type, scope_id, request_user=None):
         keywords = Keyword.objects.none()
         locations = Location.objects.none()
 
+    platform_ids = {kw.platform_id for kw in keywords if kw.platform_id}
+    from experience_cloud.catalog.models import Platform
+    api_providers = dict(Platform.objects.filter(id__in=platform_ids).values_list('id', 'api_provider_id'))
+
     task_pairs = []
     
     loc_map = {}
@@ -71,7 +75,12 @@ def trigger_data_dump(scope_type, scope_id, request_user=None):
         key = (kw.category_id, kw.platform_id, kw.region_id)
         matched_locations = loc_map.get(key, [])
         for loc in matched_locations:
-            task_pairs.append({'keyword_id': kw.id, 'location_id': loc.id})
+            task_pairs.append({
+                'keyword_id': kw.id, 
+                'location_id': loc.id,
+                'platform_id': kw.platform_id,
+                'api_provider_id': api_providers.get(kw.platform_id)
+            })
             
     # Deduplicate task pairs
     unique_pairs = []
@@ -86,13 +95,35 @@ def trigger_data_dump(scope_type, scope_id, request_user=None):
         logger.warning(f"No valid keyword+location combinations found for scope {scope_type}:{scope_id}")
         return None
         
+    # Calculate scope name for UI
+    scope_name = None
+    if scope_type == 'LOCATION' and ':' in str(scope_id):
+        kw_name = keywords.first().keyword if keywords.exists() else 'Unknown Keyword'
+        loc = locations.first()
+        loc_name = 'Unknown Location'
+        if loc:
+            loc_name = str(loc.pincode) if loc.pincode else str(loc.address)
+        scope_name = f"{kw_name} / {loc_name}"
+    elif scope_type == 'CATEGORY':
+        from experience_cloud.catalog.models import Category
+        scope_name = Category.objects.filter(id=scope_id).values_list('name', flat=True).first()
+    elif scope_type == 'REGION':
+        from experience_cloud.catalog.models import Region
+        scope_name = Region.objects.filter(id=scope_id).values_list('name', flat=True).first()
+    elif scope_type == 'KEYWORD':
+        scope_name = keywords.first().keyword if keywords.exists() else None
+    elif scope_type == 'LOCATION':
+        loc = locations.first()
+        scope_name = (str(loc.pincode) if loc.pincode else str(loc.address)) if loc else None
+
     from experience_cloud.executions.services import ExecutionManager
     
     execution = ExecutionManager.start_data_dump(
         user=request_user,
         scope_type=scope_type,
         scope_id=scope_id,
-        task_pairs=unique_pairs
+        task_pairs=unique_pairs,
+        scope_name=scope_name
     )
     
     if not execution:

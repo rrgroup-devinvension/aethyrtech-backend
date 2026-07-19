@@ -41,13 +41,14 @@ class HierarchyPlatformListView(APIView):
             return Response({"error": "category is required"}, status=status.HTTP_400_BAD_REQUEST)
         
         platform_ids = Keyword.objects.filter(category_id=category_id).values_list('platform_id', flat=True).distinct()
-        platforms = Platform.objects.filter(id__in=platform_ids)
+        platforms = Platform.objects.filter(id__in=platform_ids).select_related('api_provider')
         
         data = [
             {
                 "id": plat.id,
                 "name": plat.name,
                 "code": plat.code,
+                "api_provider_name": plat.api_provider.name if plat.api_provider else None,
                 "keywords_count": Keyword.objects.filter(category_id=category_id, platform_id=plat.id).count()
             }
             for plat in platforms
@@ -68,7 +69,7 @@ class HierarchyKeywordListView(APIView):
         if not category_id or not platform_id:
             return Response({"error": "category and platform are required"}, status=status.HTTP_400_BAD_REQUEST)
         
-        keywords = Keyword.objects.filter(category_id=category_id, platform_id=platform_id).select_related('region')
+        keywords = Keyword.objects.filter(category_id=category_id, platform_id=platform_id).select_related('region', 'region__brand')
         
         grouped_data = {}
         for kw in keywords:
@@ -82,7 +83,8 @@ class HierarchyKeywordListView(APIView):
             grouped_data[k_str]["regions"].append({
                 "keyword_id": kw.id,
                 "region_id": kw.region_id,
-                "region_name": kw.region.name if kw.region else None
+                "region_name": kw.region.name if kw.region else None,
+                "brand_name": kw.region.brand.name if kw.region and hasattr(kw.region, 'brand') and kw.region.brand else None
             })
             
             # Locations match on category, platform, and region
@@ -226,68 +228,80 @@ from django.db.models.functions import Coalesce
 
 class MarketDataStatsView(APIView):
     """
-    Returns aggregated data dump status counts at the Category, Platform, and Region (Keyword) levels.
+    Returns aggregated data dump status counts at the Category, Platform, and Keyword levels.
     """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
         from experience_cloud.market_data.models import ApiDump
-        from experience_cloud.catalog.models import Location
+        from experience_cloud.catalog.models import Keyword
+        from django.db.models import OuterRef, Subquery, CharField, FloatField, IntegerField, F
         
-        # Get the latest status per location
+        # Subquery to get the latest ApiDump for the specific (keyword, location)
         latest_dump = ApiDump.objects.filter(
-            location_id=OuterRef('pk')
+            keyword_id=OuterRef('id'),
+            location_id=OuterRef('loc_id')
         ).order_by('-created_at')
 
-        # Annotate each location with its latest ApiDump info
-        locations = Location.objects.annotate(
+        # Get a row for every (Keyword, Location) pair matching the exact platform and category
+        kw_locs = Keyword.objects.filter(
+            platform_id=F('region__location__platform_id'),
+            category_id=F('region__location__category_id')
+        ).annotate(
+            loc_id=F('region__location__id')
+        ).values(
+            'id', 'category_id', 'platform_id', 'loc_id'
+        ).annotate(
             latest_status=Subquery(latest_dump.values('status')[:1], output_field=CharField()),
             latest_time=Subquery(latest_dump.values('response_time')[:1], output_field=FloatField()),
             latest_products=Subquery(latest_dump.values('products_found')[:1], output_field=IntegerField())
         )
         
-        pending_q = Q(latest_status='PENDING') | Q(latest_status__isnull=True) | Q(latest_status='')
-        
-        # Aggregate by Category
-        category_stats = locations.values('category_id').annotate(
-            total=Count('id'),
-            running=Count('id', filter=Q(latest_status='RUNNING')),
-            pending=Count('id', filter=pending_q),
-            success=Count('id', filter=Q(latest_status='SUCCESS')),
-            failed=Count('id', filter=Q(latest_status='FAILED')),
-            stopped=Count('id', filter=Q(latest_status='STOPPED')),
-            total_time=Coalesce(Sum('latest_time'), 0.0),
-            total_products=Coalesce(Sum('latest_products'), 0)
-        )
-        
-        # Aggregate by Platform
-        platform_stats = locations.values('category_id', 'platform_id').annotate(
-            total=Count('id'),
-            running=Count('id', filter=Q(latest_status='RUNNING')),
-            pending=Count('id', filter=pending_q),
-            success=Count('id', filter=Q(latest_status='SUCCESS')),
-            failed=Count('id', filter=Q(latest_status='FAILED')),
-            stopped=Count('id', filter=Q(latest_status='STOPPED')),
-            total_time=Coalesce(Sum('latest_time'), 0.0),
-            total_products=Coalesce(Sum('latest_products'), 0)
-        )
-        
-        # Aggregate by Keyword (Region)
-        keyword_stats = locations.values('category_id', 'platform_id', 'region_id').annotate(
-            total=Count('id'),
-            running=Count('id', filter=Q(latest_status='RUNNING')),
-            pending=Count('id', filter=pending_q),
-            success=Count('id', filter=Q(latest_status='SUCCESS')),
-            failed=Count('id', filter=Q(latest_status='FAILED')),
-            stopped=Count('id', filter=Q(latest_status='STOPPED')),
-            total_time=Coalesce(Sum('latest_time'), 0.0),
-            total_products=Coalesce(Sum('latest_products'), 0)
-        )
-        
+        category_stats = {}
+        platform_stats = {}
+        keyword_stats = {}
+
+        def add_stats(target_dict, key, status, time, products):
+            if key not in target_dict:
+                target_dict[key] = {
+                    'total': 0, 'running': 0, 'pending': 0, 'success': 0, 
+                    'failed': 0, 'stopped': 0, 'total_time': 0.0, 'total_products': 0
+                }
+            
+            target_dict[key]['total'] += 1
+            
+            if status == 'RUNNING':
+                target_dict[key]['running'] += 1
+            elif status == 'SUCCESS':
+                target_dict[key]['success'] += 1
+            elif status == 'FAILED':
+                target_dict[key]['failed'] += 1
+            elif status == 'STOPPED':
+                target_dict[key]['stopped'] += 1
+            else:
+                target_dict[key]['pending'] += 1
+                
+            target_dict[key]['total_time'] += (time or 0.0)
+            target_dict[key]['total_products'] += (products or 0)
+
+        for row in kw_locs:
+            kw_id = row['id']
+            cat_id = str(row['category_id'])
+            plat_key = f"{row['category_id']}_{row['platform_id']}"
+            kw_key = f"{row['category_id']}_{row['platform_id']}_{kw_id}"
+            
+            s = row['latest_status']
+            t = row['latest_time']
+            p = row['latest_products']
+            
+            add_stats(category_stats, cat_id, s, t, p)
+            add_stats(platform_stats, plat_key, s, t, p)
+            add_stats(keyword_stats, kw_key, s, t, p)
+            
         return Response({
-            "categories": {str(c['category_id']): c for c in category_stats},
-            "platforms": {f"{p['category_id']}_{p['platform_id']}": p for p in platform_stats},
-            "keywords": {f"{k['category_id']}_{k['platform_id']}_{k['region_id']}": k for k in keyword_stats}
+            "categories": category_stats,
+            "platforms": platform_stats,
+            "keywords": keyword_stats
         })
 
 

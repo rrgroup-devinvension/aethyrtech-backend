@@ -85,18 +85,16 @@ class ActiveExecutionViewSet(BaseViewSet):
 
     @extend_schema(summary="Stop a running execution")
     @action(detail=True, methods=['post'])
-    def stop(self, request, pk=None):
+    def stop(self, request, pk=None, **kwargs):
         execution = self.get_object()
-        if execution.status != 'RUNNING':
+        if execution.status != 'RUNNING' and execution.status != 'PENDING':
             return Response({
                 'error': f'Execution is not running. Current status: {execution.status}'
             }, status=status.HTTP_400_BAD_REQUEST)
             
         stopped_execution = ExecutionManager.stop_execution(execution)
-        serializer = self.get_serializer(stopped_execution)
         return Response({
-            'message': 'Execution stopped successfully',
-            'execution': serializer.data
+            'message': 'Execution stopped successfully and archived to history'
         }, status=status.HTTP_200_OK)
 
 
@@ -122,6 +120,33 @@ class DataDumpTaskViewSet(BaseViewSet):
     ordering_fields = ('created_at', 'started_at', 'completed_at', 'status')
     filterset_fields = ['execution', 'status']
 
+    @action(detail=True, methods=['post'])
+    def stop(self, request, pk=None, **kwargs):
+        task = self.get_object()
+        if task.status not in ['RUNNING', 'PENDING']:
+            return Response({'error': 'Task is not running or pending'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        if task.celery_task_id:
+            try:
+                from celery import current_app
+                current_app.control.revoke(task.celery_task_id, terminate=True)
+            except Exception as e:
+                pass
+                
+        task.status = 'STOPPED'
+        task.error_message = 'Task manually stopped'
+        task.save(update_fields=['status', 'error_message'])
+        
+        # Sync with ApiDump
+        from experience_cloud.market_data.models import ApiDump
+        ApiDump.objects.filter(task_id=str(task.id)).update(status='STOPPED', error_message='Task manually stopped')
+        
+        # Update execution stopped count
+        from .services import ExecutionManager
+        ExecutionManager._check_and_finalize(task.execution_id, DataDumpTask)
+        
+        return Response({'status': 'Task stopped successfully'})
+
 
 class JsonFileTaskViewSet(BaseViewSet):
     queryset = JsonFileTask.objects.all().select_related('execution').order_by('-created_at')
@@ -129,6 +154,33 @@ class JsonFileTaskViewSet(BaseViewSet):
     search_fields = ('status', 'region_json_id', 'celery_task_id')
     ordering_fields = ('created_at', 'started_at', 'completed_at', 'status')
     filterset_fields = ['execution', 'status']
+
+    @action(detail=True, methods=['post'])
+    def stop(self, request, pk=None, **kwargs):
+        task = self.get_object()
+        if task.status not in ['RUNNING', 'PENDING']:
+            return Response({'error': 'Task is not running or pending'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        if task.celery_task_id:
+            try:
+                from celery import current_app
+                current_app.control.revoke(task.celery_task_id, terminate=True)
+            except Exception as e:
+                pass
+                
+        task.status = 'STOPPED'
+        task.error_message = 'Task manually stopped'
+        task.save(update_fields=['status', 'error_message'])
+        
+        # Sync with RegionJsonFile
+        from experience_cloud.json_generator.models import RegionJsonFile
+        RegionJsonFile.objects.filter(task_id=str(task.id)).update(status='STOPPED', error_message='Task manually stopped')
+        
+        # Update execution stopped count
+        from .services import ExecutionManager
+        ExecutionManager._check_and_finalize(task.execution_id, JsonFileTask)
+        
+        return Response({'status': 'Task stopped successfully'})
 
 
 class TaskHistoryViewSet(BaseViewSet):

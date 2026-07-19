@@ -84,6 +84,12 @@ def process_region_batch(execution_id, region_id, file_task_ids):
         
         # 2. Iterate through the files (tasks)
         for task_id in file_task_ids:
+            # State validation: Abort if the task was manually stopped or updated before execution began
+            region_file = RegionJsonFile.objects.filter(task_id=str(task_id)).first()
+            if region_file and region_file.status not in ['PENDING', 'RUNNING']:
+                logger.warning(f"Task {task_id} aborted due to manual state change (current status: {region_file.status})")
+                continue
+                
             # Mark as running
             ExecutionManager.update_task_status(JsonFileTask, task_id, execution_id, 'RUNNING')
             

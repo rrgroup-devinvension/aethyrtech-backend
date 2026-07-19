@@ -102,11 +102,26 @@ class RegionJsonFileViewSet(BaseViewSet):
                 region_groups[f.region_id] = []
             region_groups[f.region_id].append({
                 'template': f.template.name if f.template else 'Unknown',
+                'resource_name': f.template.name if f.template else 'Unknown',
                 'file_id': f.id
             })
             
         if not region_groups:
             return Response({'error': 'No files found for this scope'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Calculate scope_name
+        scope_name = None
+        if scope_type == 'REGION':
+            from experience_cloud.catalog.models import Region
+            scope_name = Region.objects.filter(id=scope_id).values_list('name', flat=True).first()
+        elif scope_type == 'BRAND':
+            from core.organizations.models import Brand
+            scope_name = Brand.objects.filter(id=scope_id).values_list('name', flat=True).first()
+        elif scope_type == 'ORGANIZATION':
+            from core.organizations.models import Organization
+            scope_name = Organization.objects.filter(id=scope_id).values_list('name', flat=True).first()
+        elif scope_type == 'FILE':
+            scope_name = files.first().template.name if files.exists() and files.first().template else f"File {scope_id}"
 
         # Import locally to avoid circular dependencies if needed (though we only import ExecutionManager, which shouldn't import this file)
         from experience_cloud.executions.services import ExecutionManager
@@ -115,7 +130,8 @@ class RegionJsonFileViewSet(BaseViewSet):
             user=request.user,
             scope_type=scope_type,
             scope_id=scope_id,
-            region_groups=region_groups
+            region_groups=region_groups,
+            scope_name=scope_name
         )
         
         if not execution:

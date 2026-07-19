@@ -16,13 +16,15 @@ def call_third_party_api(keyword_obj, location_obj):
     
     items_found = 12
     run_date = timezone.now().strftime('%Y-%m-%d')
-    location_str = str(location_obj.pincode) if location_obj.pincode else location_obj.address
+    location_str = str(location_obj.pincode) if location_obj.pincode else str(location_obj.address)
     platform_name = keyword_obj.platform.name if keyword_obj.platform else 'Unknown'
+    
+    combined_name = f"{keyword_obj.keyword}"
     
     # Archive/Clear old products for this keyword and location to avoid endless duplicates
     Product.objects.filter(
         platform=platform_name,
-        keyword=keyword_obj.keyword,
+        keyword=combined_name,
         location=location_str
     ).delete()
     
@@ -31,9 +33,9 @@ def call_third_party_api(keyword_obj, location_obj):
         mock_products.append(
             Product(
                 platform=platform_name,
-                keyword=keyword_obj.keyword,
+                keyword=combined_name,
                 location=location_str,
-                title=f"Mock Product {i+1} for {keyword_obj.keyword}",
+                title=f"Mock Product {i+1} for {combined_name}",
                 brand="MockBrand",
                 rank=i+1,
                 availability="In Stock",
@@ -50,6 +52,12 @@ def call_third_party_api(keyword_obj, location_obj):
 def process_location_dump(execution_id, task_id, keyword_id, location_id):
     logger.info(f"Starting process_location_dump for Execution: {execution_id}, Task: {task_id}, Keyword: {keyword_id}, Location: {location_id}")
     
+    # State validation: Abort if the task was manually stopped or updated before execution began
+    api_dump = ApiDump.objects.filter(task_id=str(task_id)).first()
+    if api_dump and api_dump.status not in ['PENDING', 'RUNNING']:
+        logger.warning(f"Task {task_id} aborted due to manual state change (current status: {api_dump.status})")
+        return
+        
     # Mark task as running
     ExecutionManager.update_task_status(DataDumpTask, task_id, execution_id, 'RUNNING')
     
