@@ -97,8 +97,8 @@ class ExecutionManager:
         return execution
 
     @staticmethod
-    def start_data_dump(user, scope_type, scope_id, location_ids, scheduler=None):
-        """Handles deduplication before creating tasks"""
+    def start_data_dump(user, scope_type, scope_id, task_pairs, scheduler=None):
+        """Handles deduplication before creating tasks using keyword_id and location_id"""
         
         # Upsert: Delete previous active execution for exactly same scope
         ActiveExecution.objects.filter(
@@ -107,15 +107,22 @@ class ExecutionManager:
             scope_id=str(scope_id)
         ).exclude(status__in=['PENDING', 'RUNNING']).delete()
 
-        # 1. Deduplication Check
-        active_locations = set(DataDumpTask.objects.filter(
-            metadata__location_id__in=location_ids,
+        # 1. Deduplication Check based on (keyword_id, location_id)
+        active_tasks = DataDumpTask.objects.filter(
             status__in=['PENDING', 'RUNNING']
-        ).values_list('metadata__location_id', flat=True))
+        ).values_list('metadata__keyword_id', 'metadata__location_id')
         
-        locations_to_process = [loc for loc in location_ids if loc not in active_locations]
+        # active_tasks returns string values from JSONField on some DBs, so normalize
+        active_set = {(str(kw), str(loc)) for kw, loc in active_tasks if kw and loc}
         
-        if not locations_to_process:
+        tasks_to_process = []
+        for pair in task_pairs:
+            kw_id = str(pair['keyword_id'])
+            loc_id = str(pair['location_id'])
+            if (kw_id, loc_id) not in active_set:
+                tasks_to_process.append(pair)
+        
+        if not tasks_to_process:
             return None # Everything is already running
             
         execution = ActiveExecution.objects.create(
@@ -125,7 +132,7 @@ class ExecutionManager:
             created_by=user,
             scheduler=scheduler,
             status='RUNNING',
-            total_tasks=len(locations_to_process),
+            total_tasks=len(tasks_to_process),
             started_at=timezone.now()
         )
         
@@ -133,24 +140,30 @@ class ExecutionManager:
         from experience_cloud.market_data.models import ApiDump
 
         # 2. Create tasks and dispatch individually
-        for loc_id in locations_to_process:
+        for pair in tasks_to_process:
+            kw_id = pair['keyword_id']
+            loc_id = pair['location_id']
+            
             task = DataDumpTask.objects.create(
                 execution=execution,
-                metadata={'location_id': loc_id},
+                metadata={'keyword_id': kw_id, 'location_id': loc_id},
                 status='PENDING'
             )
             
-            # Create matching ApiDump to track status per location
+            # Create matching ApiDump to track status per keyword+location
             ApiDump.objects.create(
                 task_id=str(task.id),
+                keyword_id=kw_id,
                 location_id=loc_id,
-                status='RUNNING'
+                platform_id=pair.get('platform_id'),
+                api_provider_id=pair.get('api_provider_id'),
+                status='PENDING'
             )
             
             # Dispatch to the data_dump app worker
             current_app.send_task(
                 'experience_cloud.market_data.tasks.process_location_dump',
-                kwargs={'execution_id': execution.id, 'task_id': task.id, 'location_id': loc_id}
+                kwargs={'execution_id': execution.id, 'task_id': task.id, 'keyword_id': kw_id, 'location_id': loc_id}
             )
             
         return execution

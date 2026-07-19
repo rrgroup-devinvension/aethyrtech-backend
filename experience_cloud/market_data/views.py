@@ -70,16 +70,36 @@ class HierarchyKeywordListView(APIView):
         
         keywords = Keyword.objects.filter(category_id=category_id, platform_id=platform_id).select_related('region')
         
-        data = [
-            {
-                "id": kw.id,
-                "keyword": kw.keyword,
+        grouped_data = {}
+        for kw in keywords:
+            k_str = kw.keyword
+            if k_str not in grouped_data:
+                grouped_data[k_str] = {
+                    "keyword": k_str,
+                    "regions": [],
+                    "locations_count": 0
+                }
+            grouped_data[k_str]["regions"].append({
+                "keyword_id": kw.id,
                 "region_id": kw.region_id,
-                "region_name": kw.region.name if kw.region else None,
-                "locations_count": Location.objects.filter(category_id=category_id, platform_id=platform_id, region_id=kw.region_id).count()
-            }
-            for kw in keywords
-        ]
+                "region_name": kw.region.name if kw.region else None
+            })
+            
+            # Locations match on category, platform, and region
+            grouped_data[k_str]["locations_count"] += Location.objects.filter(
+                category_id=category_id,
+                platform_id=platform_id,
+                region_id=kw.region_id
+            ).count()
+            
+        # Convert dict to list
+        data = []
+        for v in grouped_data.values():
+            data.append(v)
+            
+        # Sort alphabetically by keyword
+        data.sort(key=lambda x: x['keyword'].lower())
+        
         return Response({"results": data})
 
 
@@ -93,31 +113,52 @@ class HierarchyLocationListView(APIView):
     def get(self, request, *args, **kwargs):
         category_id = request.query_params.get('category')
         platform_id = request.query_params.get('platform')
-        region_id = request.query_params.get('region')
+        # Instead of 'region', we accept 'keyword_ids' to properly scope tasks
+        keyword_ids_param = request.query_params.get('keyword_ids')
         
-        if not all([category_id, platform_id, region_id]):
-            return Response({"error": "category, platform, and region are required"}, status=status.HTTP_400_BAD_REQUEST)
+        if not all([category_id, platform_id, keyword_ids_param]):
+            return Response({"error": "category, platform, and keyword_ids are required"}, status=status.HTTP_400_BAD_REQUEST)
             
+        kw_ids = keyword_ids_param.split(',')
+        
+        # Get regions for these keywords to filter locations
+        keywords = Keyword.objects.filter(id__in=kw_ids)
+        region_ids = keywords.values_list('region_id', flat=True)
+            
+        from django.db.models import OuterRef, Subquery, IntegerField, CharField, FloatField, DateTimeField
+        from experience_cloud.market_data.models import ApiDump
+        
+        # 100% Status Isolation: Filter the Subquery by the exact keyword IDs!
+        latest_dump = ApiDump.objects.filter(
+            location_id=OuterRef('pk'),
+            keyword_id__in=kw_ids
+        ).order_by('-created_at')
+
         locations = Location.objects.filter(
             category_id=category_id,
             platform_id=platform_id,
-            region_id=region_id
+            region_id__in=region_ids
+        ).annotate(
+            latest_status=Subquery(latest_dump.values('status')[:1], output_field=CharField()),
+            latest_products=Subquery(latest_dump.values('products_found')[:1], output_field=IntegerField()),
+            latest_error=Subquery(latest_dump.values('error_message')[:1], output_field=CharField()),
+            latest_response_time=Subquery(latest_dump.values('response_time')[:1], output_field=FloatField()),
+            latest_run_at=Subquery(latest_dump.values('created_at')[:1], output_field=DateTimeField()),
+            api_provider_name=Subquery(latest_dump.values('api_provider__name')[:1], output_field=CharField())
         )
-        
-        from experience_cloud.market_data.models import ApiDump
         
         data = []
         for loc in locations:
-            # Find the latest ApiDump for this location
-            latest_dump = ApiDump.objects.filter(location_id=loc.id).order_by('-created_at').first()
-            
             data.append({
                 "id": loc.id,
                 "pincode": loc.pincode,
                 "address": loc.address,
-                "latest_status": latest_dump.status if latest_dump else None,
-                "latest_products": latest_dump.products_found if latest_dump else 0,
-                "latest_error": latest_dump.error_message if latest_dump else None,
+                "latest_status": loc.latest_status,
+                "latest_products": loc.latest_products or 0,
+                "latest_error": loc.latest_error,
+                "response_time": loc.latest_response_time,
+                "last_run_at": loc.latest_run_at,
+                "api_provider": loc.api_provider_name
             })
             
         return Response({"results": data})
@@ -179,3 +220,106 @@ class ProductsDetailView(generics.RetrieveUpdateDestroyAPIView):
     search_fields = ['title', 'brand', 'keyword', 'platform', 'location']
     filterset_fields = ['platform', 'category', 'brand']
 
+
+from django.db.models import Count, Q, Sum, Subquery, OuterRef, CharField, FloatField, IntegerField
+from django.db.models.functions import Coalesce
+
+class MarketDataStatsView(APIView):
+    """
+    Returns aggregated data dump status counts at the Category, Platform, and Region (Keyword) levels.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        from experience_cloud.market_data.models import ApiDump
+        from experience_cloud.catalog.models import Location
+        
+        # Get the latest status per location
+        latest_dump = ApiDump.objects.filter(
+            location_id=OuterRef('pk')
+        ).order_by('-created_at')
+
+        # Annotate each location with its latest ApiDump info
+        locations = Location.objects.annotate(
+            latest_status=Subquery(latest_dump.values('status')[:1], output_field=CharField()),
+            latest_time=Subquery(latest_dump.values('response_time')[:1], output_field=FloatField()),
+            latest_products=Subquery(latest_dump.values('products_found')[:1], output_field=IntegerField())
+        )
+        
+        pending_q = Q(latest_status='PENDING') | Q(latest_status__isnull=True) | Q(latest_status='')
+        
+        # Aggregate by Category
+        category_stats = locations.values('category_id').annotate(
+            total=Count('id'),
+            running=Count('id', filter=Q(latest_status='RUNNING')),
+            pending=Count('id', filter=pending_q),
+            success=Count('id', filter=Q(latest_status='SUCCESS')),
+            failed=Count('id', filter=Q(latest_status='FAILED')),
+            stopped=Count('id', filter=Q(latest_status='STOPPED')),
+            total_time=Coalesce(Sum('latest_time'), 0.0),
+            total_products=Coalesce(Sum('latest_products'), 0)
+        )
+        
+        # Aggregate by Platform
+        platform_stats = locations.values('category_id', 'platform_id').annotate(
+            total=Count('id'),
+            running=Count('id', filter=Q(latest_status='RUNNING')),
+            pending=Count('id', filter=pending_q),
+            success=Count('id', filter=Q(latest_status='SUCCESS')),
+            failed=Count('id', filter=Q(latest_status='FAILED')),
+            stopped=Count('id', filter=Q(latest_status='STOPPED')),
+            total_time=Coalesce(Sum('latest_time'), 0.0),
+            total_products=Coalesce(Sum('latest_products'), 0)
+        )
+        
+        # Aggregate by Keyword (Region)
+        keyword_stats = locations.values('category_id', 'platform_id', 'region_id').annotate(
+            total=Count('id'),
+            running=Count('id', filter=Q(latest_status='RUNNING')),
+            pending=Count('id', filter=pending_q),
+            success=Count('id', filter=Q(latest_status='SUCCESS')),
+            failed=Count('id', filter=Q(latest_status='FAILED')),
+            stopped=Count('id', filter=Q(latest_status='STOPPED')),
+            total_time=Coalesce(Sum('latest_time'), 0.0),
+            total_products=Coalesce(Sum('latest_products'), 0)
+        )
+        
+        return Response({
+            "categories": {str(c['category_id']): c for c in category_stats},
+            "platforms": {f"{p['category_id']}_{p['platform_id']}": p for p in platform_stats},
+            "keywords": {f"{k['category_id']}_{k['platform_id']}_{k['region_id']}": k for k in keyword_stats}
+        })
+
+
+class StopDataDumpView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, id, *args, **kwargs):
+        # Stop dump for a specific location
+        from experience_cloud.market_data.models import ApiDump
+        from experience_cloud.executions.models import DataDumpTask
+        from experience_cloud.executions.services import ExecutionManager
+        from celery import current_app
+        from django.utils import timezone
+        
+        latest_dump = ApiDump.objects.filter(location_id=id).order_by('-created_at').first()
+        if not latest_dump or latest_dump.status not in ['RUNNING', 'PENDING']:
+            return Response({'error': 'Task is not running or pending'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        latest_dump.status = 'STOPPED'
+        latest_dump.error_message = 'Manually stopped by user'
+        latest_dump.save(update_fields=['status', 'error_message'])
+        
+        task = DataDumpTask.objects.filter(id=latest_dump.task_id).first()
+        if task:
+            task.status = 'STOPPED'
+            task.error_message = 'Manually stopped by user'
+            task.completed_at = timezone.now()
+            task.save(update_fields=['status', 'error_message', 'completed_at'])
+            
+            if task.celery_task_id:
+                current_app.control.revoke(task.celery_task_id, terminate=True)
+                
+            ExecutionManager._check_and_finalize(task.execution_id, DataDumpTask)
+            
+        return Response({'message': 'Task stopped successfully', 'status': 'STOPPED'})

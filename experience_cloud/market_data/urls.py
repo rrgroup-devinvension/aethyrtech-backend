@@ -6,7 +6,9 @@ from .views import (
     HierarchyLocationListView,
     RunDataDumpView,
     ProductsListView,
-    ProductsDetailView
+    ProductsDetailView,
+    MarketDataStatsView,
+    StopDataDumpView
 )
 
 urlpatterns = [
@@ -17,4 +19,6 @@ urlpatterns = [
     path('run/', RunDataDumpView.as_view(), name='run-data-dump'),
     path('products/', ProductsListView.as_view(), name='products-list'),
     path('products/<uuid:id>/', ProductsDetailView.as_view(), name='products-detail'),
+    path('stats/', MarketDataStatsView.as_view(), name='market-data-stats'),
+    path('locations/<int:id>/stop/', StopDataDumpView.as_view(), name='stop-data-dump'),
 ]
