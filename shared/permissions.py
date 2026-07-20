@@ -2,7 +2,7 @@ from rest_framework.permissions import BasePermission, SAFE_METHODS
 
 class IsAdminUser(BasePermission):
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_staff)
+        return bool(request.user and (getattr(request.user, 'is_staff', False) or (hasattr(request.user, 'role') and request.user.role and request.user.role.role_type == 'INTERNAL')))
 
 class IsOwnerOrReadOnly(BasePermission):
     def has_object_permission(self, request, view, obj):
@@ -34,7 +34,7 @@ class HasPermission(BasePermission):
             return True
             
         # Admin bypass or exact match
-        if request.user.is_staff:
+        if getattr(request.user, 'is_staff', False):
             return True
             
         return request.user.has_permission(required)

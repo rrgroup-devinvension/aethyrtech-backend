@@ -20,7 +20,8 @@ class UserOwnedMixin:
     def perform_update(self, serializer):
         instance = self.get_object()
         owner = getattr(instance, self.owner_field, None)
-        if not (self.request.user and (self.request.user.is_staff or owner == self.request.user)):
+        is_staff_equivalent = getattr(self.request.user, 'is_staff', False) or (hasattr(self.request.user, 'role') and self.request.user.role and self.request.user.role.role_type == 'INTERNAL')
+        if not (self.request.user and (is_staff_equivalent or owner == self.request.user)):
             raise PermissionDenied("You do not have permission to edit this resource.")
         serializer.save()
 
@@ -61,7 +62,7 @@ class BaseViewSet(UUIDLookupMixin, viewsets.ModelViewSet):
             return qs.none()
             
         # Admin or Internal users see everything
-        if user.is_staff or (user.role and user.role.role_type == 'INTERNAL'):
+        if getattr(user, 'is_staff', False) or (user.role and user.role.role_type == 'INTERNAL'):
             return qs
             
         # Organization users only see data for their org

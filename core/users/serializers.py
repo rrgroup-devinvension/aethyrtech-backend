@@ -12,7 +12,7 @@ class RoleSerializer(BaseModelSerializer):
         ret = super().to_representation(instance)
         if instance.code and instance.code.upper() == 'ADMIN':
             from core.authentication.permissions import PERMISSION_REGISTRY
-            ret['permissions'] = [p["id"] for p in PERMISSION_REGISTRY]
+            ret['permissions'] = [p["id"] for p in PERMISSION_REGISTRY if 'INTERNAL' in p.get('scopes', [])]
         return ret
 
 class OrganizationMinimalSerializer(BaseModelSerializer):
@@ -106,6 +106,7 @@ class PasswordUpdateSerializer(serializers.Serializer):
 class ProfileSerializer(BaseModelSerializer):
     """Serializer for user profile - shows more details"""
     organization_details = OrganizationMinimalSerializer(source="organization", read_only=True)
+    role_details = RoleSerializer(source="role", read_only=True)
     
     class Meta:
         model = User
@@ -114,6 +115,7 @@ class ProfileSerializer(BaseModelSerializer):
             "name",
             "email",
             "role",
+            "role_details",
             "organization_details",
             "is_active",
         )

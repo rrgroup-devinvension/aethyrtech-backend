@@ -59,7 +59,7 @@ class User(AbstractBaseUser, TimeStampedModel):
     def get_all_permissions(self):
         if self.role and self.role.code and self.role.code.upper() == 'ADMIN':
             from core.authentication.permissions import PERMISSION_REGISTRY
-            return [p["id"] for p in PERMISSION_REGISTRY]
+            return [p["id"] for p in PERMISSION_REGISTRY if 'INTERNAL' in p.get('scopes', [])]
         
         def _extract_perms(raw):
             if isinstance(raw, dict): return [item for sublist in raw.values() for item in (sublist if isinstance(sublist, list) else [sublist])]
