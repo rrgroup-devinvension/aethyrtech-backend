@@ -1,3 +1,4 @@
+from core.authentication.permissions import AppPermissions
 import logging
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import status
@@ -26,6 +27,14 @@ logger = logging.getLogger(__name__)
     retrieve=extend_schema(summary="Get Role")
 )
 class RoleViewSet(BaseViewSet):
+    organization_field = None
+    permission_mapping = {
+        'GET': AppPermissions.READ_ROLES,
+        'POST': AppPermissions.CREATE_ROLE,
+        'PUT': AppPermissions.UPDATE_ROLE,
+        'PATCH': AppPermissions.UPDATE_ROLE,
+        'DELETE': AppPermissions.DELETE_ROLE
+    }
     queryset = Role.objects.all()
     permission_classes = [IsAuthenticated]
     serializer_class = RoleSerializer
@@ -60,6 +69,21 @@ class RoleViewSet(BaseViewSet):
     destroy=extend_schema(summary="Delete User")
 )
 class UserViewSet(BaseViewSet):
+    action_permission_mapping = {
+        'set_status': AppPermissions.UPDATE_USER,
+        'set_password': AppPermissions.UPDATE_USER,
+        'brands': AppPermissions.READ_USER,
+        'organizations': AppPermissions.READ_USER,
+    }
+
+    organization_field = 'organization_id'
+    permission_mapping = {
+        'GET': AppPermissions.READ_USER,
+        'POST': AppPermissions.CREATE_USER,
+        'PUT': AppPermissions.UPDATE_USER,
+        'PATCH': AppPermissions.UPDATE_USER,
+        'DELETE': AppPermissions.DELETE_USER
+    }
     queryset = User.objects.all()
     permission_classes = [IsAuthenticated]
     search_fields = ("name", "email", "role")

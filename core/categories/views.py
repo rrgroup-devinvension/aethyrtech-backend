@@ -1,3 +1,4 @@
+from core.authentication.permissions import AppPermissions
 import logging
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import status
@@ -17,6 +18,30 @@ logger = logging.getLogger(__name__)
     destroy=extend_schema(summary="Delete Category")
 )
 class CategoryViewSet(BaseViewSet):
+    action_permission_mapping = {
+        'pincodes': AppPermissions.READ_CATEGORIES,
+        'pincodes/add': AppPermissions.MANAGE_TAXONOMY,
+        'pincodes/update/(?P<pincode_id>[^/.]+)': AppPermissions.MANAGE_TAXONOMY,
+        'pincodes/remove/(?P<pincode_id>[^/.]+)': AppPermissions.MANAGE_TAXONOMY,
+        'pincodes/clear': AppPermissions.MANAGE_TAXONOMY,
+        'pincodes/upload-csv': AppPermissions.MANAGE_TAXONOMY,
+        'keywords': AppPermissions.READ_CATEGORIES,
+        'keywords/add': AppPermissions.MANAGE_TAXONOMY,
+        'keywords/update/(?P<keyword_id>[^/.]+)': AppPermissions.MANAGE_TAXONOMY,
+        'keywords/remove/(?P<keyword_id>[^/.]+)': AppPermissions.MANAGE_TAXONOMY,
+        'keywords/remove-by-platform': AppPermissions.MANAGE_TAXONOMY,
+        'keywords/clear': AppPermissions.MANAGE_TAXONOMY,
+        'keywords/upload-csv': AppPermissions.MANAGE_TAXONOMY,
+    }
+
+    organization_field = None
+    permission_mapping = {
+        'GET': AppPermissions.READ_CATEGORIES,
+        'POST': None,
+        'PUT': None,
+        'PATCH': None,
+        'DELETE': None
+    }
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     search_fields = ('name', 'description')

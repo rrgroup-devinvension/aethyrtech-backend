@@ -1,3 +1,4 @@
+from core.authentication.permissions import AppPermissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
@@ -20,6 +21,14 @@ logger = logging.getLogger(__name__)
     destroy=extend_schema(summary="Delete LLM Provider")
 )
 class LLMProviderViewSet(BaseViewSet):
+    organization_field = None
+    permission_mapping = {
+        'GET': AppPermissions.READ_LLM_PROVIDERS,
+        'POST': None,
+        'PUT': None,
+        'PATCH': None,
+        'DELETE': None
+    }
     queryset = LLMProvider.objects.all().order_by('name')
     serializer_class = LLMProviderSerializer
     search_fields = ('name', 'model')

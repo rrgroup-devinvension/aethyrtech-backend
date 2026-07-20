@@ -1,3 +1,4 @@
+from core.authentication.permissions import AppPermissions
 import logging
 from rest_framework import status
 from rest_framework.decorators import action
@@ -20,6 +21,13 @@ logger = logging.getLogger(__name__)
     destroy=extend_schema(summary="Delete Platform")
 )
 class PlatformViewSet(BaseViewSet):
+    action_permission_mapping = {
+        'upload-file': AppPermissions.MANAGE_TAXONOMY,
+        'export-data': AppPermissions.READ_PLATFORMS,
+        'download-template': AppPermissions.READ_PLATFORMS,
+        'bulk-delete': AppPermissions.MANAGE_TAXONOMY,
+    }
+
     queryset = Platform.objects.select_related('api_provider').all().order_by('name')
     serializer_class = PlatformSerializer
     search_fields = ('name', 'code', 'value')

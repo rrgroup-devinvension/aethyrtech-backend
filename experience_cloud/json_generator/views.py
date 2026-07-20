@@ -1,3 +1,4 @@
+from core.authentication.permissions import AppPermissions
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -15,6 +16,12 @@ logger = logging.getLogger(__name__)
 
 class JsonTemplateViewSet(BaseViewSet):
     """CRUD operations for JsonTemplate."""
+    action_permission_mapping = {
+        'set_status': AppPermissions.MANAGE_TAXONOMY,
+        'run': AppPermissions.START_EXECUTION,
+        'stop': AppPermissions.STOP_EXECUTION,
+    }
+
     queryset = JsonTemplate.objects.all().order_by('name')
     serializer_class = JsonTemplateSerializer
 

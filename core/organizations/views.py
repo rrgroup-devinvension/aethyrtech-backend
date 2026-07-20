@@ -1,3 +1,4 @@
+from core.authentication.permissions import AppPermissions
 import logging
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from shared.base.views import BaseViewSet
@@ -18,6 +19,20 @@ logger = logging.getLogger(__name__)
     destroy=extend_schema(summary="Delete Organization")
 )
 class OrganizationViewSet(BaseViewSet):
+    action_permission_mapping = {
+        'brands': AppPermissions.READ_ORGANIZATION,
+        'active': AppPermissions.READ_ORGANIZATION,
+        'toggle_status': AppPermissions.MANAGE_ORGANIZATION,
+    }
+
+    organization_field = 'id'
+    permission_mapping = {
+        'GET': AppPermissions.READ_ORGANIZATION,
+        'POST': AppPermissions.MANAGE_ORGANIZATION,
+        'PUT': AppPermissions.MANAGE_ORGANIZATION,
+        'PATCH': AppPermissions.MANAGE_ORGANIZATION,
+        'DELETE': AppPermissions.MANAGE_ORGANIZATION
+    }
     queryset = Organization.objects.all()
     serializer_class = OrganizationSerializer
     search_fields = ('name', 'description')
@@ -53,6 +68,14 @@ class OrganizationViewSet(BaseViewSet):
     destroy=extend_schema(summary="Delete Brand")
 )
 class BrandViewSet(BaseViewSet):
+    organization_field = 'organization_id'
+    permission_mapping = {
+        'GET': AppPermissions.READ_BRAND,
+        'POST': AppPermissions.MANAGE_BRAND,
+        'PUT': AppPermissions.MANAGE_BRAND,
+        'PATCH': AppPermissions.MANAGE_BRAND,
+        'DELETE': AppPermissions.MANAGE_BRAND
+    }
     queryset = Brand.objects.all()
     serializer_class = BrandSerializer
     search_fields = ("name", "description")
@@ -114,6 +137,14 @@ class BrandViewSet(BaseViewSet):
     destroy=extend_schema(summary="Delete Competitor")
 )
 class CompetitorViewSet(BaseViewSet):
+    organization_field = 'organization_id'
+    permission_mapping = {
+        'GET': AppPermissions.READ_BRAND,
+        'POST': AppPermissions.MANAGE_BRAND,
+        'PUT': AppPermissions.MANAGE_BRAND,
+        'PATCH': AppPermissions.MANAGE_BRAND,
+        'DELETE': AppPermissions.MANAGE_BRAND
+    }
     queryset = Competitor.objects.all()
     serializer_class = CompetitorSerializer
     search_fields = ("name", "description")

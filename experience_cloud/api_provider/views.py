@@ -1,3 +1,4 @@
+from core.authentication.permissions import AppPermissions
 import requests
 from django.utils import timezone
 from rest_framework.decorators import action
@@ -20,6 +21,11 @@ logger = logging.getLogger(__name__)
     destroy=extend_schema(summary="Delete API Provider")
 )
 class ApiProviderViewSet(BaseViewSet):
+    action_permission_mapping = {
+        'set_status': AppPermissions.MANAGE_INTEGRATIONS,
+        'test_connection': AppPermissions.MANAGE_INTEGRATIONS,
+    }
+
     queryset = ApiProvider.objects.all().order_by('name')
     serializer_class = ApiProviderSerializer
     search_fields = ('name', 'base_url', 'status')

@@ -1,3 +1,4 @@
+from core.authentication.permissions import AppPermissions
 """
 Views for scheduler and tasks management.
 Provides APIs for data dump and JSON builder functionalities.
@@ -8,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
-from core.permissions import IsStaffOrReadOnly
+from shared.permissions import IsAdminUser as IsStaffOrReadOnly
 from django.conf import settings
 from django.utils import timezone
 from django.db.models import Prefetch
@@ -17,7 +18,7 @@ from apps.scheduler.enums import JsonTemplate
 from apps.scheduler import service_layer
 from apps.tasks.serializers import ( SchedulerSerializer, SchedulerJobSerializer, TaskSerializer)
 from apps.brand.models import Brand
-from core.views import BaseViewSet
+from shared.base.views import BaseViewSet
 from django.db.models import Q, OuterRef, Subquery
 import logging
 import json
@@ -31,6 +32,14 @@ from ..scheduler.utility.datadump_api_logger import log_success as dd_log_succes
 logger = logging.getLogger(__name__)
 
 class SchedulerViewSet(BaseViewSet):
+    organization_field = None
+    permission_mapping = {
+        'GET': AppPermissions.MANAGE_SCHEDULERS,
+        'POST': AppPermissions.MANAGE_SCHEDULERS,
+        'PUT': AppPermissions.MANAGE_SCHEDULERS,
+        'PATCH': AppPermissions.MANAGE_SCHEDULERS,
+        'DELETE': AppPermissions.MANAGE_SCHEDULERS
+    }
     """CRUD operations for Scheduler."""
     queryset = Scheduler.objects.all().order_by('-created_at')
     serializer_class = SchedulerSerializer
@@ -59,6 +68,14 @@ class SchedulerViewSet(BaseViewSet):
         }, status=status.HTTP_201_CREATED)
 
 class SchedulerJobViewSet(BaseViewSet):
+    organization_field = None
+    permission_mapping = {
+        'GET': AppPermissions.MANAGE_SCHEDULERS,
+        'POST': AppPermissions.MANAGE_SCHEDULERS,
+        'PUT': AppPermissions.MANAGE_SCHEDULERS,
+        'PATCH': AppPermissions.MANAGE_SCHEDULERS,
+        'DELETE': AppPermissions.MANAGE_SCHEDULERS
+    }
     """CRUD operations for SchedulerJob."""
     queryset = SchedulerJob.objects.all().select_related('scheduler').order_by('-created_at')
     serializer_class = SchedulerJobSerializer
@@ -188,6 +205,19 @@ class SchedulerJobViewSet(BaseViewSet):
         }, status=status.HTTP_201_CREATED)
     
 class TaskViewSet(BaseViewSet):
+    action_permission_mapping = {
+        'run': AppPermissions.START_EXECUTION,
+        'last-running': AppPermissions.READ_TASKS,
+    }
+
+    organization_field = None
+    permission_mapping = {
+        'GET': AppPermissions.READ_TASKS,
+        'POST': None,
+        'PUT': None,
+        'PATCH': None,
+        'DELETE': None
+    }
     """CRUD operations for Task."""
     queryset = Task.objects.all().select_related('scheduler_job').order_by('-created_at')
     serializer_class = TaskSerializer

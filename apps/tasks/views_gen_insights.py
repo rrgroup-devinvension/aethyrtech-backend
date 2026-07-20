@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from core.permissions import IsStaffOrReadOnly
+from shared.permissions import IsAdminUser as IsStaffOrReadOnly
 from .services.generate_cxo_insights import generate_cxo_insights
 from .services.generate_plp_insights import generate_plp_insights
 from .services.generate_pdp_insights import generate_pdp_insights

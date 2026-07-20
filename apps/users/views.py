@@ -1,4 +1,5 @@
-from core.views import BaseViewSet
+from core.authentication.permissions import AppPermissions
+from shared.base.views import BaseViewSet
 from .models import User
 from .serializers import (
     UserSerializer, 
@@ -9,7 +10,7 @@ from .serializers import (
     ChangePasswordSerializer
 )
 from rest_framework.permissions import IsAuthenticated
-from core.permissions import IsStaffOrReadOnly
+from shared.permissions import IsAdminUser as IsStaffOrReadOnly
 from rest_framework.decorators import action
 from rest_framework import status
 from rest_framework.response import Response
@@ -17,6 +18,21 @@ from apps.brand.serializers import BrandSerializer
 from rest_framework.views import APIView
 
 class UserViewSet(BaseViewSet):
+    action_permission_mapping = {
+        'set_status': AppPermissions.UPDATE_USER,
+        'set_password': AppPermissions.UPDATE_USER,
+        'brands': AppPermissions.READ_USER,
+        'organizations': AppPermissions.READ_USER,
+    }
+
+    organization_field = 'organization_id'
+    permission_mapping = {
+        'GET': AppPermissions.READ_USER,
+        'POST': AppPermissions.CREATE_USER,
+        'PUT': AppPermissions.UPDATE_USER,
+        'PATCH': AppPermissions.UPDATE_USER,
+        'DELETE': AppPermissions.DELETE_USER
+    }
     queryset = User.objects.all()
     permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
     search_fields = ("name", "email", "role")

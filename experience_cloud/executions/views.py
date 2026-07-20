@@ -1,3 +1,4 @@
+from core.authentication.permissions import AppPermissions
 import logging
 from django.utils import timezone
 from rest_framework import status
@@ -27,6 +28,15 @@ logger = logging.getLogger(__name__)
     destroy=extend_schema(summary="Delete Scheduler")
 )
 class SchedulerViewSet(BaseViewSet):
+    permission_mapping = {
+        'GET': AppPermissions.READ_SCHEDULERS,
+        'POST': AppPermissions.MANAGE_SCHEDULERS,
+        'PUT': AppPermissions.MANAGE_SCHEDULERS,
+        'PATCH': AppPermissions.MANAGE_SCHEDULERS,
+        'DELETE': AppPermissions.MANAGE_SCHEDULERS,
+    }
+    organization_field = 'organization_id'
+
     queryset = Scheduler.objects.all().order_by('-created_at')
     serializer_class = SchedulerSerializer
     search_fields = ('name', 'type', 'status')
