@@ -17,9 +17,17 @@ class LoginSerializer(serializers.Serializer):
         access_token = refresh.access_token
         
         role_code = user.role.code if user.role else None
+        effective_permissions = user.get_all_permissions()
         
         return {
-            "user": {"id": str(user.id), "email": user.email, "name": user.name, "role": role_code},
+            "user": {
+                "id": str(user.id), 
+                "email": user.email, 
+                "name": user.name, 
+                "role": role_code,
+                "user_type": user.user_type,
+                "permissions": effective_permissions
+            },
             "refresh": str(refresh),
             "refresh_expires": refresh.payload.get('exp'),
             "access": str(access_token),
@@ -45,6 +53,7 @@ class RefreshSerializer(serializers.Serializer):
             raise serializers.ValidationError("User not found")
             
         role_code = user.role.code if user.role else None
+        effective_permissions = user.get_all_permissions()
 
         return {
             "user": {
@@ -52,6 +61,8 @@ class RefreshSerializer(serializers.Serializer):
                 "email": user.email,
                 "name": getattr(user, "name", ""),
                 "role": role_code,
+                "user_type": user.user_type,
+                "permissions": effective_permissions,
             },
             "refresh": str(refresh),
             "refresh_expires": refresh.payload.get("exp"),

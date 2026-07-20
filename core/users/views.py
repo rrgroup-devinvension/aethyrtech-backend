@@ -31,7 +31,25 @@ class RoleViewSet(BaseViewSet):
     serializer_class = RoleSerializer
     search_fields = ("name", "code")
     ordering_fields = ("name", "code")
-    http_method_names = ['get']
+    http_method_names = ['get', 'post', 'put', 'patch', 'delete']
+
+    @extend_schema(summary="Get Permission Registry", responses={200: list})
+    @action(detail=False, methods=["get"], url_path="permissions")
+    def list_permissions(self, request):
+        from core.authentication.permissions import PERMISSION_REGISTRY
+        logger.info("Fetching permission registry")
+        return Response(PERMISSION_REGISTRY, status=status.HTTP_200_OK)
+
+    @extend_schema(summary="Set Role Status")
+    @action(detail=True, methods=["post"], url_path="set-status")
+    def set_status(self, request, pk=None):
+        role = self.get_object()
+        is_active = request.data.get("is_active")
+        if is_active is not None:
+            role.is_active = is_active
+            role.save()
+        serializer = self.get_serializer(role)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 @extend_schema_view(
     list=extend_schema(summary="List Users"),

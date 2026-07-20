@@ -6,7 +6,14 @@ from shared.base.serializers import BaseModelSerializer
 class RoleSerializer(BaseModelSerializer):
     class Meta:
         model = Role
-        fields = ("id", "name", "code", "role_type")
+        fields = ("id", "name", "code", "role_type", "permissions", "is_active")
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        if instance.code and instance.code.upper() == 'ADMIN':
+            from core.authentication.permissions import PERMISSION_REGISTRY
+            ret['permissions'] = [p["id"] for p in PERMISSION_REGISTRY]
+        return ret
 
 class OrganizationMinimalSerializer(BaseModelSerializer):
     class Meta:
@@ -29,6 +36,7 @@ class UserSerializer(BaseModelSerializer):
             "organization",
             "organization_details",
             "managed_organizations",
+            "extra_permissions",
             "is_active",
         )
 
@@ -48,7 +56,7 @@ class UserCreateUpdateSerializer(BaseModelSerializer):
 
     class Meta:
         model = User
-        fields = ("id", "created_at", "updated_at", "name", "email", "role", "organization", "managed_organization_ids", "password", "is_active")
+        fields = ("id", "created_at", "updated_at", "name", "email", "role", "organization", "managed_organization_ids", "password", "extra_permissions", "is_active")
         extra_kwargs = {
             "password": {"write_only": True, "required": False}
         }
