@@ -6,7 +6,7 @@ class LLMProviderSerializer(serializers.ModelSerializer):
         model = LLMProvider
         fields = (
             'id', 'created_at', 'updated_at',
-            'name', 'enabled', 'api_key', 'model',
+            'name', 'enabled', 'is_default', 'api_key', 'model',
             'base_url', 'description', 'timeout_seconds', 'max_retries',
             'health_check_path', 'health_check_status', 'last_health_check'
         )

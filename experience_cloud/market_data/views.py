@@ -200,9 +200,9 @@ class ProductsListView(generics.ListAPIView):
     """
     Returns a list of products from the secondary database.
     """
-    from experience_cloud.market_data.models import Product
+    from experience_cloud.market_integrations.models.xbytes import XBytesProduct
     from experience_cloud.market_data.serializers import ProductSerializer
-    queryset = Product.objects.all().order_by('-created_at')
+    queryset = XBytesProduct.objects.all().order_by('-created_at')
     serializer_class = ProductSerializer
     permission_classes = [permissions.IsAuthenticated]
     
@@ -212,14 +212,14 @@ class ProductsDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
     Retrieve, update or delete a product from the secondary database.
     """
-    from experience_cloud.market_data.models import Product
+    from experience_cloud.market_integrations.models.xbytes import XBytesProduct
     from experience_cloud.market_data.serializers import ProductSerializer
-    queryset = Product.objects.all()
+    queryset = XBytesProduct.objects.all()
     serializer_class = ProductSerializer
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
     # We can also add search fields and filter fields if needed.
-    search_fields = ['title', 'brand', 'keyword', 'platform', 'location']
+    search_fields = ['title', 'brand', 'keyword', 'platform', 'pincode']
     filterset_fields = ['platform', 'category', 'brand']
 
 

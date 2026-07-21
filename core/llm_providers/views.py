@@ -50,6 +50,22 @@ class LLMProviderViewSet(BaseViewSet):
         msg = "Provider enabled successfully" if provider.enabled else "Provider disabled successfully"
         return Response({"detail": msg}, status=status.HTTP_200_OK)
 
+    @extend_schema(summary="Set LLM Provider as Default", request=dict, responses={200: dict})
+    @action(detail=True, methods=["post"], url_path="set-default")
+    def set_default(self, request, id=None):
+        logger.info(f"Setting default for LLM Provider id {id}")
+        provider = self.get_object()
+        is_default = request.data.get("is_default")
+        if is_default is None:
+            return Response(
+                {"detail": "Please provide 'is_default': true/false in request body."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        provider.is_default = bool(is_default)
+        provider.save()
+        msg = "Provider set as default" if provider.is_default else "Provider removed from default"
+        return Response({"detail": msg}, status=status.HTTP_200_OK)
+
     @extend_schema(summary="Test LLM Provider Connection", request=None, responses={200: dict})
     @action(detail=True, methods=["post"], url_path="test-connection")
     def test_connection(self, request, id=None):

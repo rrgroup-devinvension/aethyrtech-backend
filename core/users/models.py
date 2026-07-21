@@ -57,7 +57,7 @@ class User(AbstractBaseUser, TimeStampedModel):
     )
 
     def get_all_permissions(self):
-        if self.role and self.role.code and self.role.code.upper() == 'ADMIN':
+        if self.role and self.role.code and self.role.code.upper() == 'ADMIN' and self.user_type == 'INTERNAL':
             from core.authentication.permissions import PERMISSION_REGISTRY
             return [p["id"] for p in PERMISSION_REGISTRY if 'INTERNAL' in p.get('scopes', [])]
         
@@ -71,7 +71,7 @@ class User(AbstractBaseUser, TimeStampedModel):
         return list(set(role_perms + extra_perms))
 
     def has_permission(self, permission):
-        if self.role and self.role.code and self.role.code.upper() == 'ADMIN':
+        if self.role and self.role.code and self.role.code.upper() == 'ADMIN' and self.user_type == 'INTERNAL':
             return True
         return permission in self.get_all_permissions()
 

@@ -4,6 +4,7 @@ from shared.base.models import BaseModel
 class LLMProvider(BaseModel):
     name = models.CharField(max_length=100, unique=True, help_text="e.g. openai, gemini, anthropic")
     enabled = models.BooleanField(default=False)
+    is_default = models.BooleanField(default=False, help_text="Fallback provider if none specified")
     api_key = models.CharField(max_length=255, null=True, blank=True)
     model = models.CharField(max_length=100, null=True, blank=True, help_text="e.g. gpt-4o, gemini-2.5-flash")
     base_url = models.CharField(max_length=500, null=True, blank=True, help_text="e.g. custom proxy URL")
@@ -25,6 +26,9 @@ class LLMProvider(BaseModel):
         self._original_api_key = self.api_key
 
     def save(self, *args, **kwargs):
+        if self.is_default:
+            # Ensure only one default exists
+            LLMProvider.objects.filter(is_default=True).update(is_default=False)
         if self.pk:
             if (self.base_url != self._original_base_url or 
                 self.health_check_path != self._original_health_check_path or 
@@ -37,3 +41,53 @@ class LLMProvider(BaseModel):
 
     def __str__(self):
         return f"{self.name} ({self.model})"
+
+class TokenUsageLog(BaseModel):
+    timestamp = models.DateTimeField(auto_now_add=True)
+    provider = models.ForeignKey(LLMProvider, on_delete=models.CASCADE, related_name='usage_logs') 
+    type = models.CharField(max_length=50, null=True, blank=True) # e.g., 'JSON_EXTRACTION', 'TRANSLATION'
+    
+    # Cross-Boundary Soft Reference
+    brand_id = models.IntegerField(null=True, blank=True)
+    
+    # Metrics
+    prompt_tokens = models.IntegerField(default=0)
+    completion_tokens = models.IntegerField(default=0)
+    total_tokens = models.IntegerField(default=0)
+    estimated_cost = models.DecimalField(max_digits=10, decimal_places=6, default=0.00)
+
+    class Meta:
+        db_table = 'token_usage_logs'
+        indexes = [
+            models.Index(fields=['timestamp']),
+            models.Index(fields=['brand_id', 'timestamp']),
+        ]
+
+class TokenUsageSummary(BaseModel):
+    date = models.DateField()
+    provider = models.ForeignKey(LLMProvider, on_delete=models.CASCADE, related_name='usage_summaries')
+    type = models.CharField(max_length=50, null=True, blank=True)
+    
+    # Cross-Boundary Soft Reference
+    brand_id = models.IntegerField(null=True, blank=True)
+    
+    # Aggregated Metrics
+    requests = models.IntegerField(default=0)
+    prompt_tokens = models.IntegerField(default=0)
+    completion_tokens = models.IntegerField(default=0)
+    total_tokens = models.IntegerField(default=0)
+    estimated_cost = models.DecimalField(max_digits=12, decimal_places=6, default=0.00)
+
+    class Meta:
+        db_table = 'token_usage_summaries'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['date', 'provider', 'type', 'brand_id'], 
+                name='unique_token_summary_dimension'
+            )
+        ]
+        indexes = [
+            models.Index(fields=['date']),
+            models.Index(fields=['brand_id', 'date']),
+        ]
+

@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'experience_cloud.executions',
     'experience_cloud.json_generator',
     'experience_cloud.market_data',
+    'experience_cloud.market_integrations',
     
     # Identity & Media Clouds (Roots)
     'identity_cloud',
@@ -160,17 +161,36 @@ DATABASES = {
         'HOST': os.getenv("DB_HOST"),
         'PORT': os.getenv("DB_PORT"),
     },
-    'xbytesdata': {
+    'xbytes_db': {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': os.getenv("XBYTES_DB_NAME", "xbytesdata"),
         'USER': os.getenv("XBYTES_DB_USER", os.getenv("DB_USER")),
         'PASSWORD': os.getenv("XBYTES_DB_PASSWORD", os.getenv("DB_PASSWORD")),
         'HOST': os.getenv("XBYTES_DB_HOST", os.getenv("DB_HOST")),
         'PORT': os.getenv("XBYTES_DB_PORT", os.getenv("DB_PORT")),
+        'CONN_MAX_AGE': int(os.getenv("EXTERNAL_DB_CONN_MAX_AGE", 300)),
+        'OPTIONS': {
+            'connect_timeout': int(os.getenv("EXTERNAL_DB_CONNECT_TIMEOUT", 10)),
+        }
+    },
+    'karmatech_db': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': os.getenv("KARMATECH_DB_NAME", "karmatechdata"),
+        'USER': os.getenv("KARMATECH_DB_USER", os.getenv("DB_USER")),
+        'PASSWORD': os.getenv("KARMATECH_DB_PASSWORD", os.getenv("DB_PASSWORD")),
+        'HOST': os.getenv("KARMATECH_DB_HOST", os.getenv("DB_HOST")),
+        'PORT': os.getenv("KARMATECH_DB_PORT", os.getenv("DB_PORT")),
+        'CONN_MAX_AGE': int(os.getenv("EXTERNAL_DB_CONN_MAX_AGE", 300)),
+        'OPTIONS': {
+            'connect_timeout': int(os.getenv("EXTERNAL_DB_CONNECT_TIMEOUT", 10)),
+        }
     }
 }
 
-DATABASE_ROUTERS = ['config.routers.XBytesDataRouter']
+DATABASE_ROUTERS = [
+    'experience_cloud.market_integrations.routers.ExternalDBRouter',
+    'config.routers.XBytesDataRouter'
+]
 
 
 AUTH_PASSWORD_VALIDATORS = [

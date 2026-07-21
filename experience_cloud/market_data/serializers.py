@@ -1,7 +1,7 @@
 from rest_framework import serializers
-from .models import Product
+from experience_cloud.market_integrations.models.xbytes import XBytesProduct
 
 class ProductSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Product
+        model = XBytesProduct
         fields = '__all__'

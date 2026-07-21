@@ -12,14 +12,15 @@ class JsonTemplateSerializer(BaseModelSerializer):
 
 class RegionJsonFileSerializer(BaseModelSerializer):
     template_name = serializers.CharField(source='template.name', read_only=True)
+    process_type = serializers.CharField(source='template.process_type', read_only=True)
     
     class Meta(BaseModelSerializer.Meta):
         model = RegionJsonFile
         fields = (
-            'id', 'region', 'template', 'template_name', 
+            'id', 'region', 'template', 'template_name', 'process_type',
             'file_name', 'file_path', 'file_size', 'checksum', 
             'generation_duration', 'last_generated_at', 'task_id',
             'status', 'error_message',
             'created_at', 'updated_at'
         )
-        read_only_fields = ('id', 'created_at', 'updated_at', 'template_name')
+        read_only_fields = ('id', 'created_at', 'updated_at', 'template_name', 'process_type')

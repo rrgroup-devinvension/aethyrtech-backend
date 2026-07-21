@@ -104,6 +104,10 @@ class RegionJsonFileViewSet(BaseViewSet):
         # Exclude files that are already running or pending to prevent duplicate tasks
         files = files.exclude(status__in=['RUNNING', 'PENDING']).select_related('template')
 
+        # If it's a bulk run (Region, Brand, Org), only run 'automatic' templates
+        if scope_type != 'FILE':
+            files = files.filter(template__process_type='automatic')
+
         for f in files:
             if f.region_id not in region_groups:
                 region_groups[f.region_id] = []
