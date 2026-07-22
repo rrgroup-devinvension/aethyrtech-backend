@@ -1,3 +1,4 @@
+from experience_cloud.json_generator.schemas import RegionDataSchema
 import json
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Union, Tuple
@@ -7,11 +8,12 @@ from experience_cloud.json_generator.decorators import handle_builder_exceptions
 from experience_cloud.json_generator.utils import serve_region_template_json, save_or_update_region_json
 
 @handle_builder_exceptions
-def incentive_insights_builder(region_data: dict, task, products=None, template="template-name") -> tuple[bool, dict]:
+def incentive_insights_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
     # ===============================
     # BRAND (MATCH PHP)
     # ===============================
     current_brand = region_data.get("brand_name")
+    brand_id = region_data.get("brand_id")
     region_id = region_data.get("region_id")
     
     if not region_id or not current_brand:
@@ -243,7 +245,7 @@ STRICT RULES:
 - Keep all text concise, business-focused, and actionable.
 - Ensure JSON is properly formatted and parsable.
 """
-    response = LLMService.generate_content(prompt)
+    response = LLMService.get_service().generate_content([{'role': 'user', 'content': prompt}], action="incentive_insights", brand_id=brand_id, brand_name=current_brand)
     if not response:
         raise Exception("Empty LLM response")
 

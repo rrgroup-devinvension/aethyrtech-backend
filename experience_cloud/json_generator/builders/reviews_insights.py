@@ -1,3 +1,4 @@
+from experience_cloud.json_generator.schemas import RegionDataSchema
 import json
 import re
 from datetime import datetime, timedelta
@@ -11,8 +12,9 @@ from experience_cloud.json_generator.decorators import handle_builder_exceptions
 from experience_cloud.json_generator.utils import serve_region_template_json, save_or_update_region_json
 
 @handle_builder_exceptions
-def reviews_insights_builder(region_data: dict, task, products=None, template="template-name") -> tuple[bool, dict]:
+def reviews_insights_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
     current_brand = region_data.get("brand_name")
+    brand_id = region_data.get("brand_id")
     region_id = region_data.get("region_id")
     
     if not current_brand or not region_id:
@@ -273,7 +275,7 @@ Return purely JSON (no markdown) with:
 - tactical_action_plan (Exactly 2 items in immediate, one_week, one_month; keys: action, owner, impact, priority)
 """
 
-    response = LLMService.generate_content(prompt)
+    response = LLMService.get_service().generate_content([{'role': 'user', 'content': prompt}], action="reviews_insights", brand_id=brand_id, brand_name=current_brand)
     content = response[0]["content"]
     llm_data = json.loads(content[content.find("{"): content.rfind("}") + 1])
 

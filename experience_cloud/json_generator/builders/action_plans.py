@@ -1,3 +1,4 @@
+from experience_cloud.json_generator.schemas import RegionDataSchema
 import json
 import logging
 import re
@@ -54,9 +55,10 @@ MEDIA_WORKFLOWS = {
 }
 
 @handle_builder_exceptions
-def action_plans_builder(region_data: dict, task, products=None, template="template-name") -> tuple[bool, dict]:
+def action_plans_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
     region_id = region_data.get("region_id")
     current_brand = region_data.get("brand_name")
+    brand_id = region_data.get("brand_id")
     target = region_data.get("target", "all")
 
     queue = []
@@ -177,7 +179,7 @@ Schema:
 """
 
         try:
-            response = LLMService.generate_content(prompt)
+            response = LLMService.get_service().generate_content([{'role': 'user', 'content': prompt}], action="action_plans", brand_id=brand_id, brand_name=current_brand)
             if not response:
                 errors.append(f"Insight #{insight_id}: Empty LLM response")
                 continue

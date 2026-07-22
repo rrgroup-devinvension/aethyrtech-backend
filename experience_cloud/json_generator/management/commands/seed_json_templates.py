@@ -1,27 +1,49 @@
 from django.core.management.base import BaseCommand
 from experience_cloud.json_generator.models import JsonTemplate
-from apps.scheduler.enums import JsonTemplate as JsonTemplateEnum
 
 class Command(BaseCommand):
-    help = "Seed JSON Templates from Enum"
+    help = "Seed JSON Templates statically from registry keys"
 
     def handle(self, *args, **options):
+        # Static definitions of templates based on the BUILDER_REGISTRY keys
+        templates = [
+            # Automatic templates
+            {"slug": "brand_audit", "process_type": "automatic"},
+            {"slug": "catalog", "process_type": "automatic"},
+            {"slug": "category_view", "process_type": "automatic"},
+            {"slug": "keyword_matrix", "process_type": "automatic"},
+            {"slug": "keyword_counts", "process_type": "automatic"},
+            {"slug": "product_reviews", "process_type": "automatic"},
+            {"slug": "cartesian_products_pincodes", "process_type": "automatic"},
+            
+            # Manual templates
+            {"slug": "insights", "process_type": "manual"},
+            {"slug": "brand_graph", "process_type": "manual"},
+            {"slug": "positive_data", "process_type": "manual"},
+            {"slug": "risk_data", "process_type": "manual"},
+            {"slug": "reviews_insights", "process_type": "manual"},
+            {"slug": "plp_insights", "process_type": "manual"},
+            {"slug": "pdp_insights", "process_type": "manual"},
+            {"slug": "incentive_insights", "process_type": "manual"},
+            {"slug": "action_plans", "process_type": "manual"},
+        ]
+
         created_count = 0
         updated_count = 0
 
-        for enum_item in JsonTemplateEnum:
-            slug = enum_item.slug
-            process_type = enum_item.template_type.value
+        for item in templates:
+            slug = item["slug"]
+            process_type = item["process_type"]
             
-            # Create a pretty name from the slug (e.g., 'brand-audit' -> 'Brand Audit')
-            name = slug.replace("-", " ").replace("_", " ").title()
+            # Create a pretty name from the slug (e.g., 'brand_audit' -> 'Brand Audit')
+            name = slug.replace("_", " ").title()
 
             obj, created = JsonTemplate.objects.update_or_create(
                 template=slug,
                 defaults={
                     "name": name,
                     "process_type": process_type,
-                    "format": "json"  # Default format based on model choices
+                    "format": "json"  # Default format
                 }
             )
             

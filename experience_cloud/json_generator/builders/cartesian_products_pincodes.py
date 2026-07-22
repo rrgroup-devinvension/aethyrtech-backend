@@ -63,7 +63,7 @@ def get_cartesian_products_pincodes_list(products, brands, brand_name, is_compet
     return cartesian_products
 
 @handle_builder_exceptions
-def cartesian_products_pincodes_builder(region_data: dict, task, products=None, template="template-name") -> tuple[bool, dict]:
+def cartesian_products_pincodes_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
     brands = region_data.get("brands", [])
     keywords = region_data.get("keywords", [])
     brand_id = region_data.get("brand_id")

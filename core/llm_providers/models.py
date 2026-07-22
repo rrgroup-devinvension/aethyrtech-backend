@@ -5,7 +5,7 @@ class LLMProvider(BaseModel):
     name = models.CharField(max_length=100, unique=True, help_text="e.g. openai, gemini, anthropic")
     enabled = models.BooleanField(default=False)
     is_default = models.BooleanField(default=False, help_text="Fallback provider if none specified")
-    api_key = models.CharField(max_length=255, null=True, blank=True)
+    api_key = models.CharField(max_length=2048, null=True, blank=True)
     model = models.CharField(max_length=100, null=True, blank=True, help_text="e.g. gpt-4o, gemini-2.5-flash")
     base_url = models.CharField(max_length=500, null=True, blank=True, help_text="e.g. custom proxy URL")
     description = models.TextField(null=True, blank=True)
@@ -25,16 +25,39 @@ class LLMProvider(BaseModel):
         self._original_health_check_path = self.health_check_path
         self._original_api_key = self.api_key
 
+    def get_decrypted_api_key(self) -> str:
+        """Helper to securely decrypt the stored API key."""
+        from experience_cloud.api_provider.utils import decrypt_string
+        
+        if not self.api_key:
+            return ""
+            
+        return decrypt_string(self.api_key)
+
     def save(self, *args, **kwargs):
+        from experience_cloud.api_provider.utils import encrypt_string
+        
         if self.is_default:
             # Ensure only one default exists
             LLMProvider.objects.filter(is_default=True).update(is_default=False)
+            
+        # Encrypt API key if it was changed (meaning it's plain text from the admin form)
+        if self.api_key and self.api_key != self._original_api_key:
+            # We don't want to re-encrypt an already encrypted string unless the user explicitly pasted a new one.
+            # Assuming the UI passes plain text. If it's already encrypted, the UI would have passed the encrypted string.
+            # Actually, standard practice for passwords/keys is if it changed, it's a new plain-text key.
+            # However, just to be safe, if the string looks like our encryption format, we might skip.
+            # But the _original_api_key check handles most Admin/form updates.
+            self.api_key = encrypt_string(self.api_key)
+            
         if self.pk:
             if (self.base_url != self._original_base_url or 
                 self.health_check_path != self._original_health_check_path or 
                 self.api_key != self._original_api_key):
                 self.health_check_status = None
+                
         super().save(*args, **kwargs)
+        
         self._original_base_url = self.base_url
         self._original_health_check_path = self.health_check_path
         self._original_api_key = self.api_key
@@ -49,6 +72,7 @@ class TokenUsageLog(BaseModel):
     
     # Cross-Boundary Soft Reference
     brand_id = models.IntegerField(null=True, blank=True)
+    brand_name = models.CharField(max_length=255, null=True, blank=True)
     
     # Metrics
     prompt_tokens = models.IntegerField(default=0)
@@ -70,6 +94,7 @@ class TokenUsageSummary(BaseModel):
     
     # Cross-Boundary Soft Reference
     brand_id = models.IntegerField(null=True, blank=True)
+    brand_name = models.CharField(max_length=255, null=True, blank=True)
     
     # Aggregated Metrics
     requests = models.IntegerField(default=0)

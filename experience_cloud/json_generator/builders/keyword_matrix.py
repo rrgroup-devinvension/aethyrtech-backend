@@ -1,3 +1,4 @@
+from experience_cloud.json_generator.schemas import RegionDataSchema
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
 from experience_cloud.json_generator.utils import ItemGenerator
 import logging
@@ -8,7 +9,7 @@ from experience_cloud.json_generator.utils import match_brand
 
 logger = logging.getLogger(__name__)
 
-def build_keyword_matrix(region_data: dict, products: ItemGenerator) -> dict:
+def build_keyword_matrix(region_data: RegionDataSchema, products: ItemGenerator) -> dict:
     brands = region_data.get("brands", [])
     brand_name = region_data.get("brand_name")
     
@@ -131,7 +132,7 @@ def build_rank_averages(keyword_matrix: dict) -> dict:
 
 
 @handle_builder_exceptions
-def keyword_matrix_builder(region_data: dict, task, products=None, template="template-name") -> tuple[bool, dict]:
+def keyword_matrix_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
     t_id = getattr(task, 'id', 'unknown')
     logger.info(f"Starting KEYWORD_MATRIX JSON build | Task={t_id}")
     

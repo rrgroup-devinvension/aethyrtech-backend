@@ -4,7 +4,6 @@ from django.db.models.query import QuerySet
 from experience_cloud.json_generator.schemas import RegionDataSchema, ProductSchema
 from experience_cloud.json_generator.utils import match_brands
 from experience_cloud.market_integrations.models.xbytes import XBytesProduct
-from experience_cloud.json_generator.log_manager import log_error
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +30,8 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
             keywords_map[plat_name] = [kw.get("name") for kw in plat.get("keywords", [])]
             pincodes_map[plat_name] = [loc.get("name") for loc in plat.get("locations", [])]
 
-    qs = XBytesProduct.objects.select_related("detail", "search").filter(brand__in=brands).order_by("product_uid")
+    platforms = list(keywords_map.keys())
+    qs = XBytesProduct.objects.filter(platform__in=platforms).order_by("product_uid")
     
     scraper_id = None
     scraped_date = None
@@ -40,28 +40,24 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
     current_pf = None
 
     for p in chunked_queryset(qs, chunk_size=1000):
-        d = getattr(p, "detail", None)
         if scraped_date is None:
             scraped_date = p.created_at
-            scraper_id = p.search.id if getattr(p, "search", None) else None
+            scraper_id = None  # Removed search relation
             
         matched_brand = match_brands(brands, p.brand)
         if not matched_brand:
-            log_error(task_id=None, error='Product skipped due to brand mismatch', extra={
-                'product_uid': p.product_uid,
-                'brand': p.brand
-            })
+            logger.error(f"Product {p.product_uid} skipped due to brand mismatch")
             continue
             
         product_uid = p.product_uid
         ranking_entry = {
             "platform": p.platform,
             "keyword": p.keyword,
-            "rank": p.rank if p.rank <= 32 else 0,
+            "rank": p.rank if p.rank and p.rank <= 32 else 0,
             "page": 1
         }
         ranking_data = {
-            p.pincode or "000000": [ranking_entry]
+            p.location or "000000": [ranking_entry]
         }
         
         if current_uid == product_uid:
@@ -91,41 +87,38 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
             platform=p.platform,
             brand=matched_brand or p.brand,
             title=p.title,
-            description=d.description if d else None,
+            description=p.description,
             product_url=p.product_url,
             platform_type="quick_commerce",
             scraped_date=scraped_date,
             scraper_id=scraper_id,
             platform_assured=None
         )
-        current_pf.set_price(p.msrp, p.sell_price)
+        current_pf.set_price(p.mrp, p.sell_price)
         current_pf.set_media(
-            images=p.detail_page_images,
+            images=p.images,
             thumbnail=p.thumbnail,
             main_image=p.main_image,
-            image_count=d.image_count if d else 0,
-            video_count=d.video_count if d else 0
+            image_count=p.image_count,
+            video_count=p.video_count
         )
         val_rating = p.rating if p.rating and str(p.rating).strip() not in ("0", "0.0", "NA") else p.brand_rating
         val_reviews = p.reviews if p.reviews and str(p.reviews).strip() not in ("0", "0.0", "NA") else p.brand_reviews
         
         current_pf.set_rating_direct(val_rating, val_reviews)
-        current_pf.set_bullets(d.bullets if d else [])
+        current_pf.set_bullets(p.bullets if p.bullets else [])
         current_pf.set_category(category=p.category)
         current_pf.set_detail(
-            model=d.model if d else None,
-            manufacturer_part=getattr(d, "manufacturer_part", None),
-            sold_by=d.sold_by if d else None,
-            shipped_by=d.shipped_by if d else None
+            model=p.model,
+            manufacturer_part=p.manufacturer_part,
+            sold_by=p.sold_by,
+            shipped_by=p.shipped_by
         )
         current_pf.set_rankings(ranking_data)
         is_avaible_correct = current_pf.set_availability(p.availability)
         current_pf._is_available_correct = is_avaible_correct
         if not is_avaible_correct:
-             log_error(task_id=None, error='Availability mismatch', extra={
-                'product_uid': p.product_uid,
-                'value': p.availability
-            })
+             logger.error(f"Product {p.product_uid} availability mismatch")
             
     if current_pf is not None and getattr(current_pf, "_is_available_correct", False):
         yield current_pf

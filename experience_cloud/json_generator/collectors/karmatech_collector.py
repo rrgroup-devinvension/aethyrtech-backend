@@ -3,7 +3,6 @@ from typing import List
 from experience_cloud.json_generator.schemas import RegionDataSchema, ProductSchema
 from experience_cloud.json_generator.utils import match_brands
 from experience_cloud.market_integrations.models.karmatech import KarmatechProduct, KarmatechProductRanking, KarmatechReview
-from experience_cloud.json_generator.log_manager import log_error
 
 logger = logging.getLogger(__name__)
 
@@ -69,10 +68,7 @@ def get_all_karmatech_products(region_data: RegionDataSchema) -> List[ProductSch
         sku = p.sku
         matched_brand = match_brands(brands, p.brand)
         if not matched_brand:
-            log_error(task_id=None, error='Product skipped due to brand mismatch', extra={
-                'product_uid': p.id,
-                'brand': p.brand
-            })
+            logger.error(f"Product {p.sku} skipped due to brand mismatch")
             continue 
             
         pf = ProductSchema()
@@ -119,9 +115,6 @@ def get_all_karmatech_products(region_data: RegionDataSchema) -> List[ProductSch
         if is_avaible_correct:
             formatted_products.append(pf)
         else:
-            log_error(task_id=None, error='Availability mismatch', extra={
-                'product_uid': p.id,
-                'value': p.inventory_status
-            })
+            logger.error(f"Product {p.sku} availability mismatch")
             
     return formatted_products

@@ -32,6 +32,7 @@ class RegionDataSchema(TypedDict):
     locations: List[LocationItem]
     display_locations: List[str]
     display_keywords: List[str]
+    display_platforms: List[str]
 
 
 from dataclasses import dataclass, field

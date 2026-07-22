@@ -1,52 +1,71 @@
+from experience_cloud.market_data.schemas import DataDumpResponseSchema
+from experience_cloud.market_data.services.dispatcher import DataDumpDispatcher
+from experience_cloud.market_data.schemas import DataDumpSchema
 import time
 import logging
 from django.utils import timezone
 from celery import shared_task
+from django.db import transaction
+
 from experience_cloud.executions.models import DataDumpTask
 from experience_cloud.executions.services import ExecutionManager
 from experience_cloud.catalog.models import Keyword, Location
-from experience_cloud.market_data.models import ApiDump, Product
+from experience_cloud.market_data.models import ApiDump
+from experience_cloud.market_integrations.models.xbytes import XBytesProduct
+from experience_cloud.market_integrations.clients.xbyte_client import XByteClient
 
 logger = logging.getLogger(__name__)
 
-# Mock function to call a 3rd party API and generate products
-def call_third_party_api(keyword_obj, location_obj):
-    logger.info(f"Calling third party API for location {location_obj.id}...")
-    time.sleep(2) # Mock API call latency (reduced for testing)
+
+def build_data_dump_schema(keyword_id: int, location_id: int) -> DataDumpSchema:
+    """
+    Given a keyword and location ID, fetches the corresponding objects
+    and constructs a standardized DataDumpSchema for the API services.
+    """
+    # 1. Fetch DB objects and their relations in one hit
+    # Assuming the relation name from Platform to ApiProvider is 'api_provider'
+    keyword_obj = Keyword.objects.select_related('platform__api_provider', 'brand', 'category').get(id=keyword_id)
+    location_obj = Location.objects.get(id=location_id)
     
-    items_found = 12
-    run_date = timezone.now().strftime('%Y-%m-%d')
+    platform_obj = keyword_obj.platform
+    brand_obj = keyword_obj.brand
+    category_obj = keyword_obj.category
+    provider_obj = platform_obj.api_provider if platform_obj else None
+    
+    # 2. Format the physical location constraint
     location_str = str(location_obj.pincode) if location_obj.pincode else str(location_obj.address)
-    platform_name = keyword_obj.platform.name if keyword_obj.platform else 'Unknown'
     
-    combined_name = f"{keyword_obj.keyword}"
+    # 3. Construct the exact schema dictionary
+    schema = DataDumpSchema(
+        # Location mapping
+        display_location=location_str,
+        location_id=location_obj.id,
+        
+        # Platform mapping
+        platform_name=platform_obj.name if platform_obj else 'Unknown',
+        platform_id=platform_obj.id if platform_obj else None,
+        platform_code=platform_obj.code if platform_obj else 'Unknown',
+        
+        # Keyword mapping
+        keyword_name=keyword_obj.keyword,
+        keyword_id=keyword_obj.id,
+        
+        # Category mapping
+        category_name=category_obj.name if category_obj else None,
+        category_id=category_obj.id if category_obj else None,
+        
+        # Brand mapping
+        brand_name=brand_obj.name if brand_obj else None,
+        brand_id=brand_obj.id if brand_obj else None,
+        
+        # Provider mapping (Dynamically pulled from Platform's Foreign Key!)
+        provider_name=provider_obj.name if provider_obj else 'Unknown',
+        provider_code=provider_obj.code if provider_obj else 'UNKNOWN',
+        provider_id=provider_obj.id if provider_obj else None,
+        configuration=platform_obj.json_configuration if platform_obj else {}
+    )
     
-    # Archive/Clear old products for this keyword and location to avoid endless duplicates
-    Product.objects.filter(
-        platform=platform_name,
-        keyword=combined_name,
-        location=location_str
-    ).delete()
-    
-    mock_products = []
-    for i in range(items_found):
-        mock_products.append(
-            Product(
-                platform=platform_name,
-                keyword=combined_name,
-                location=location_str,
-                title=f"Mock Product {i+1} for {combined_name}",
-                brand="MockBrand",
-                rank=i+1,
-                availability="In Stock",
-                mrp="999.00",
-                sell_price="799.00",
-                run_date=run_date
-            )
-        )
-    Product.objects.bulk_create(mock_products)
-    
-    return {"status": "success", "items_found": items_found}
+    return schema
 
 @shared_task(name='experience_cloud.market_data.tasks.process_location_dump', rate_limit='100/m')
 def process_location_dump(execution_id, task_id, keyword_id, location_id):
@@ -67,26 +86,33 @@ def process_location_dump(execution_id, task_id, keyword_id, location_id):
     try:
         start_time = time.time()
         
-        keyword_obj = Keyword.objects.get(id=keyword_id)
-        location_obj = Location.objects.get(id=location_id)
+        # 1. Use the new helper method to build the exact Schema dictionary dynamically!
+        schema = build_data_dump_schema(keyword_id=keyword_id, location_id=location_id)
         
-        # Perform the actual API call and save products
-        response = call_third_party_api(keyword_obj, location_obj)
+        # 2. Pass the Schema to Dispatcher instead of hardcoded XByte logic!
+        dispatcher = DataDumpDispatcher()
+        response = dispatcher.execute(schema)
+        
         duration = time.time() - start_time
         
-        # IMPORTANT: Update ApiDump BEFORE updating ExecutionManager
-        # because ExecutionManager might finalize and delete the active task!
-        ApiDump.objects.filter(task_id=str(task_id)).update(
-            products_found=response['items_found'],
-            product_count=response['items_found'],
-            response_time=duration,
-            status='SUCCESS',
-            error_message=None
-        )
-        
-        # Update success and trigger finalize
-        ExecutionManager.update_task_status(DataDumpTask, task_id, execution_id, 'SUCCESS')
-        
+        # 3. Handle Response strictly based on the defined DataDumpResponseSchema
+        if response.get("status") == "success":
+            items_found = response.get("items_found", 0)
+            
+            # IMPORTANT: Update ApiDump BEFORE updating ExecutionManager
+            ApiDump.objects.filter(task_id=str(task_id)).update(
+                products_found=items_found,
+                product_count=items_found,
+                response_time=duration,
+                status='SUCCESS',
+                error_message=None
+            )
+            
+            # Update success and trigger finalize
+            ExecutionManager.update_task_status(DataDumpTask, task_id, execution_id, 'SUCCESS')
+        else:
+            raise Exception(response.get("message", "Unknown Service Error"))
+            
     except Exception as e:
         logger.error(f"Data Dump Task {task_id} failed: {e}")
         

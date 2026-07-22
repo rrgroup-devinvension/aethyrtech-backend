@@ -1,7 +1,6 @@
 from .brand_audit import brand_audit_builder
 from .catalog import catalog_builder
 from .category_view import category_view_builder
-from .content_insights import content_insights_builder
 from .keyword_matrix import keyword_matrix_builder
 from .keyword_counts import keyword_counts_builder
 from .product_reviews import product_reviews_builder
@@ -25,7 +24,6 @@ BUILDER_REGISTRY = {
     "brand_audit": brand_audit_builder,
     "catalog": catalog_builder,
     "category_view": category_view_builder,
-    "content_insights": content_insights_builder,
     "keyword_matrix": keyword_matrix_builder,
     "keyword_counts": keyword_counts_builder,
     "product_reviews": product_reviews_builder,

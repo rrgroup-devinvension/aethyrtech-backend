@@ -4,12 +4,12 @@ class XBytesDataRouter:
     market_data application for the xbytesdata database.
     """
     def db_for_read(self, model, **hints):
-        if model._meta.model_name == 'product':
+        if model._meta.model_name in ('product', 'xbytesproduct'):
             return 'xbytesdata'
         return None
 
     def db_for_write(self, model, **hints):
-        if model._meta.model_name == 'product':
+        if model._meta.model_name in ('product', 'xbytesproduct'):
             return 'xbytesdata'
         return None
 
@@ -18,7 +18,7 @@ class XBytesDataRouter:
 
     def allow_migrate(self, db, app_label, model_name=None, **hints):
         if db == 'xbytesdata':
-            return model_name == 'product'
-        elif model_name == 'product':
+            return model_name in ('product', 'xbytesproduct')
+        elif model_name in ('product', 'xbytesproduct'):
             return False
         return None

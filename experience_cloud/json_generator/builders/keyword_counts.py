@@ -81,7 +81,7 @@ def build_keyword_count(keywords: Union[Dict[str, List[str]], List[str]], produc
     return dict(result)
 
 @handle_builder_exceptions
-def keyword_counts_builder(region_data: dict, task, products=None, template="template-name") -> tuple[bool, dict]:
+def keyword_counts_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
     brands = region_data.get("brands", [])
     # Default to {} instead of [] to prevent .items() AttributeError
     keywords = region_data.get("keywords", {})

@@ -1,14 +1,16 @@
+from experience_cloud.json_generator.schemas import RegionDataSchema
 import random
 from typing import Dict, List, Optional, Any, Union, Tuple
 from experience_cloud.json_generator.utils import serve_region_template_json, save_or_update_region_json
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
 
 @handle_builder_exceptions
-def risk_data_builder(region_data: dict, task, products=None, template="template-name") -> tuple[bool, dict]:
+def risk_data_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
     # ===============================
     # BRAND (MATCH PHP)
     # ===============================
     current_brand = region_data.get("brand_name")
+    brand_id = region_data.get("brand_id")
     region_id = region_data.get("region_id")
 
     if not region_id:

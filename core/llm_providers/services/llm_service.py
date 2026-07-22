@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Optional
 from django.utils import timezone
 from core.llm_providers.models import LLMProvider, TokenUsageLog, TokenUsageSummary
+from core.llm_providers.schemas import LLMResponse
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,13 @@ class LLMService(ABC):
     @staticmethod
     def get_service(provider_code: str = None) -> 'LLMService':
         if provider_code:
-            provider = LLMProvider.objects.filter(provider_code=provider_code, enabled=True).first()
+            provider = None
+            try:
+                # In case provider_code field doesn't exist yet in the DB model
+                provider = LLMProvider.objects.filter(provider_code=provider_code, enabled=True).first()
+            except Exception:
+                pass
+            
             # Fallback to provider_code as name if provider_code field isn't in DB yet
             if not provider:
                 provider = LLMProvider.objects.filter(name__icontains=provider_code, enabled=True).first()
@@ -42,10 +49,11 @@ class LLMService(ABC):
             raise Exception(f"Unsupported LLM Provider: {provider.name}")
 
     @abstractmethod
-    def generate_content(self, messages: List[Dict[str, str]], action: str = None, brand_id: int = None) -> str:
+    def generate_content(self, messages: List[Dict[str, str]], action: str = None, brand_id: int = None, brand_name: str = None) -> LLMResponse:
         """
         Generates content from the LLM provider based on the messages.
         messages format: [{'role': 'system'|'user'|'assistant', 'content': '...'}]
+        Returns an LLMResponse (a string subclass) containing the text and token metadata.
         """
         pass
 
@@ -56,7 +64,11 @@ class LLMService(ABC):
     def get_last_usage(self) -> Optional[Dict[str, int]]:
         return self.last_usage
 
-    def log_usage(self, prompt_tokens: int, completion_tokens: int, total_tokens: int, success: bool = True, error_message: str = None, action: str = None, brand_id: int = None):
+    def calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
+        """Override this in subclasses to provide cost calculation"""
+        return 0.0
+
+    def log_usage(self, prompt_tokens: int, completion_tokens: int, total_tokens: int, success: bool = True, error_message: str = None, action: str = None, brand_id: int = None, brand_name: str = None):
         """
         Logs the token usage to the TokenUsageLog and updates the daily TokenUsageSummary.
         """
@@ -66,16 +78,19 @@ class LLMService(ABC):
             'total_tokens': total_tokens,
         }
 
+        # Calculate estimated cost
+        estimated_cost = self.calculate_cost(prompt_tokens, completion_tokens) if success else 0.0
+
         # 1. Create Log Entry
         TokenUsageLog.objects.create(
             provider=self.provider_record,
-            action=action,
+            type=action,  # Model field is 'type'
             brand_id=brand_id,
+            brand_name=brand_name,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
-            success=success,
-            error_message=error_message
+            estimated_cost=estimated_cost,
         )
 
         # 2. Update Daily Summary
@@ -83,29 +98,44 @@ class LLMService(ABC):
         summary, created = TokenUsageSummary.objects.get_or_create(
             provider=self.provider_record,
             date=today,
+            type=action,
+            brand_id=brand_id,
             defaults={
-                'total_prompt_tokens': 0,
-                'total_completion_tokens': 0,
+                'brand_name': brand_name,
+                'prompt_tokens': 0,
+                'completion_tokens': 0,
                 'total_tokens': 0,
-                'total_calls': 0,
-                'successful_calls': 0
+                'requests': 0,
+                'estimated_cost': 0.0
             }
         )
         
-        summary.total_calls += 1
+        summary.requests += 1
         if success:
-            summary.successful_calls += 1
-            summary.total_prompt_tokens += prompt_tokens
-            summary.total_completion_tokens += completion_tokens
+            summary.prompt_tokens += prompt_tokens
+            summary.completion_tokens += completion_tokens
             summary.total_tokens += total_tokens
+            # We use float/decimal addition. 
+            # Because estimated_cost is a DecimalField, we should convert to decimal or just let django cast the float
+            from decimal import Decimal
+            summary.estimated_cost = Decimal(str(summary.estimated_cost)) + Decimal(str(estimated_cost))
             
         summary.save()
 
 class GeminiService(LLMService):
+    # Gemini 1.5 Flash USD Pricing per 1M tokens
+    PRICE_PROMPT_1M = 0.075
+    PRICE_COMPLETION_1M = 0.30
+
+    def calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
+        prompt_cost = (prompt_tokens / 1000000.0) * self.PRICE_PROMPT_1M
+        completion_cost = (completion_tokens / 1000000.0) * self.PRICE_COMPLETION_1M
+        return prompt_cost + completion_cost
+
     def get_provider_name(self) -> str:
         return 'Google Gemini'
 
-    def generate_content(self, messages: List[Dict[str, str]], action: str = None, brand_id: int = None) -> str:
+    def generate_content(self, messages: List[Dict[str, str]], action: str = None, brand_id: int = None, brand_name: str = None) -> LLMResponse:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
 
         gemini_content = []
@@ -172,8 +202,8 @@ class GeminiService(LLMService):
 
             if 'candidates' in decoded and decoded['candidates'] and 'content' in decoded['candidates'][0] and 'parts' in decoded['candidates'][0]['content']:
                 text_content = decoded['candidates'][0]['content']['parts'][0]['text']
-                self.log_usage(prompt_tokens, completion_tokens, total_tokens, success=True, action=action, brand_id=brand_id)
-                return text_content
+                self.log_usage(prompt_tokens, completion_tokens, total_tokens, success=True, action=action, brand_id=brand_id, brand_name=brand_name)
+                return LLMResponse(text_content, prompt_tokens, completion_tokens, total_tokens, self.get_provider_name())
 
             if 'promptFeedback' in decoded and 'blockReason' in decoded['promptFeedback']:
                 raise Exception(f"Gemini blocked this request due to safety filters: {decoded['promptFeedback']['blockReason']}")
@@ -181,19 +211,19 @@ class GeminiService(LLMService):
             raise Exception(f"Gemini returned an unexpected response format. Raw: {response.text[:300]}")
 
         except Exception as e:
-            self.log_usage(0, 0, 0, success=False, error_message=str(e), action=action, brand_id=brand_id)
+            self.log_usage(0, 0, 0, success=False, error_message=str(e), action=action, brand_id=brand_id, brand_name=brand_name)
             raise e
 
 class OpenAIService(LLMService):
     def get_provider_name(self) -> str:
         return 'OpenAI'
 
-    def generate_content(self, messages: List[Dict[str, str]], action: str = None, brand_id: int = None) -> str:
+    def generate_content(self, messages: List[Dict[str, str]], action: str = None, brand_id: int = None, brand_name: str = None) -> LLMResponse:
         raise NotImplementedError("OpenAI integration is pending.")
 
 class AnthropicService(LLMService):
     def get_provider_name(self) -> str:
         return 'Anthropic'
 
-    def generate_content(self, messages: List[Dict[str, str]], action: str = None, brand_id: int = None) -> str:
+    def generate_content(self, messages: List[Dict[str, str]], action: str = None, brand_id: int = None, brand_name: str = None) -> LLMResponse:
         raise NotImplementedError("Anthropic integration is pending.")

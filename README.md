@@ -77,10 +77,16 @@ This is the backend for the AethyrTech project, built with Django and Django RES
   python manage.py makemigrations
   ```
 
-- **Apply migrations to the database:**
+- **Apply migrations to the default database:**
 
   ```sh
   python manage.py migrate
+  ```
+
+- **Apply migrations to a specific secondary database (e.g., xbytesdata):**
+
+  ```sh
+  python manage.py migrate market_integrations --database=xbytesdata
   ```
 
 - **Create a superuser manually:**

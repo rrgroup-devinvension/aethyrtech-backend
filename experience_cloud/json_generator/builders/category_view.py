@@ -1,3 +1,4 @@
+from experience_cloud.json_generator.schemas import RegionDataSchema
 from experience_cloud.json_generator.utils import ItemGenerator
 from typing import List, Dict, Optional, Any, Union
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
@@ -235,7 +236,7 @@ def prepare_topkeywords(keywords: list, products: ItemGenerator) -> list:
 
 
 @handle_builder_exceptions
-def category_view_builder(region_data: dict, task, products=None, template="template-name") -> tuple[bool, dict]:
+def category_view_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
     brands = region_data.get("brands", [])
     keywords = region_data.get("keywords", [])
     brand_id = region_data.get("brand_id")

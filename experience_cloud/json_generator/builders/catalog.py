@@ -11,7 +11,7 @@ from experience_cloud.json_generator.utils import match_brand
 logger = logging.getLogger(__name__)
 
 @handle_builder_exceptions
-def catalog_builder(region_data: dict, task, products=None, template="template-name") -> tuple[bool, dict]:
+def catalog_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
     brands = region_data.get("brands", [])
     keywords = region_data.get("keywords", [])
     brand_id = region_data.get("brand_id")

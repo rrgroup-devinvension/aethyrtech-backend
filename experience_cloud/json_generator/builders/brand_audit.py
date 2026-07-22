@@ -107,7 +107,7 @@ def get_audit_data(brands, products):
 
 
 @handle_builder_exceptions
-def brand_audit_builder(region_data: dict, task, products=None, template="template-name") -> tuple[bool, dict]:
+def brand_audit_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
     brands = region_data.get("brands", [])
     keywords = region_data.get("keywords", [])
     brand_id = region_data.get("brand_id")

@@ -54,6 +54,8 @@ class XBytesProduct(models.Model):
     
     # Meta Data
     run_date = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = 'products'
@@ -66,6 +68,13 @@ class XBytesProduct(models.Model):
             
             # Restored indexes for faster text searches
             models.Index(fields=['brand'], name='idx_product_brand'),
+        ]
+            
+        constraints = [
+            models.UniqueConstraint(
+                fields=['platform', 'keyword', 'location', 'product_uid'],
+                name='unique_product_fetch'
+            )
         ]
 
     def save(self, *args, **kwargs):

@@ -1,3 +1,4 @@
+from experience_cloud.json_generator.schemas import RegionDataSchema
 import json
 from core.llm_providers.services.llm_service import LLMService
 from experience_cloud.json_generator.utils import serve_region_template_json, save_or_update_region_json
@@ -5,9 +6,10 @@ from experience_cloud.json_generator.decorators import handle_builder_exceptions
 
 
 @handle_builder_exceptions
-def cxo_insights_builder(region_data: dict, task, products=None, template="template-name") -> tuple[bool, dict]:
+def cxo_insights_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
 
     current_brand = region_data.get("brand_name")
+    brand_id = region_data.get("brand_id")
 
 
     region_id = region_data.get("region_id")
@@ -186,7 +188,7 @@ Schema:
     # CALL LLM
     # ===============================
     llm = LLMService.get_service()
-    content = llm.generate_content([{'role': 'user', 'content': prompt}], action="cxo_insights")
+    content = llm.generate_content([{'role': 'user', 'content': prompt}], action="cxo_insights", brand_id=brand_id, brand_name=current_brand)
     start = content.find("{")
     end = content.rfind("}") + 1
     if start == -1 or end == -1:

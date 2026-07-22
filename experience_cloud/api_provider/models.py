@@ -99,7 +99,29 @@ class ApiProvider(BaseModel):
         self._original_credentials = self.credentials
         self._original_auth_type = self.auth_type
 
+    def get_decrypted_credentials(self) -> dict:
+        """Helper to securely decrypt the stored credentials."""
+        from .utils import decrypt_dict
+        
+        if not self.credentials:
+            return {}
+            
+        encrypted_payload = self.credentials.get("encrypted_payload")
+        if encrypted_payload:
+            return decrypt_dict(encrypted_payload)
+            
+        # Legacy support: if credentials are still in plain-text JSON
+        return self.credentials
+
     def save(self, *args, **kwargs):
+        from .utils import encrypt_dict
+        
+        # Encrypt plain-text credentials if they are assigned
+        if self.credentials and "encrypted_payload" not in self.credentials:
+            self.credentials = {
+                "encrypted_payload": encrypt_dict(self.credentials)
+            }
+            
         # Reset health check if critical connection fields changed
         if self.pk:
             if (self.base_url != self._original_base_url or 
@@ -107,9 +129,78 @@ class ApiProvider(BaseModel):
                 self.credentials != self._original_credentials or
                 self.auth_type != self._original_auth_type):
                 self.health_check_status = None
+                
         super().save(*args, **kwargs)
+        
         # Update original values after save
         self._original_base_url = self.base_url
         self._original_health_check_path = self.health_check_path
         self._original_credentials = self.credentials
         self._original_auth_type = self.auth_type
+
+
+class APIUsageLog(BaseModel):
+    # Time and Status
+    timestamp = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=50)  # e.g., 'SUCCESS', 'FAILED', 'TIMEOUT'
+    
+    # Internal Foreign Keys (References to other Experience Cloud models)
+    api_provider = models.ForeignKey('ApiProvider', on_delete=models.SET_NULL, null=True, blank=True)
+    platform = models.ForeignKey('experience_cloud_catalog.Platform', on_delete=models.SET_NULL, null=True, blank=True)
+    category = models.ForeignKey('core_categories.Category', on_delete=models.SET_NULL, null=True, blank=True)
+    keyword = models.ForeignKey('experience_cloud_catalog.Keyword', on_delete=models.SET_NULL, null=True, blank=True)
+    location = models.ForeignKey('experience_cloud_catalog.Location', on_delete=models.SET_NULL, null=True, blank=True)
+    
+    # Cross-Boundary Soft References (References to Core Foundation)
+    brand_id = models.IntegerField(null=True, blank=True)
+    brand_name = models.CharField(max_length=255, null=True, blank=True)
+    region_id = models.IntegerField(null=True, blank=True)
+    
+    # Metrics
+    response_time = models.FloatField(null=True, blank=True) # In milliseconds or seconds
+    cost = models.DecimalField(max_digits=10, decimal_places=6, default=0.00)
+    request_size = models.IntegerField(null=True, blank=True, help_text="Size in bytes")
+    response_size = models.IntegerField(null=True, blank=True, help_text="Size in bytes")
+
+    class Meta:
+        db_table = 'api_usage_logs'
+        indexes = [
+            models.Index(fields=['timestamp']),
+            models.Index(fields=['brand_id', 'timestamp']),
+            models.Index(fields=['api_provider', 'status']),
+        ]
+
+
+class APIUsageSummary(BaseModel):
+    date = models.DateField()
+    
+    # Internal Foreign Keys
+    api_provider = models.ForeignKey('ApiProvider', on_delete=models.CASCADE)
+    platform = models.ForeignKey('experience_cloud_catalog.Platform', on_delete=models.CASCADE, null=True, blank=True)
+    
+    # Cross-Boundary Soft References
+    brand_id = models.IntegerField(null=True, blank=True)
+    brand_name = models.CharField(max_length=255, null=True, blank=True)
+    region_id = models.IntegerField(null=True, blank=True)
+    
+    # Aggregated Metrics
+    total_calls = models.IntegerField(default=0)
+    success_calls = models.IntegerField(default=0)
+    failed_calls = models.IntegerField(default=0)
+    average_response_time = models.FloatField(default=0.0)
+    total_products = models.IntegerField(default=0)
+    total_cost = models.DecimalField(max_digits=12, decimal_places=6, default=0.00)
+
+    class Meta:
+        db_table = 'api_usage_summaries'
+        # Unique constraint ensures we only have one summary row per dimension combination per day
+        constraints = [
+            models.UniqueConstraint(
+                fields=['date', 'api_provider', 'platform', 'brand_id', 'region_id'], 
+                name='unique_api_summary_dimension'
+            )
+        ]
+        indexes = [
+            models.Index(fields=['date']),
+            models.Index(fields=['brand_id', 'date']),
+        ]

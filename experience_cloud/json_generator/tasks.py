@@ -128,7 +128,8 @@ def get_region_data(region_id: int) -> RegionDataSchema:
         "keywords": list(distinct_keywords_map.values()),
         "locations": list(distinct_locations_map.values()),
         "display_locations": display_locations,
-        "display_keywords": [kw["name"] for kw in distinct_keywords_map.values()]
+        "display_keywords": [kw["name"] for kw in distinct_keywords_map.values()],
+        "display_platforms": [plat["platform_name"] for plat in platforms_map.values()]
     }
     
     return result
