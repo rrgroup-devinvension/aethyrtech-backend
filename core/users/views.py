@@ -17,7 +17,8 @@ from .serializers import (
     ProfileUpdateSerializer,
     ChangePasswordSerializer,
     OrganizationMinimalSerializer,
-    RoleSerializer
+    RoleSerializer,
+    UserBrandRegionSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,22 @@ class UserViewSet(BaseViewSet):
         logger.info(f"Fetching organizations for user id {user.id}")
         orgs = user.managed_organizations.all()
         serializer = OrganizationMinimalSerializer(orgs, many=True)
+        return Response(serializer.data)
+
+    @extend_schema(summary="Get User Brands and Regions", responses={200: UserBrandRegionSerializer(many=True)})
+    @action(detail=False, methods=["get"], url_path="brands")
+    def get_user_brands(self, request):
+        user = request.user
+        from core.organizations.models import Brand
+        logger.info(f"Fetching brands and regions for user id {user.id}")
+
+        if user.user_type == 'ORGANIZATION' and user.organization:
+            brands = Brand.objects.filter(organization=user.organization, is_active=True, is_deleted=False)
+        else:
+            # Internal user or unassigned organization - return all active brands for testing
+            brands = Brand.objects.filter(is_active=True, is_deleted=False)
+
+        serializer = UserBrandRegionSerializer(brands, many=True)
         return Response(serializer.data)
     
     @extend_schema(summary="Set User Status", request=dict, responses={200: dict})

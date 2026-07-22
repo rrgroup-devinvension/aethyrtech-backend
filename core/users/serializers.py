@@ -20,6 +20,25 @@ class OrganizationMinimalSerializer(BaseModelSerializer):
         model = Organization
         fields = ("id", "name")
 
+from core.organizations.models import Brand, Region
+
+class UserRegionSerializer(BaseModelSerializer):
+    class Meta:
+        model = Region
+        fields = ("id", "name", "code")
+
+class UserBrandRegionSerializer(BaseModelSerializer):
+    regions = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Brand
+        fields = ("id", "name", "code", "logo", "regions")
+        
+    def get_regions(self, obj):
+        active_regions = obj.region_set.filter(is_active=True, is_deleted=False)
+        return UserRegionSerializer(active_regions, many=True).data
+
+
 class UserSerializer(BaseModelSerializer):
     organization_details = OrganizationMinimalSerializer(source="organization", read_only=True)
     managed_organizations = OrganizationMinimalSerializer(many=True, read_only=True)
