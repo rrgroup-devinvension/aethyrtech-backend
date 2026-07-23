@@ -20,27 +20,27 @@ logger = logging.getLogger(__name__)
 class CategoryViewSet(BaseViewSet):
     action_permission_mapping = {
         'pincodes': AppPermissions.READ_CATEGORIES,
-        'pincodes/add': AppPermissions.MANAGE_TAXONOMY,
-        'pincodes/update/(?P<pincode_id>[^/.]+)': AppPermissions.MANAGE_TAXONOMY,
-        'pincodes/remove/(?P<pincode_id>[^/.]+)': AppPermissions.MANAGE_TAXONOMY,
-        'pincodes/clear': AppPermissions.MANAGE_TAXONOMY,
-        'pincodes/upload-csv': AppPermissions.MANAGE_TAXONOMY,
+        'pincodes/add': AppPermissions.UPDATE_CATEGORY,
+        'pincodes/update/(?P<pincode_id>[^/.]+)': AppPermissions.UPDATE_CATEGORY,
+        'pincodes/remove/(?P<pincode_id>[^/.]+)': AppPermissions.UPDATE_CATEGORY,
+        'pincodes/clear': AppPermissions.UPDATE_CATEGORY,
+        'pincodes/upload-csv': AppPermissions.UPDATE_CATEGORY,
         'keywords': AppPermissions.READ_CATEGORIES,
-        'keywords/add': AppPermissions.MANAGE_TAXONOMY,
-        'keywords/update/(?P<keyword_id>[^/.]+)': AppPermissions.MANAGE_TAXONOMY,
-        'keywords/remove/(?P<keyword_id>[^/.]+)': AppPermissions.MANAGE_TAXONOMY,
-        'keywords/remove-by-platform': AppPermissions.MANAGE_TAXONOMY,
-        'keywords/clear': AppPermissions.MANAGE_TAXONOMY,
-        'keywords/upload-csv': AppPermissions.MANAGE_TAXONOMY,
+        'keywords/add': AppPermissions.UPDATE_CATEGORY,
+        'keywords/update/(?P<keyword_id>[^/.]+)': AppPermissions.UPDATE_CATEGORY,
+        'keywords/remove/(?P<keyword_id>[^/.]+)': AppPermissions.UPDATE_CATEGORY,
+        'keywords/remove-by-platform': AppPermissions.UPDATE_CATEGORY,
+        'keywords/clear': AppPermissions.UPDATE_CATEGORY,
+        'keywords/upload-csv': AppPermissions.UPDATE_CATEGORY,
     }
 
     organization_field = None
     permission_mapping = {
         'GET': AppPermissions.READ_CATEGORIES,
-        'POST': None,
-        'PUT': None,
-        'PATCH': None,
-        'DELETE': None
+        'POST': AppPermissions.CREATE_CATEGORY,
+        'PUT': AppPermissions.UPDATE_CATEGORY,
+        'PATCH': AppPermissions.UPDATE_CATEGORY,
+        'DELETE': AppPermissions.DELETE_CATEGORY
     }
     queryset = Category.objects.all()
     serializer_class = CategorySerializer

@@ -22,10 +22,18 @@ logger = logging.getLogger(__name__)
 )
 class PlatformViewSet(BaseViewSet):
     action_permission_mapping = {
-        'upload-file': AppPermissions.MANAGE_TAXONOMY,
+        'upload-file': AppPermissions.CREATE_PLATFORM,
         'export-data': AppPermissions.READ_PLATFORMS,
         'download-template': AppPermissions.READ_PLATFORMS,
-        'bulk-delete': AppPermissions.MANAGE_TAXONOMY,
+        'bulk-delete': AppPermissions.DELETE_PLATFORM,
+    }
+    
+    permission_mapping = {
+        'GET': AppPermissions.READ_PLATFORMS,
+        'POST': AppPermissions.CREATE_PLATFORM,
+        'PUT': AppPermissions.UPDATE_PLATFORM,
+        'PATCH': AppPermissions.UPDATE_PLATFORM,
+        'DELETE': AppPermissions.DELETE_PLATFORM
     }
 
     queryset = Platform.objects.select_related('api_provider').all().order_by('name')
@@ -43,6 +51,19 @@ class PlatformViewSet(BaseViewSet):
     destroy=extend_schema(summary="Delete Location")
 )
 class LocationViewSet(BaseViewSet):
+    action_permission_mapping = {
+        'upload_file': AppPermissions.MANAGE_TAXONOMY,
+        'export_data': AppPermissions.READ_TAXONOMY,
+        'download_template': AppPermissions.READ_TAXONOMY,
+        'bulk_delete': AppPermissions.MANAGE_TAXONOMY,
+    }
+    permission_mapping = {
+        'GET': AppPermissions.READ_TAXONOMY,
+        'POST': AppPermissions.MANAGE_TAXONOMY,
+        'PUT': AppPermissions.MANAGE_TAXONOMY,
+        'PATCH': AppPermissions.MANAGE_TAXONOMY,
+        'DELETE': AppPermissions.MANAGE_TAXONOMY
+    }
     queryset = Location.objects.all().select_related('region', 'platform', 'category')
     serializer_class = LocationSerializer
     search_fields = ('pincode', 'address')
@@ -54,14 +75,14 @@ class LocationViewSet(BaseViewSet):
     def upload_file(self, request):
         category_id = request.data.get('category_id')
         region_id = request.data.get('region_id')
-        platform_id = request.data.get('platform_id')
+        platform_ids = request.data.getlist('platform_id')
         file = request.FILES.get('file')
 
         if not file:
             return Response({'detail': 'file is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            result = BulkDataService.process_locations_file(file, file.name, category_id, region_id, platform_id)
+            result = BulkDataService.process_locations_file(file, file.name, category_id, region_id, platform_ids)
             return Response(result, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -106,6 +127,19 @@ class LocationViewSet(BaseViewSet):
     destroy=extend_schema(summary="Delete Keyword")
 )
 class KeywordViewSet(BaseViewSet):
+    action_permission_mapping = {
+        'upload_file': AppPermissions.MANAGE_TAXONOMY,
+        'export_data': AppPermissions.READ_TAXONOMY,
+        'download_template': AppPermissions.READ_TAXONOMY,
+        'bulk_delete': AppPermissions.MANAGE_TAXONOMY,
+    }
+    permission_mapping = {
+        'GET': AppPermissions.READ_TAXONOMY,
+        'POST': AppPermissions.MANAGE_TAXONOMY,
+        'PUT': AppPermissions.MANAGE_TAXONOMY,
+        'PATCH': AppPermissions.MANAGE_TAXONOMY,
+        'DELETE': AppPermissions.MANAGE_TAXONOMY
+    }
     queryset = Keyword.objects.all().select_related('region', 'platform', 'category')
     serializer_class = KeywordSerializer
     search_fields = ('keyword',)
@@ -117,14 +151,14 @@ class KeywordViewSet(BaseViewSet):
     def upload_file(self, request):
         category_id = request.data.get('category_id')
         region_id = request.data.get('region_id')
-        platform_id = request.data.get('platform_id')
+        platform_ids = request.data.getlist('platform_id')
         file = request.FILES.get('file')
 
         if not file:
             return Response({'detail': 'file is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            result = BulkDataService.process_keywords_file(file, file.name, category_id, region_id, platform_id)
+            result = BulkDataService.process_keywords_file(file, file.name, category_id, region_id, platform_ids)
             return Response(result, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)

@@ -17,9 +17,16 @@ logger = logging.getLogger(__name__)
 class JsonTemplateViewSet(BaseViewSet):
     """CRUD operations for JsonTemplate."""
     action_permission_mapping = {
-        'set_status': AppPermissions.MANAGE_TAXONOMY,
+        'set_status': AppPermissions.UPDATE_JSON_TEMPLATE,
         'run': AppPermissions.START_EXECUTION,
         'stop': AppPermissions.STOP_EXECUTION,
+    }
+    permission_mapping = {
+        'GET': AppPermissions.READ_JSON_TEMPLATES,
+        'POST': AppPermissions.CREATE_JSON_TEMPLATE,
+        'PUT': AppPermissions.UPDATE_JSON_TEMPLATE,
+        'PATCH': AppPermissions.UPDATE_JSON_TEMPLATE,
+        'DELETE': AppPermissions.DELETE_JSON_TEMPLATE,
     }
 
     queryset = JsonTemplate.objects.all().order_by('name')
@@ -40,6 +47,17 @@ class JsonTemplateViewSet(BaseViewSet):
 
 class RegionJsonFileViewSet(BaseViewSet):
     """Provides RegionJsonFiles for a specific region, auto-creating them if missing."""
+    action_permission_mapping = {
+        'run_json_build': AppPermissions.START_EXECUTION,
+        'stop_json_build': AppPermissions.STOP_EXECUTION,
+    }
+    permission_mapping = {
+        'GET': AppPermissions.READ_JSON_GENERATION,
+        'POST': AppPermissions.MANAGE_TAXONOMY,
+        'PUT': AppPermissions.MANAGE_TAXONOMY,
+        'PATCH': AppPermissions.MANAGE_TAXONOMY,
+        'DELETE': AppPermissions.MANAGE_TAXONOMY,
+    }
     queryset = RegionJsonFile.objects.all()
     serializer_class = RegionJsonFileSerializer
     permission_classes = [IsAuthenticated]
@@ -112,7 +130,7 @@ class RegionJsonFileViewSet(BaseViewSet):
             if f.region_id not in region_groups:
                 region_groups[f.region_id] = []
             region_groups[f.region_id].append({
-                'template': f.template.name if f.template else 'Unknown',
+                'template': f.template.template if f.template else 'Unknown',
                 'resource_name': f.template.name if f.template else 'Unknown',
                 'file_id': f.id
             })
@@ -189,12 +207,14 @@ from rest_framework.views import APIView
 from django.db.models import Count, Q, Sum
 from django.db.models.functions import Coalesce
 
+from shared.permissions import HasPermission
+
 class JsonGenerationStatsView(APIView):
     """
     Returns aggregated JSON generation status counts at the Organization, Brand, and Region levels.
     This solves N+1 problems and ensures UI performance remains high.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasPermission(AppPermissions.READ_JSON_GENERATION)]
 
     def get(self, request, *args, **kwargs):
         # Base queries to count the statuses

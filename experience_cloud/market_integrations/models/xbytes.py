@@ -4,10 +4,10 @@ from django.db import models
 class XBytesProduct(models.Model):
     
     # Core lookup fields
-    platform = models.CharField(max_length=255)
+    platform = models.CharField(max_length=50)
     keyword = models.CharField(max_length=255)
-    location = models.CharField(max_length=255)
-    product_uid = models.CharField(max_length=255, null=True, blank=True)
+    location = models.CharField(max_length=100)
+    product_uid = models.CharField(max_length=100, null=True, blank=True)
     rank = models.IntegerField(null=True, blank=True)
     
     # Basic Details

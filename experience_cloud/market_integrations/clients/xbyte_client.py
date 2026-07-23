@@ -20,7 +20,7 @@ class XByteClient(BaseApiClient):
         Fetch quick commerce product results from XByte API.
         Equivalent to the legacy QuickCommerceClient.fetch_results.
         """
-        logger.info(f"QuickCommerce fetch → keyword={keyword}, pincode={location}, platform={platform}")
+        logger.info(f"QuickCommerce fetch → keyword={keyword}, location={location}, platform={platform}")
         
         # Determine specific payload structure per platform
         if payload is None:
@@ -42,7 +42,9 @@ class XByteClient(BaseApiClient):
             return response
             
         except ApiProviderRequestError as e:
-            logger.warning(f"XByte API logical/request error → {e.message}")
+            logger.warning(f"XByte API logical/request error -> {e.message}")
+            if hasattr(e, 'extra') and e.extra:
+                logger.error(f"XByte API Error Body/Details: {e.extra}")
             raise
         except Exception as e:
             logger.exception("XByte unexpected error")

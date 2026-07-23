@@ -13,6 +13,27 @@ class JsonTemplateSerializer(BaseModelSerializer):
 class RegionJsonFileSerializer(BaseModelSerializer):
     template_name = serializers.CharField(source='template.name', read_only=True)
     process_type = serializers.CharField(source='template.process_type', read_only=True)
+    file_path = serializers.SerializerMethodField()
+    
+    def get_file_path(self, obj):
+        if obj.file_path:
+            from django.conf import settings
+            
+            # Remove leading slash from file_path if exists to prevent double slash
+            clean_path = obj.file_path.lstrip('/')
+            
+            # Base media path
+            if obj.file_path.startswith(settings.MEDIA_URL) or obj.file_path.startswith('/media/'):
+                path = obj.file_path
+            else:
+                path = f"{settings.MEDIA_URL}{clean_path}"
+                
+            # Build absolute URI (e.g., http://localhost:8000/media/...)
+            request = self.context.get('request')
+            if request is not None:
+                return request.build_absolute_uri(path)
+            return path
+        return None
     
     class Meta(BaseModelSerializer.Meta):
         model = RegionJsonFile

@@ -37,7 +37,7 @@ class KarmatechProduct(models.Model):
     
     # Tracking
     scraper_id = models.IntegerField(db_index=True)
-    scraped_date = models.DateTimeField()
+    scraped_date = models.DateField()
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

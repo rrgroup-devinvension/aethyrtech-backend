@@ -7,24 +7,67 @@ import logging
 from contextlib import contextmanager
 from experience_cloud.json_generator.exceptions import FileWriteException, DatabaseException
 import re
+import shutil
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def save_json_to_file(json_data, brand_name, template):
+def archive_old_json_file(old_relative_path, brand_name, region_name):
+    """
+    Moves an existing JSON file to the archive folder.
+    Format: media/archive/brands/<brand>/<region>/<YYYY-MM-DD>/<filename>
+    """
+    if not old_relative_path:
+        return
+        
     try:
-        media_sub = getattr(settings, 'SCHEDULER_JSON_MEDIA_SUBPATH', 'jsons')
+        from django.conf import settings
+        full_old_path = os.path.join(settings.MEDIA_ROOT, old_relative_path)
+        if not os.path.exists(full_old_path):
+            return
+            
         brand_slug = slugify(brand_name)
-        folder = os.path.join(settings.MEDIA_ROOT, media_sub, brand_slug)
+        region_slug = slugify(region_name)
+        date_folder = datetime.now().strftime('%Y-%m-%d')
+        
+        filename = os.path.basename(full_old_path)
+        base_name, ext = os.path.splitext(filename)
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        archived_filename = f"{base_name}-{timestamp}{ext}"
+        
+        archive_folder = os.path.join(settings.MEDIA_ROOT, 'archive', 'brands', brand_slug, region_slug, date_folder)
+        os.makedirs(archive_folder, exist_ok=True)
+        
+        archive_path = os.path.join(archive_folder, archived_filename)
+        shutil.move(full_old_path, archive_path)
+        logger.info(f"Archived old JSON file -> {archive_path}")
+    except Exception as e:
+        logger.error(f"Failed to archive old JSON file {old_relative_path}: {e}")
+
+def save_json_to_file(json_data, brand_name, template, region_name="unknown", existing_path=None):
+    ctx = f"[JSON Gen | Brand: {brand_name} | Template: {template}]"
+    logger.info(f"{ctx} Attempting to save JSON file...")
+    
+    try:
+        if existing_path:
+            archive_old_json_file(existing_path, brand_name, region_name)
+
+        brand_slug = slugify(brand_name)
+        region_slug = slugify(region_name)
+        template_slug = slugify(template)
+        
+        folder = os.path.join(settings.MEDIA_ROOT, 'brands', brand_slug, region_slug, template_slug)
         os.makedirs(folder, exist_ok=True)
-        filename = f"{template}-{timezone.now().strftime('%Y%m%d%H%M%S')}.json"
+        filename = f"{template_slug}.json"
         filepath = os.path.join(folder, filename)
-        relative_path = f"{media_sub}/{brand_slug}/{filename}"
+        relative_path = f"brands/{brand_slug}/{region_slug}/{template_slug}/{filename}"
         with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(json_data, f, ensure_ascii=False, indent=2, default=str)
-        logger.info(f"Saved JSON file ? {filepath}")
+            json.dump(json_data, f, ensure_ascii=False, indent=4)
+            
+        logger.info(f"{ctx} Saved JSON file -> {filepath}")
         return filename, relative_path
     except Exception as exc:
-        logger.exception("JSON file save failed")
+        logger.exception(f"{ctx} JSON file save failed")
         raise FileWriteException(
             message="JSON file save failed",
             extra=str(exc)
@@ -60,7 +103,7 @@ from experience_cloud.catalog.models import Platform
 def get_platform_group_map():
     map_data = defaultdict(list)
     for p in Platform.objects.filter(status='active'):
-        map_data[p.platform_type].append(p.value)
+        map_data[p.platform_type].append(p.code)
     return dict(map_data)
 
 def get_platform_list(platform_types: list):
@@ -260,7 +303,20 @@ def save_or_update_region_json(region_id: int, template_name: str, json_data: di
     Saves a JSON file and updates the corresponding RegionJsonFile record.
     Used internally by complex builders that need to handle their own saving logic.
     """
-    file_name, file_path = save_json_to_file(json_data, brand_name, template_name)
+    from core.organizations.models import Region
+    from experience_cloud.json_generator.models import RegionJsonFile
+    region_name = "unknown"
+    if region_id:
+        region = Region.objects.filter(id=region_id).first()
+        if region:
+            region_name = region.name
+            
+        # Archive existing file if it exists
+        existing_file = RegionJsonFile.objects.filter(region_id=region_id, template__template=template_name).first()
+        if existing_file and existing_file.file_path:
+            archive_old_json_file(existing_file.file_path, brand_name, region_name)
+            
+    file_name, file_path = save_json_to_file(json_data, brand_name, template_name, region_name)
     
     import os
     from django.conf import settings

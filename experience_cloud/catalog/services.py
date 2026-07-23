@@ -38,10 +38,15 @@ class BulkDataService:
         return "_".join(parts)
 
     @staticmethod
-    def process_locations_file(file, filename, category_id=None, region_id=None, platform_id=None):
-        cat, reg, plat = BulkDataService._resolve_context(category_id, region_id, platform_id)
-        if not cat or not reg or not plat:
-            raise ValueError("Category, Region, and Platform are required for upload.")
+    def process_locations_file(file, filename, category_id=None, region_id=None, platform_ids=None):
+        if not platform_ids:
+            platform_ids = []
+        elif not isinstance(platform_ids, list):
+            platform_ids = [platform_ids]
+
+        cat, reg, _ = BulkDataService._resolve_context(category_id, region_id, None)
+        if not cat or not reg or not platform_ids:
+            raise ValueError("Category, Region, and at least one Platform are required for upload.")
 
         try:
             if filename.endswith('.csv'):
@@ -55,81 +60,99 @@ class BulkDataService:
 
         df = df.where(pd.notnull(df), None)
         
-        records_to_create = []
-        records_to_update = []
-        csv_pincodes_addresses = set()
+        total_added = 0
+        total_updated = 0
+        total_deactivated = 0
         
         with transaction.atomic():
-            current_locations = Location.objects.filter(category=cat, region=reg, platform=plat)
-            current_dict = {(loc.pincode, loc.address): loc for loc in current_locations}
-            
-            for index, row in df.iterrows():
-                pincode_val = row.get('pincode')
-                if pd.notna(pincode_val):
-                    if isinstance(pincode_val, float) and pincode_val == int(pincode_val):
-                        pincode_val = int(pincode_val)
-                    pincode = str(pincode_val).strip()
-                    if not pincode: pincode = None
-                else:
-                    pincode = None
-                    
-                address_val = row.get('address')
-                if pd.notna(address_val):
-                    if isinstance(address_val, float) and address_val == int(address_val):
-                        address_val = int(address_val)
-                    address = str(address_val).strip()
-                    if not address: address = None
-                else:
-                    address = None
-                if not pincode and not address:
+            for platform_id in platform_ids:
+                plat = Platform.objects.filter(id=platform_id).first()
+                if not plat:
                     continue
+
+                records_to_create = []
+                records_to_update = []
+                csv_pincodes_addresses = set()
                 
-                lat = row.get('lat')
-                if pd.isna(lat):
-                    lat = None
-                lng = row.get('lng')
-                if pd.isna(lng):
-                    lng = None
+                current_locations = Location.objects.filter(category=cat, region=reg, platform=plat)
+                current_dict = {(loc.pincode, loc.address): loc for loc in current_locations}
                 
-                csv_pincodes_addresses.add((pincode, address))
-                
-                if (pincode, address) in current_dict:
-                    loc = current_dict[(pincode, address)]
-                    loc.lat = lat
-                    loc.lng = lng
-                    loc.is_active = True
-                    records_to_update.append(loc)
-                else:
-                    records_to_create.append(Location(
-                        category=cat, region=reg, platform=plat,
-                        pincode=pincode, address=address, lat=lat, lng=lng, is_active=True
-                    ))
-            
-            records_to_deactivate = []
-            for key, loc in current_dict.items():
-                if key not in csv_pincodes_addresses and loc.is_active:
-                    loc.is_active = False
-                    records_to_deactivate.append(loc)
+                for index, row in df.iterrows():
+                    pincode_val = row.get('pincode')
+                    if pd.notna(pincode_val):
+                        if isinstance(pincode_val, float) and pincode_val == int(pincode_val):
+                            pincode_val = int(pincode_val)
+                        pincode = str(pincode_val).strip()
+                        if not pincode: pincode = None
+                    else:
+                        pincode = None
+                        
+                    address_val = row.get('address')
+                    if pd.notna(address_val):
+                        if isinstance(address_val, float) and address_val == int(address_val):
+                            address_val = int(address_val)
+                        address = str(address_val).strip()
+                        if not address: address = None
+                    else:
+                        address = None
+                    if not pincode and not address:
+                        continue
                     
-            if records_to_create:
-                Location.objects.bulk_create(records_to_create, ignore_conflicts=True)
-            if records_to_update:
-                Location.objects.bulk_update(records_to_update, ['lat', 'lng', 'is_active'])
-            if records_to_deactivate:
-                Location.objects.bulk_update(records_to_deactivate, ['is_active'])
+                    lat = row.get('lat')
+                    if pd.isna(lat):
+                        lat = None
+                    lng = row.get('lng')
+                    if pd.isna(lng):
+                        lng = None
+                    
+                    csv_pincodes_addresses.add((pincode, address))
+                    
+                    if (pincode, address) in current_dict:
+                        loc = current_dict[(pincode, address)]
+                        loc.lat = lat
+                        loc.lng = lng
+                        loc.is_active = True
+                        records_to_update.append(loc)
+                    else:
+                        records_to_create.append(Location(
+                            category=cat, region=reg, platform=plat,
+                            pincode=pincode, address=address, lat=lat, lng=lng, is_active=True
+                        ))
+                
+                records_to_deactivate = []
+                for key, loc in current_dict.items():
+                    if key not in csv_pincodes_addresses and loc.is_active:
+                        loc.is_active = False
+                        records_to_deactivate.append(loc)
+                        
+                if records_to_create:
+                    Location.objects.bulk_create(records_to_create, ignore_conflicts=True)
+                if records_to_update:
+                    Location.objects.bulk_update(records_to_update, ['lat', 'lng', 'is_active'])
+                if records_to_deactivate:
+                    Location.objects.bulk_update(records_to_deactivate, ['is_active'])
+
+                total_added += len(records_to_create)
+                total_updated += len(records_to_update)
+                total_deactivated += len(records_to_deactivate)
 
         return {
             'detail': 'Locations processed successfully',
-            'added': len(records_to_create),
-            'updated': len(records_to_update),
-            'deactivated': len(records_to_deactivate)
+            'added': total_added,
+            'updated': total_updated,
+            'deactivated': total_deactivated
         }
 
     @staticmethod
-    def process_keywords_file(file, filename, category_id=None, region_id=None, platform_id=None):
-        cat, reg, plat = BulkDataService._resolve_context(category_id, region_id, platform_id)
-        if not cat or not reg or not plat:
-            raise ValueError("Category, Region, and Platform are required for upload.")
+    def process_keywords_file(file, filename, category_id=None, region_id=None, platform_ids=None):
+        if not platform_ids:
+            platform_ids = []
+        elif not isinstance(platform_ids, list):
+            platform_ids = [platform_ids]
+
+        cat, reg, _ = BulkDataService._resolve_context(category_id, region_id, None)
+        if not cat or not reg or not platform_ids:
+            raise ValueError("Category, Region, and at least one Platform are required for upload.")
 
         try:
             if filename.endswith('.csv'):
@@ -143,60 +166,73 @@ class BulkDataService:
 
         df = df.where(pd.notnull(df), None)
         
-        records_to_create = []
-        records_to_update = []
-        csv_keywords = set()
+        total_added = 0
+        total_updated = 0
+        total_deactivated = 0
         
         with transaction.atomic():
-            current_keywords = Keyword.objects.filter(category=cat, region=reg, platform=plat)
-            current_dict = {kw.keyword: kw for kw in current_keywords}
-            
-            for index, row in df.iterrows():
-                kw_val = row.get('keyword')
-                if pd.notna(kw_val):
-                    if isinstance(kw_val, float) and kw_val == int(kw_val):
-                        kw_val = int(kw_val)
-                    keyword = str(kw_val).strip()
-                    if not keyword: keyword = None
-                else:
-                    keyword = None
-                if not keyword:
+            for platform_id in platform_ids:
+                plat = Platform.objects.filter(id=platform_id).first()
+                if not plat:
                     continue
+
+                records_to_create = []
+                records_to_update = []
+                csv_keywords = set()
                 
-                order = index + 1
+                current_keywords = Keyword.objects.filter(category=cat, region=reg, platform=plat)
+                current_dict = {kw.keyword: kw for kw in current_keywords}
                 
-                csv_keywords.add(keyword)
-                
-                if keyword in current_dict:
-                    kw = current_dict[keyword]
-                    if kw.display_order != order or not kw.is_active:
-                        kw.display_order = order
-                        kw.is_active = True
-                        records_to_update.append(kw)
-                else:
-                    records_to_create.append(Keyword(
-                        category=cat, region=reg, platform=plat,
-                        keyword=keyword, display_order=order, is_active=True
-                    ))
-            
-            records_to_deactivate = []
-            for k, kw in current_dict.items():
-                if k not in csv_keywords and kw.is_active:
-                    kw.is_active = False
-                    records_to_deactivate.append(kw)
+                for index, row in df.iterrows():
+                    kw_val = row.get('keyword')
+                    if pd.notna(kw_val):
+                        if isinstance(kw_val, float) and kw_val == int(kw_val):
+                            kw_val = int(kw_val)
+                        keyword = str(kw_val).strip()
+                        if not keyword: keyword = None
+                    else:
+                        keyword = None
+                    if not keyword:
+                        continue
                     
-            if records_to_create:
-                Keyword.objects.bulk_create(records_to_create, ignore_conflicts=True)
-            if records_to_update:
-                Keyword.objects.bulk_update(records_to_update, ['display_order', 'is_active'])
-            if records_to_deactivate:
-                Keyword.objects.bulk_update(records_to_deactivate, ['is_active'])
+                    order = index + 1
+                    
+                    csv_keywords.add(keyword)
+                    
+                    if keyword in current_dict:
+                        kw = current_dict[keyword]
+                        if kw.display_order != order or not kw.is_active:
+                            kw.display_order = order
+                            kw.is_active = True
+                            records_to_update.append(kw)
+                    else:
+                        records_to_create.append(Keyword(
+                            category=cat, region=reg, platform=plat,
+                            keyword=keyword, display_order=order, is_active=True
+                        ))
+                
+                records_to_deactivate = []
+                for k, kw in current_dict.items():
+                    if k not in csv_keywords and kw.is_active:
+                        kw.is_active = False
+                        records_to_deactivate.append(kw)
+                        
+                if records_to_create:
+                    Keyword.objects.bulk_create(records_to_create, ignore_conflicts=True)
+                if records_to_update:
+                    Keyword.objects.bulk_update(records_to_update, ['display_order', 'is_active'])
+                if records_to_deactivate:
+                    Keyword.objects.bulk_update(records_to_deactivate, ['is_active'])
+
+                total_added += len(records_to_create)
+                total_updated += len(records_to_update)
+                total_deactivated += len(records_to_deactivate)
 
         return {
             'detail': 'Keywords processed successfully',
-            'added': len(records_to_create),
-            'updated': len(records_to_update),
-            'deactivated': len(records_to_deactivate)
+            'added': total_added,
+            'updated': total_updated,
+            'deactivated': total_deactivated
         }
 
     @staticmethod

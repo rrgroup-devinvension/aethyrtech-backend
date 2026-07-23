@@ -28,12 +28,16 @@ logger = logging.getLogger(__name__)
     destroy=extend_schema(summary="Delete Scheduler")
 )
 class SchedulerViewSet(BaseViewSet):
+    action_permission_mapping = {
+        'run': AppPermissions.START_EXECUTION,
+        'set_status': AppPermissions.UPDATE_SCHEDULER,
+    }
     permission_mapping = {
         'GET': AppPermissions.READ_SCHEDULERS,
-        'POST': AppPermissions.MANAGE_SCHEDULERS,
-        'PUT': AppPermissions.MANAGE_SCHEDULERS,
-        'PATCH': AppPermissions.MANAGE_SCHEDULERS,
-        'DELETE': AppPermissions.MANAGE_SCHEDULERS,
+        'POST': AppPermissions.CREATE_SCHEDULER,
+        'PUT': AppPermissions.UPDATE_SCHEDULER,
+        'PATCH': AppPermissions.UPDATE_SCHEDULER,
+        'DELETE': AppPermissions.DELETE_SCHEDULER,
     }
     organization_field = 'organization_id'
 
@@ -88,6 +92,16 @@ class SchedulerViewSet(BaseViewSet):
     destroy=extend_schema(summary="Delete Active Execution")
 )
 class ActiveExecutionViewSet(BaseViewSet):
+    action_permission_mapping = {
+        'stop': AppPermissions.STOP_EXECUTION,
+    }
+    permission_mapping = {
+        'GET': AppPermissions.READ_EXECUTIONS,
+        'POST': AppPermissions.START_EXECUTION,
+        'PUT': AppPermissions.START_EXECUTION,
+        'PATCH': AppPermissions.START_EXECUTION,
+        'DELETE': AppPermissions.STOP_EXECUTION,
+    }
     queryset = ActiveExecution.objects.all().select_related('scheduler', 'created_by').order_by('-created_at')
     serializer_class = ActiveExecutionSerializer
     search_fields = ('execution_type', 'status', 'scheduler__name')
@@ -117,6 +131,13 @@ class ActiveExecutionViewSet(BaseViewSet):
     destroy=extend_schema(exclude=True)
 )
 class ExecutionHistoryViewSet(BaseViewSet):
+    permission_mapping = {
+        'GET': AppPermissions.READ_EXECUTIONS,
+        'POST': AppPermissions.START_EXECUTION,
+        'PUT': AppPermissions.START_EXECUTION,
+        'PATCH': AppPermissions.START_EXECUTION,
+        'DELETE': AppPermissions.STOP_EXECUTION,
+    }
     queryset = ExecutionHistory.objects.all().select_related('scheduler', 'created_by').order_by('-created_at')
     serializer_class = ExecutionHistorySerializer
     search_fields = ('execution_type', 'status', 'scheduler__name')
@@ -124,6 +145,16 @@ class ExecutionHistoryViewSet(BaseViewSet):
 
 
 class DataDumpTaskViewSet(BaseViewSet):
+    action_permission_mapping = {
+        'stop': AppPermissions.STOP_EXECUTION,
+    }
+    permission_mapping = {
+        'GET': AppPermissions.READ_TASKS,
+        'POST': AppPermissions.START_EXECUTION,
+        'PUT': AppPermissions.START_EXECUTION,
+        'PATCH': AppPermissions.START_EXECUTION,
+        'DELETE': AppPermissions.STOP_EXECUTION,
+    }
     queryset = DataDumpTask.objects.all().select_related('execution').order_by('-created_at')
     serializer_class = DataDumpTaskSerializer
     search_fields = ('status', 'api_dump_id', 'celery_task_id')
@@ -159,6 +190,16 @@ class DataDumpTaskViewSet(BaseViewSet):
 
 
 class JsonFileTaskViewSet(BaseViewSet):
+    action_permission_mapping = {
+        'stop': AppPermissions.STOP_EXECUTION,
+    }
+    permission_mapping = {
+        'GET': AppPermissions.READ_TASKS,
+        'POST': AppPermissions.START_EXECUTION,
+        'PUT': AppPermissions.START_EXECUTION,
+        'PATCH': AppPermissions.START_EXECUTION,
+        'DELETE': AppPermissions.STOP_EXECUTION,
+    }
     queryset = JsonFileTask.objects.all().select_related('execution').order_by('-created_at')
     serializer_class = JsonFileTaskSerializer
     search_fields = ('status', 'region_json_id', 'celery_task_id')
@@ -194,6 +235,13 @@ class JsonFileTaskViewSet(BaseViewSet):
 
 
 class TaskHistoryViewSet(BaseViewSet):
+    permission_mapping = {
+        'GET': AppPermissions.READ_TASKS,
+        'POST': AppPermissions.START_EXECUTION,
+        'PUT': AppPermissions.START_EXECUTION,
+        'PATCH': AppPermissions.START_EXECUTION,
+        'DELETE': AppPermissions.STOP_EXECUTION,
+    }
     queryset = TaskHistory.objects.all().select_related('execution').order_by('-created_at')
     serializer_class = TaskHistorySerializer
     search_fields = ('status', 'task_type', 'resource_id', 'celery_task_id')

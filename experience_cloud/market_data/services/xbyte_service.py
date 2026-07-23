@@ -34,17 +34,18 @@ class XByteDataDumpService(BaseDataDumpService):
             payload= None
             
             # If there's no dynamic configuration provided from the DB, fallback to an error
+            ctx = f"[{provider_code} | {schema.get('brand_name') or 'NoBrand'} | {schema.get('category_name') or 'NoCat'} | {schema.get('platform_name') or 'NoPlatform'} | {schema.get('keyword_name') or 'NoKeyword'} | {schema.get('display_location') or 'NoLoc'}]"
+            
             if not platform_config:
-                # Fallback for now to prevent immediate crashes during testing if DB isn't updated yet
+                logger.warning(f"{ctx} Using fallback config for {provider_code}. Please update Platform configuration in Django Admin.")
                 payload = {
                     "endpoint": "result",
                     "zipcode": location,
                     "keyword": keyword,
                     "platform": platform,
                 }
-                logger.warning(f"Using fallback config for {provider_code}. Please update Platform configuration in Django Admin.")
             else:
-                # This is the MAGIC that replaces your placeholders!
+                logger.info(f"{ctx} Generating dynamic payload from platform configuration...")
                 # 1. Convert the JSON configuration into a raw string
                 payload_str = json.dumps(platform_config)
                 
@@ -69,13 +70,15 @@ class XByteDataDumpService(BaseDataDumpService):
             }
             
             # Use the Circuit-Breaker ApiClient!
-            client = XByteClient()
+            client = XByteClient(provider_code=provider_code)
             
             # Make the API call
-            logger.info(f"Posting dynamic payload to {provider_code} at {endpoint}")
+            logger.info(f"{ctx} Making external API call to endpoint: {endpoint}")
+            logger.info(f"{ctx} Payload: {json.dumps(payload)}")
             response_data = client.fetch_results(keyword=keyword, location=location, platform=platform, payload=payload, log_context=log_context)
             
             # Save the raw response to the media folder
+            logger.info(f"{ctx} API call successful. Saving raw JSON response to media folder...")
             self._save_raw_json_to_media(schema, response_data)
             
             # Extract Results
@@ -85,12 +88,16 @@ class XByteDataDumpService(BaseDataDumpService):
                 results = []
                 
             items_count = len(results)
+            logger.info(f"{ctx} Extracted {items_count} products from API response.")
             
             if items_count == 0:
+                logger.info(f"{ctx} No results found. Skipping database insertion.")
                 return DataDumpResponseSchema(status="success", items_count=0, message="No results found.")
 
             # Map and Upsert into Database
+            logger.info(f"{ctx} Starting database upsert for {items_count} products...")
             self._save_to_database(schema, results)
+            logger.info(f"{ctx} Successfully upserted {items_count} products into the database.")
             
             return DataDumpResponseSchema(
                 status="success", 
@@ -199,7 +206,6 @@ class XByteDataDumpService(BaseDataDumpService):
                 new_products, 
                 batch_size=500,
                 update_conflicts=True,
-                unique_fields=['platform', 'keyword', 'location', 'product_uid'],
                 update_fields=[
                     'rank', 'title', 'brand', 'category', 'availability', 'mrp', 
                     'sell_price', 'rating', 'reviews', 'product_url', 'thumbnail', 

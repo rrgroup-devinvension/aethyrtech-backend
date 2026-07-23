@@ -22,6 +22,8 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
     if not brands:
         return
         
+    ctx = f"[JSON Gen Collector | Brand: {region_data.get('brand_name', 'Unknown')}]"
+        
     keywords_map = {}
     pincodes_map = {}
     for plat in region_data.get("platforms", []):
@@ -46,7 +48,7 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
             
         matched_brand = match_brands(brands, p.brand)
         if not matched_brand:
-            logger.error(f"Product {p.product_uid} skipped due to brand mismatch")
+            logger.error(f"{ctx} Product {p.product_uid} skipped due to brand mismatch ({p.brand})")
             continue
             
         product_uid = p.product_uid
@@ -118,7 +120,7 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
         is_avaible_correct = current_pf.set_availability(p.availability)
         current_pf._is_available_correct = is_avaible_correct
         if not is_avaible_correct:
-             logger.error(f"Product {p.product_uid} availability mismatch")
+             logger.error(f"{ctx} Product {p.product_uid} availability mismatch")
             
     if current_pf is not None and getattr(current_pf, "_is_available_correct", False):
         yield current_pf

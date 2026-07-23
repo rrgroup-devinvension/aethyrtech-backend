@@ -73,8 +73,6 @@ class UserViewSet(BaseViewSet):
     action_permission_mapping = {
         'set_status': AppPermissions.UPDATE_USER,
         'set_password': AppPermissions.UPDATE_USER,
-        'brands': AppPermissions.READ_USER,
-        'organizations': AppPermissions.READ_USER,
     }
 
     organization_field = 'organization_id'
@@ -89,6 +87,11 @@ class UserViewSet(BaseViewSet):
     permission_classes = [IsAuthenticated]
     search_fields = ("name", "email", "role")
     ordering_fields = ("name", "email", "role", "created_at")
+
+    def get_permissions(self):
+        if self.action in ['get_user_brands', 'get_user_organizations']:
+            return [IsAuthenticated()]
+        return super().get_permissions()
 
     def get_serializer_class(self):
         if self.action in ["create", "update", "partial_update"]:
@@ -125,7 +128,9 @@ class UserViewSet(BaseViewSet):
         from core.organizations.models import Brand
         logger.info(f"Fetching brands and regions for user id {user.id}")
 
-        if user.user_type == 'ORGANIZATION' and user.organization:
+        effective_user_type = user.user_type or (user.role.role_type if user.role else None)
+
+        if effective_user_type == 'ORGANIZATION' and user.organization:
             brands = Brand.objects.filter(organization=user.organization, is_active=True, is_deleted=False)
         else:
             # Internal user or unassigned organization - return all active brands for testing

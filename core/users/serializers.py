@@ -56,6 +56,7 @@ class UserSerializer(BaseModelSerializer):
             "organization_details",
             "managed_organizations",
             "extra_permissions",
+            "user_type",
             "is_active",
         )
 
@@ -75,7 +76,7 @@ class UserCreateUpdateSerializer(BaseModelSerializer):
 
     class Meta:
         model = User
-        fields = ("id", "created_at", "updated_at", "name", "email", "role", "organization", "managed_organization_ids", "password", "extra_permissions", "is_active")
+        fields = ("id", "created_at", "updated_at", "name", "email", "role", "organization", "managed_organization_ids", "password", "extra_permissions", "user_type", "is_active")
         extra_kwargs = {
             "password": {"write_only": True, "required": False}
         }
@@ -83,6 +84,11 @@ class UserCreateUpdateSerializer(BaseModelSerializer):
     def create(self, validated_data):
         managed_orgs = validated_data.pop("managed_organizations", [])
         password = validated_data.pop("password", None)
+
+        role = validated_data.get("role")
+        user_type = validated_data.get("user_type")
+        if not user_type and role:
+            validated_data["user_type"] = role.role_type
 
         user = User.objects.create(**validated_data)
         if password:
@@ -97,6 +103,11 @@ class UserCreateUpdateSerializer(BaseModelSerializer):
     def update(self, instance, validated_data):
         managed_orgs = validated_data.pop("managed_organizations", None)
         password = validated_data.pop("password", None)
+
+        role = validated_data.get("role", instance.role)
+        user_type = validated_data.get("user_type", instance.user_type)
+        if not user_type and role:
+            validated_data["user_type"] = role.role_type
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)

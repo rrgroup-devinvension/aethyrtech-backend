@@ -10,6 +10,8 @@ def get_all_karmatech_products(region_data: RegionDataSchema) -> List[ProductSch
     brands = region_data.get("brands", [])
     if not brands:
         return []
+        
+    ctx = f"[JSON Gen Collector | Brand: {region_data.get('brand_name', 'Unknown')}]"
     
     keywords_map = {}
     for plat in region_data.get("platforms", []):
@@ -68,7 +70,7 @@ def get_all_karmatech_products(region_data: RegionDataSchema) -> List[ProductSch
         sku = p.sku
         matched_brand = match_brands(brands, p.brand)
         if not matched_brand:
-            logger.error(f"Product {p.sku} skipped due to brand mismatch")
+            logger.error(f"{ctx} Product {p.sku} skipped due to brand mismatch ({p.brand})")
             continue 
             
         pf = ProductSchema()
@@ -115,6 +117,6 @@ def get_all_karmatech_products(region_data: RegionDataSchema) -> List[ProductSch
         if is_avaible_correct:
             formatted_products.append(pf)
         else:
-            logger.error(f"Product {p.sku} availability mismatch")
+            logger.error(f"{ctx} Product {p.sku} availability mismatch")
             
     return formatted_products

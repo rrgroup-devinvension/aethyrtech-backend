@@ -15,7 +15,7 @@ class DataDumpDispatcher:
     def __init__(self):
         # The Registry Map: Links a provider_code from the DB to the Python class that handles it.
         self._services = {
-            "XBYTE": XByteDataDumpService(),
+            "XBYTES": XByteDataDumpService(),
         }
 
     def execute(self, schema: DataDumpSchema) -> DataDumpResponseSchema:

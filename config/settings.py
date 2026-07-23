@@ -318,7 +318,7 @@ LOGGING = {
         },
         'file_info': {
             'level': 'INFO',
-            'class': 'logging.handlers.RotatingFileHandler',
+            'class': 'concurrent_log_handler.ConcurrentRotatingFileHandler',
             'filename': os.path.join(LOGS_DIR, 'django_info.log'),
             'maxBytes': 1024 * 1024 * 10,  # 10 MB limit per file
             'backupCount': 5,  # Keep up to 5 backups
@@ -326,10 +326,26 @@ LOGGING = {
         },
         'file_error': {
             'level': 'ERROR',
-            'class': 'logging.handlers.RotatingFileHandler',
+            'class': 'concurrent_log_handler.ConcurrentRotatingFileHandler',
             'filename': os.path.join(LOGS_DIR, 'django_error.log'),
             'maxBytes': 1024 * 1024 * 10,  # 10 MB limit per file
             'backupCount': 5,  # Keep up to 5 backups
+            'formatter': 'verbose',
+        },
+        'market_data_file': {
+            'level': 'INFO',
+            'class': 'concurrent_log_handler.ConcurrentRotatingFileHandler',
+            'filename': os.path.join(LOGS_DIR, 'market_data.log'),
+            'maxBytes': 1024 * 1024 * 10,  # 10 MB limit per file
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+        'json_generator_file': {
+            'level': 'INFO',
+            'class': 'concurrent_log_handler.ConcurrentRotatingFileHandler',
+            'filename': os.path.join(LOGS_DIR, 'json_generator.log'),
+            'maxBytes': 1024 * 1024 * 10,
+            'backupCount': 5,
             'formatter': 'verbose',
         },
     },
@@ -343,6 +359,21 @@ LOGGING = {
             'handlers': ['console', 'file_info', 'file_error'],
             'level': 'INFO',
             'propagate': False, # Prevent duplicate logging in 'django'
+        },
+        'experience_cloud.market_data': {
+            'handlers': ['console', 'market_data_file', 'file_error'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'experience_cloud.market_integrations': {
+            'handlers': ['console', 'market_data_file', 'file_error'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'experience_cloud.json_generator': {
+            'handlers': ['console', 'json_generator_file', 'file_error'],
+            'level': 'INFO',
+            'propagate': False,
         },
         # Catch-all for any other custom loggers in your apps
         '': {

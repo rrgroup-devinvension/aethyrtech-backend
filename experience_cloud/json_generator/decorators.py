@@ -13,9 +13,9 @@ def handle_builder_exceptions(func):
         # and Insight builders (which do not need products, though Orchestrator might send it)
         try:
             if products is not None:
-                return func(region_data, products, task, template, *args, **kwargs)
+                return func(region_data=region_data, task=task, template=template, products=products, *args, **kwargs)
             else:
-                return func(region_data, task, template, *args, **kwargs)
+                return func(region_data=region_data, task=task, template=template, *args, **kwargs)
         except SchedulerBaseException:
             raise
         except NotFound as nf_exc:

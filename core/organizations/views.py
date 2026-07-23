@@ -68,6 +68,10 @@ class OrganizationViewSet(BaseViewSet):
     destroy=extend_schema(summary="Delete Brand")
 )
 class BrandViewSet(BaseViewSet):
+    action_permission_mapping = {
+        'toggle_status': AppPermissions.MANAGE_BRAND,
+        'list_active': AppPermissions.READ_BRAND,
+    }
     organization_field = 'organization_id'
     permission_mapping = {
         'GET': AppPermissions.READ_BRAND,
@@ -171,6 +175,13 @@ class CompetitorViewSet(BaseViewSet):
     destroy=extend_schema(summary="Delete Region")
 )
 class RegionViewSet(BaseViewSet):
+    permission_mapping = {
+        'GET': AppPermissions.READ_BRAND,
+        'POST': AppPermissions.MANAGE_BRAND,
+        'PUT': AppPermissions.MANAGE_BRAND,
+        'PATCH': AppPermissions.MANAGE_BRAND,
+        'DELETE': AppPermissions.MANAGE_BRAND
+    }
     queryset = Region.objects.all()
     serializer_class = RegionSerializer
     search_fields = ("name", "code")

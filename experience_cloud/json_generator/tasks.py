@@ -42,7 +42,7 @@ def get_region_data(region_id: int) -> RegionDataSchema:
     
     for kw in keywords_qs:
         plat = kw.platform
-        plat_val = plat.value if plat else 'all'
+        plat_val = plat.code if plat else 'all'
         
         if plat_val not in keywords:
             keywords[plat_val] = []
@@ -79,7 +79,7 @@ def get_region_data(region_id: int) -> RegionDataSchema:
     
     for loc in pincodes_qs:
         plat = loc.platform
-        plat_val = plat.value if plat else 'all'
+        plat_val = plat.code if plat else 'all'
         pin_val = loc.pincode or loc.address
         
         if pin_val:
@@ -137,16 +137,21 @@ def get_region_data(region_id: int) -> RegionDataSchema:
 
 @shared_task(name='experience_cloud.json_generator.tasks.process_region_batch')
 def process_region_batch(execution_id: int, region_id: int, file_task_ids: list) -> None:
-    logger.info(f"Starting process_region_batch for Execution: {execution_id}, Region: {region_id}")
+    ctx = f"[JSON Gen | Exec: {execution_id} | Region: {region_id}]"
+    logger.info(f"{ctx} Starting process_region_batch for {len(file_task_ids)} files")
     
     try:
         region_data: RegionDataSchema = get_region_data(region_id)
+        
+        ctx = f"[JSON Gen | Exec: {execution_id} | Region: {region_data.get('region_name', region_id)} | Brand: {region_data.get('brand_name', 'Unknown')}]"
+        logger.info(f"{ctx} Region data loaded. Fetching all products...")
+        
         product_generator: ItemGenerator = get_all_products(region_data)
         
         for task_id in file_task_ids:
-            region_file = RegionJsonFile.objects.filter(task_id=str(task_id)).first()
+            region_file = RegionJsonFile.objects.select_related('template').filter(task_id=str(task_id)).first()
             if region_file and region_file.status not in ['PENDING', 'RUNNING']:
-                logger.warning(f"Task {task_id} aborted due to manual state change (current status: {region_file.status})")
+                logger.warning(f"{ctx} Task {task_id} aborted due to manual state change (current status: {region_file.status})")
                 continue
                 
             # Mark as running
@@ -155,10 +160,11 @@ def process_region_batch(execution_id: int, region_id: int, file_task_ids: list)
             try:
                 # Fetch task to know which template to build
                 task = JsonFileTask.objects.get(id=task_id)
-                template_name = task.metadata.get('template') if task.metadata else 'Unknown'
+                template_name = region_file.template.template if region_file and region_file.template else 'Unknown'
                 
                 builder_func = get_builder_for_template(template_name)
                 
+                logger.info(f"{ctx} Initiating generation for template: {template_name}")
                 start_time = time.time()
                 is_file_saved, json_payload = builder_func(
                     region_data=region_data,
@@ -168,11 +174,13 @@ def process_region_batch(execution_id: int, region_id: int, file_task_ids: list)
                 )
                 
                 brand_name = region_data.get("brand_name", "unknown")
+                region_name = region_data.get("region_name", "unknown")
+                existing_path = region_file.file_path if region_file else None
                 
                 if not is_file_saved:
                     # Orchestrator saves the file
                     from experience_cloud.json_generator.utils import save_json_to_file
-                    file_name, file_path = save_json_to_file(json_payload, brand_name, template_name)
+                    file_name, file_path = save_json_to_file(json_payload, brand_name, template_name, region_name, existing_path=existing_path)
                 else:
                     # Builder already handled saving (including extra files, DB updates, etc)
                     # We extract the file_name and file_path from the payload
@@ -180,6 +188,7 @@ def process_region_batch(execution_id: int, region_id: int, file_task_ids: list)
                     file_path = json_payload.get("file_path") if isinstance(json_payload, dict) else None
                 
                 duration = time.time() - start_time
+                logger.info(f"{ctx} Successfully finished template: {template_name} in {duration:.2f}s")
                 
                 # Mark Success (This also triggers the atomic check to finish the execution)
                 ExecutionManager.update_task_status(JsonFileTask, task_id, execution_id, 'SUCCESS')
@@ -208,7 +217,7 @@ def process_region_batch(execution_id: int, region_id: int, file_task_ids: list)
                     RegionJsonFile.objects.filter(id=task.metadata['file_id']).update(**update_kwargs)
                 
             except Exception as e:
-                logger.error(f"Task {task_id} failed: {e}")
+                logger.error(f"{ctx} Task {task_id} failed: {e}")
                 ExecutionManager.update_task_status(JsonFileTask, task_id, execution_id, 'FAILED', error=str(e))
                 if task.metadata and 'file_id' in task.metadata:
                     RegionJsonFile.objects.filter(id=task.metadata['file_id']).update(
@@ -217,7 +226,14 @@ def process_region_batch(execution_id: int, region_id: int, file_task_ids: list)
                     )
                 
     except Exception as e:
-        logger.error(f"Region batch {region_id} failed completely: {e}")
+        logger.exception(f"{ctx} Region batch failed completely")
         # If the batch setup fails, fail all child tasks
         for task_id in file_task_ids:
             ExecutionManager.update_task_status(JsonFileTask, task_id, execution_id, 'FAILED', error="Batch initialization failed: " + str(e))
+            
+            task_obj = JsonFileTask.objects.filter(id=task_id).first()
+            if task_obj and task_obj.metadata and 'file_id' in task_obj.metadata:
+                RegionJsonFile.objects.filter(id=task_obj.metadata['file_id']).update(
+                    status='FAILED',
+                    error_message=f"Batch initialization failed: {e}"
+                )

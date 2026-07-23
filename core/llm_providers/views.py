@@ -22,12 +22,17 @@ logger = logging.getLogger(__name__)
 )
 class LLMProviderViewSet(BaseViewSet):
     organization_field = None
+    action_permission_mapping = {
+        'set_status': AppPermissions.UPDATE_LLM_PROVIDER,
+        'set_default': AppPermissions.UPDATE_LLM_PROVIDER,
+        'test_connection': AppPermissions.READ_LLM_PROVIDERS,
+    }
     permission_mapping = {
         'GET': AppPermissions.READ_LLM_PROVIDERS,
-        'POST': None,
-        'PUT': None,
-        'PATCH': None,
-        'DELETE': None
+        'POST': AppPermissions.CREATE_LLM_PROVIDER,
+        'PUT': AppPermissions.UPDATE_LLM_PROVIDER,
+        'PATCH': AppPermissions.UPDATE_LLM_PROVIDER,
+        'DELETE': AppPermissions.DELETE_LLM_PROVIDER
     }
     queryset = LLMProvider.objects.all().order_by('name')
     serializer_class = LLMProviderSerializer

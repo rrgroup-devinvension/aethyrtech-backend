@@ -7,7 +7,7 @@ import random
 from typing import Dict, List, Optional, Any, Union, Tuple
 
 from core.llm_providers.services.llm_service import LLMService
-from apps.tasks.services.gen_utils import safe_float
+from experience_cloud.json_generator.utils import safe_float
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
 from experience_cloud.json_generator.utils import serve_region_template_json, save_or_update_region_json
 

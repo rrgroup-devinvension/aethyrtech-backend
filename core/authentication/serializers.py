@@ -19,13 +19,15 @@ class LoginSerializer(serializers.Serializer):
         role_code = user.role.code if user.role else None
         effective_permissions = user.get_all_permissions()
         
+        effective_user_type = user.user_type or (user.role.role_type if user.role else None)
+        
         return {
             "user": {
                 "id": str(user.id), 
                 "email": user.email, 
-                "name": user.name, 
+                "name": getattr(user, "name", ""), 
                 "role": role_code,
-                "user_type": user.user_type,
+                "user_type": effective_user_type,
                 "permissions": effective_permissions
             },
             "refresh": str(refresh),
@@ -55,13 +57,15 @@ class RefreshSerializer(serializers.Serializer):
         role_code = user.role.code if user.role else None
         effective_permissions = user.get_all_permissions()
 
+        effective_user_type = user.user_type or (user.role.role_type if user.role else None)
+
         return {
             "user": {
                 "id": str(user.id),
                 "email": user.email,
                 "name": getattr(user, "name", ""),
                 "role": role_code,
-                "user_type": user.user_type,
+                "user_type": effective_user_type,
                 "permissions": effective_permissions,
             },
             "refresh": str(refresh),

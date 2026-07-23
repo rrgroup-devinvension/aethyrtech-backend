@@ -7,12 +7,14 @@ from django.db.models import Prefetch
 from experience_cloud.catalog.models import Keyword, Location, Platform
 from core.categories.models import Category
 from experience_cloud.executions.models import ActiveExecution, DataDumpTask
+from core.authentication.permissions import AppPermissions
+from shared.permissions import HasPermission
 
 class HierarchyCategoryListView(APIView):
     """
     Returns categories that have keywords associated with them.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasPermission(AppPermissions.VIEW_ANALYTICS)]
 
     def get(self, request, *args, **kwargs):
         # We want to list all active categories
@@ -33,7 +35,7 @@ class HierarchyPlatformListView(APIView):
     """
     Returns platforms that are associated with keywords in a specific category.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasPermission(AppPermissions.VIEW_ANALYTICS)]
 
     def get(self, request, *args, **kwargs):
         category_id = request.query_params.get('category')
@@ -60,7 +62,7 @@ class HierarchyKeywordListView(APIView):
     """
     Returns keywords for a specific category and platform.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasPermission(AppPermissions.VIEW_ANALYTICS)]
 
     def get(self, request, *args, **kwargs):
         category_id = request.query_params.get('category')
@@ -110,7 +112,7 @@ class HierarchyLocationListView(APIView):
     Returns locations matching the specific criteria.
     Requires category, platform, and region (since location doesn't link directly to keyword).
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasPermission(AppPermissions.VIEW_ANALYTICS)]
 
     def get(self, request, *args, **kwargs):
         category_id = request.query_params.get('category')
@@ -172,7 +174,7 @@ class RunDataDumpView(APIView):
     """
     Triggers the data dump execution for a given scope.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasPermission(AppPermissions.START_EXECUTION)]
 
     def post(self, request, *args, **kwargs):
         scope_type = request.data.get('scope_type')
@@ -204,7 +206,7 @@ class ProductsListView(generics.ListAPIView):
     from experience_cloud.market_data.serializers import ProductSerializer
     queryset = XBytesProduct.objects.all().order_by('-created_at')
     serializer_class = ProductSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasPermission(AppPermissions.READ_PRODUCTS)]
     
     # Normally we use pagination/filters, which are configured globally in settings.
 
@@ -216,7 +218,7 @@ class ProductsDetailView(generics.RetrieveUpdateDestroyAPIView):
     from experience_cloud.market_data.serializers import ProductSerializer
     queryset = XBytesProduct.objects.all()
     serializer_class = ProductSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasPermission(AppPermissions.UPDATE_PRODUCTS)]
     lookup_field = 'id'
     # We can also add search fields and filter fields if needed.
     search_fields = ['title', 'brand', 'keyword', 'platform', 'pincode']
@@ -230,7 +232,7 @@ class MarketDataStatsView(APIView):
     """
     Returns aggregated data dump status counts at the Category, Platform, and Keyword levels.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasPermission(AppPermissions.VIEW_ANALYTICS)]
 
     def get(self, request, *args, **kwargs):
         from experience_cloud.market_data.models import ApiDump
@@ -306,7 +308,7 @@ class MarketDataStatsView(APIView):
 
 
 class StopDataDumpView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasPermission(AppPermissions.STOP_EXECUTION)]
 
     def post(self, request, id, *args, **kwargs):
         # Stop dump for a specific location

@@ -17,6 +17,13 @@ class AuthType(models.TextChoices):
     JWT = "JWT", _("JWT")
     CUSTOM = "CUSTOM", _("Custom")
 
+class HttpMethod(models.TextChoices):
+    GET = "GET", _("GET")
+    POST = "POST", _("POST")
+    PUT = "PUT", _("PUT")
+    PATCH = "PATCH", _("PATCH")
+    DELETE = "DELETE", _("DELETE")
+
 class ApiProvider(BaseModel):
     name = models.CharField(
         max_length=150,
@@ -68,6 +75,17 @@ class ApiProvider(BaseModel):
         max_length=255, 
         blank=True, 
         help_text=_("Path to check API health (e.g., '/health')")
+    )
+    test_http_method = models.CharField(
+        max_length=10,
+        choices=HttpMethod.choices,
+        default=HttpMethod.GET,
+        help_text=_("HTTP method used for health checks and connection testing")
+    )
+    test_payload = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=_("Payload sent during health checks (for POST/PUT/PATCH)")
     )
     status = models.CharField(
         max_length=20, 
@@ -143,6 +161,7 @@ class APIUsageLog(BaseModel):
     # Time and Status
     timestamp = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=50)  # e.g., 'SUCCESS', 'FAILED', 'TIMEOUT'
+    error_message = models.TextField(null=True, blank=True)
     
     # Internal Foreign Keys (References to other Experience Cloud models)
     api_provider = models.ForeignKey('ApiProvider', on_delete=models.SET_NULL, null=True, blank=True)

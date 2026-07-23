@@ -3,6 +3,7 @@ from experience_cloud.market_data.services.dispatcher import DataDumpDispatcher
 from experience_cloud.market_data.schemas import DataDumpSchema
 import time
 import logging
+import traceback
 from django.utils import timezone
 from celery import shared_task
 from django.db import transaction
@@ -24,11 +25,11 @@ def build_data_dump_schema(keyword_id: int, location_id: int) -> DataDumpSchema:
     """
     # 1. Fetch DB objects and their relations in one hit
     # Assuming the relation name from Platform to ApiProvider is 'api_provider'
-    keyword_obj = Keyword.objects.select_related('platform__api_provider', 'brand', 'category').get(id=keyword_id)
+    keyword_obj = Keyword.objects.select_related('platform__api_provider', 'region__brand', 'category').get(id=keyword_id)
     location_obj = Location.objects.get(id=location_id)
     
     platform_obj = keyword_obj.platform
-    brand_obj = keyword_obj.brand
+    brand_obj = keyword_obj.region.brand if keyword_obj.region else None
     category_obj = keyword_obj.category
     provider_obj = platform_obj.api_provider if platform_obj else None
     
@@ -97,12 +98,12 @@ def process_location_dump(execution_id, task_id, keyword_id, location_id):
         
         # 3. Handle Response strictly based on the defined DataDumpResponseSchema
         if response.get("status") == "success":
-            items_found = response.get("items_found", 0)
+            items_count = response.get("items_count", 0)
             
             # IMPORTANT: Update ApiDump BEFORE updating ExecutionManager
             ApiDump.objects.filter(task_id=str(task_id)).update(
-                products_found=items_found,
-                product_count=items_found,
+                products_found=items_count,
+                product_count=items_count,
                 response_time=duration,
                 status='SUCCESS',
                 error_message=None
@@ -114,11 +115,12 @@ def process_location_dump(execution_id, task_id, keyword_id, location_id):
             raise Exception(response.get("message", "Unknown Service Error"))
             
     except Exception as e:
-        logger.error(f"Data Dump Task {task_id} failed: {e}")
+        full_trace = traceback.format_exc()
+        logger.error(f"Data Dump Task {task_id} failed: {e}\n{full_trace}")
         
         ApiDump.objects.filter(task_id=str(task_id)).update(
             status='FAILED',
-            error_message=str(e)
+            error_message=full_trace
         )
         
-        ExecutionManager.update_task_status(DataDumpTask, task_id, execution_id, 'FAILED', error=str(e))
+        ExecutionManager.update_task_status(DataDumpTask, task_id, execution_id, 'FAILED', error=full_trace)
