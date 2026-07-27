@@ -27,14 +27,21 @@ def get_region_data(region_id: int) -> RegionDataSchema:
     region_name = region.name
     category_id = brand.category_id if brand else None
     
-    brands = [brand_name] if brand_name else []
+    brands: dict = {}
+    if brand_name:
+        aliases_str = brand.aliases if brand and brand.aliases else ""
+        aliases = [a.strip() for a in aliases_str.split(',') if a.strip()] if aliases_str else []
+        brands[brand_name] = aliases
+        
     for comp in Competitor.objects.filter(region_id=region_id):
-        brands.append(comp.name)
+        aliases_str = comp.aliases if comp.aliases else ""
+        aliases = [a.strip() for a in aliases_str.split(',') if a.strip()] if aliases_str else []
+        brands[comp.name] = aliases
         
     keywords_qs = Keyword.objects.filter(
         region_id=region_id, 
         category_id=category_id
-    ).select_related('platform__api_provider')
+    ).select_related('platform__api_provider').order_by('display_order')
     
     keywords: dict = {}
     platforms_map: dict = {}
@@ -53,6 +60,7 @@ def get_region_data(region_id: int) -> RegionDataSchema:
             platforms_map[plat.id] = {
                 "platform_name": plat.name,
                 "platform_id": plat.id,
+                "platform_code": plat.code if plat.code else "",
                 "api_provider_name": api_prov.name if api_prov else "",
                 "api_provider_code": api_prov.code if api_prov else "",
                 "api_provider_id": api_prov.id if api_prov else 0,
@@ -92,6 +100,7 @@ def get_region_data(region_id: int) -> RegionDataSchema:
             platforms_map[plat.id] = {
                 "platform_name": plat.name,
                 "platform_id": plat.id,
+                "platform_code": plat.code if plat.code else "",
                 "api_provider_name": api_prov.name if api_prov else "",
                 "api_provider_code": api_prov.code if api_prov else "",
                 "api_provider_id": api_prov.id if api_prov else 0,
@@ -124,7 +133,8 @@ def get_region_data(region_id: int) -> RegionDataSchema:
         "region_name": region_name,
         "region_id": region_id,
         "brands": brands,
-        "platforms": list(platforms_map.values()),
+        "display_brands": list(brands.keys()),
+        "platforms": { plat["platform_code"]: plat for plat in platforms_map.values() if plat["platform_code"] },
         "keywords": list(distinct_keywords_map.values()),
         "locations": list(distinct_locations_map.values()),
         "display_locations": display_locations,
@@ -197,6 +207,7 @@ def process_region_batch(execution_id: int, region_id: int, file_task_ids: list)
                 if task.metadata and 'file_id' in task.metadata:
                     update_kwargs = {
                         "generation_duration": duration,
+                        "products_processed": getattr(product_generator, 'total_count', 0),
                         "status": 'SUCCESS',
                         "last_generated_at": timezone.now()
                     }
@@ -237,3 +248,6 @@ def process_region_batch(execution_id: int, region_id: int, file_task_ids: list)
                     status='FAILED',
                     error_message=f"Batch initialization failed: {e}"
                 )
+    finally:
+        if 'product_generator' in locals() and hasattr(product_generator, 'cleanup'):
+            product_generator.cleanup()

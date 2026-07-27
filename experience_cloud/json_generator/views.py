@@ -141,7 +141,7 @@ class RegionJsonFileViewSet(BaseViewSet):
         # Calculate scope_name
         scope_name = None
         if scope_type == 'REGION':
-            from experience_cloud.catalog.models import Region
+            from core.organizations.models import Region
             scope_name = Region.objects.filter(id=scope_id).values_list('name', flat=True).first()
         elif scope_type == 'BRAND':
             from core.organizations.models import Brand
@@ -204,10 +204,79 @@ class RegionJsonFileViewSet(BaseViewSet):
         return Response({'message': 'Task stopped successfully', 'status': 'STOPPED'})
 
 from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
 from django.db.models import Count, Q, Sum
 from django.db.models.functions import Coalesce
 
 from shared.permissions import HasPermission
+
+class DebugRunJsonBuildView(APIView):
+    """
+    Synchronously run JSON generation for debugging.
+    Unauthenticated to easily hit via Postman/cURL.
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        template_name = request.data.get('template_name')
+        region_id = request.data.get('region_id')
+        
+        if not template_name or not region_id:
+            return Response({'error': 'template_name and region_id are required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            from experience_cloud.json_generator.tasks import get_region_data
+            from experience_cloud.json_generator.collectors import get_all_products
+            from experience_cloud.json_generator.builders import get_builder_for_template
+            import time
+            from experience_cloud.json_generator.utils import save_json_to_file
+
+            # 1. Load region memory data
+            region_data = get_region_data(region_id)
+            
+            # 2. Get product generator (yields from DB)
+            product_generator = get_all_products(region_data)
+            
+            # 3. Get appropriate builder
+            builder_func = get_builder_for_template(template_name)
+            
+            start_time = time.time()
+            
+            # 4. Generate JSON payload
+            is_file_saved, json_payload = builder_func(
+                region_data=region_data,
+                task=None,  # No task ID for synchronous debug
+                products=product_generator,
+                template=template_name
+            )
+            
+            brand_name = region_data.get("brand_name", "unknown")
+            region_name = region_data.get("region_name", "unknown")
+            
+            # 5. Save the file if not already saved by builder
+            if not is_file_saved:
+                file_name, file_path = save_json_to_file(json_payload, brand_name, template_name, region_name)
+            else:
+                file_name = json_payload.get("file_name") if isinstance(json_payload, dict) else None
+                file_path = json_payload.get("file_path") if isinstance(json_payload, dict) else None
+                
+            duration = time.time() - start_time
+            
+            # Cleanup generator resources
+            if hasattr(product_generator, 'cleanup'):
+                product_generator.cleanup()
+
+            return Response({
+                'message': 'Debug JSON build completed successfully (Synchronous)',
+                'file_name': file_name,
+                'file_path': file_path,
+                'duration_seconds': round(duration, 2)
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.exception("Debug JSON build failed")
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class JsonGenerationStatsView(APIView):
     """

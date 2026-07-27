@@ -63,7 +63,7 @@ def build_data_dump_schema(keyword_id: int, location_id: int) -> DataDumpSchema:
         provider_name=provider_obj.name if provider_obj else 'Unknown',
         provider_code=provider_obj.code if provider_obj else 'UNKNOWN',
         provider_id=provider_obj.id if provider_obj else None,
-        configuration=platform_obj.json_configuration if platform_obj else {}
+        configuration=platform_obj.configuration if platform_obj else {}
     )
     
     return schema

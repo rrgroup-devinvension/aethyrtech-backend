@@ -20,6 +20,7 @@ class Brand(AuditableMixin, SoftDeleteModel):
     logo = models.CharField(max_length=1024, null=True, blank=True)
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, null=True, blank=True)
     category = models.ForeignKey('core_categories.Category', on_delete=models.CASCADE, null=True, blank=True)
+    aliases = models.CharField(max_length=500, null=True, blank=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -39,6 +40,7 @@ class Competitor(BaseModel):
     name = models.CharField(max_length=255)
     description = models.TextField(null=True, blank=True)
     region = models.ForeignKey(Region, on_delete=models.CASCADE, null=True, blank=True, related_name='competitors')
+    aliases = models.CharField(max_length=500, null=True, blank=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:

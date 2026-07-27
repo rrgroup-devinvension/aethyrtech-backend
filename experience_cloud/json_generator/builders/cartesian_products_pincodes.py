@@ -9,10 +9,9 @@ from datetime import datetime
 from experience_cloud.json_generator.exceptions import SchedulerBaseException, DataProcessingException
 from core.organizations.models import Brand
 from experience_cloud.catalog.models import Location
-from experience_cloud.json_generator.utils import match_brands
 logger = logging.getLogger(__name__)
 
-def get_cartesian_products_pincodes_list(products, brands, brand_name, is_competitor=False):
+def get_cartesian_products_pincodes_list(products, brand_name, is_competitor=False):
     cartesian_products = []
     
     brand_category_map = {
@@ -32,9 +31,7 @@ def get_cartesian_products_pincodes_list(products, brands, brand_name, is_compet
         for pincode, rank_list in rankings.items():
             if pincode == "000000":
                 continue
-            matched_brand = match_brands(brands, p.brand)
-            if not matched_brand:
-                continue
+            
             pincode_id = category_pincode_map.get(pincode)
             ranks = [
                 r.get("rank")
@@ -48,9 +45,9 @@ def get_cartesian_products_pincodes_list(products, brands, brand_name, is_compet
                 "productid": p.id,
                 "pincodeid": pincode_id,
                 "Company": None,
-                "Brand": matched_brand,
-                "MRP (Γé╣)": p.market_price or 0,
-                "Current Price (Γé╣)": p.selling_price or 0,
+                "Brand": p.brand,
+                "MRP (₹)": p.market_price or 0,
+                "Current Price (₹)": p.selling_price or 0,
                 "Pincode": pincode,
                 "Area": None,
                 "QCommerce_Priority": None,
@@ -64,7 +61,7 @@ def get_cartesian_products_pincodes_list(products, brands, brand_name, is_compet
 
 @handle_builder_exceptions
 def cartesian_products_pincodes_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
-    brands = region_data.get("brands", [])
+    brands = region_data.get("display_brands", [])
     keywords = region_data.get("keywords", [])
     brand_id = region_data.get("brand_id")
     brand_name = region_data.get("brand_name")
@@ -121,7 +118,7 @@ def cartesian_products_pincodes_builder(region_data: RegionDataSchema, task, pro
             }
         ]
     }
-    payload["Sheet1"] = get_cartesian_products_pincodes_list(products, brands, brand_name, False)
+    payload["Sheet1"] = get_cartesian_products_pincodes_list(products, brand_name, False)
       
     logger.info(f"Completed Cartesian Products Pincode JSON build | Task={t_id}")
     return False, payload

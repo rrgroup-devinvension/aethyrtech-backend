@@ -119,6 +119,7 @@ class XByteDataDumpService(BaseDataDumpService):
             date_str = datetime.now().strftime('%Y-%m-%d')
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             
+            provider_code = schema.get("provider_code")
             category = get_valid_filename(schema.get("category_name") or "uncategorized")
             platform = get_valid_filename(schema.get("platform_name") or "unknown_platform")
             keyword = get_valid_filename(schema.get("keyword_name") or "unknown_keyword")
@@ -126,8 +127,9 @@ class XByteDataDumpService(BaseDataDumpService):
             
             # Construct path
             base_dir = os.path.join(
-                settings.MEDIA_ROOT, 
-                "market_data_dumps", 
+                settings.MEDIA_ROOT,
+                "market_data_dumps",
+                provider_code, 
                 date_str, 
                 category, 
                 platform, 
@@ -154,7 +156,7 @@ class XByteDataDumpService(BaseDataDumpService):
     
     def _save_to_database(self, schema: DataDumpSchema, results: list):
         run_date = timezone.now().strftime('%Y-%m-%d')
-        platform_name = schema["platform_name"]
+        platform_code = schema["platform_code"]
         keyword_name = schema["keyword_name"]
         location_str = schema["display_location"]
         
@@ -166,7 +168,7 @@ class XByteDataDumpService(BaseDataDumpService):
                 
                 new_products.append(
                     XBytesProduct(
-                        platform=platform_name,
+                        platform=platform_code,
                         keyword=keyword_name,
                         location=location_str,
                         product_uid=product_uid,

@@ -14,10 +14,9 @@ def get_all_karmatech_products(region_data: RegionDataSchema) -> List[ProductSch
     ctx = f"[JSON Gen Collector | Brand: {region_data.get('brand_name', 'Unknown')}]"
     
     keywords_map = {}
-    for plat in region_data.get("platforms", []):
-        plat_name = plat.get("platform_name")
-        if plat_name:
-            keywords_map[plat_name] = [kw.get("name") for kw in plat.get("keywords", [])]
+    for plat_code, plat in region_data.get("platforms", {}).items():
+        if plat_code:
+            keywords_map[plat_code] = [kw.get("name") for kw in plat.get("keywords", [])]
 
     # Find the latest scraper_id
     latest_product = KarmatechProduct.objects.filter(brand__in=brands).order_by('-scraper_id').first()

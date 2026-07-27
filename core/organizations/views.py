@@ -194,3 +194,25 @@ class RegionViewSet(BaseViewSet):
             queryset = queryset.filter(brand_id=brand_id)
         return queryset
 
+    @extend_schema(summary="Get Platforms for Region", responses={200: dict})
+    @action(detail=True, methods=['get'], url_path='platforms')
+    def region_platforms(self, request, pk=None, id=None, **kwargs):
+        """
+        Returns only the platforms that have associated active locations or keywords for this region.
+        """
+        region = self.get_object()
+        from experience_cloud.catalog.models import Location, Keyword, Platform
+        from experience_cloud.catalog.serializers import PlatformSerializer
+        
+        # Get distinct platform IDs used by active locations and keywords for this region
+        loc_platforms = set(Location.objects.filter(region=region, is_active=True).values_list('platform_id', flat=True))
+        kw_platforms = set(Keyword.objects.filter(region=region, is_active=True).values_list('platform_id', flat=True))
+        
+        platform_ids = loc_platforms.union(kw_platforms)
+        
+        platforms = Platform.objects.filter(id__in=platform_ids, status='Active')
+        
+        # We use PlatformSerializer if available, otherwise just basic dict
+        data = platforms.values('id', 'name', 'code')
+        return Response(list(data), status=status.HTTP_200_OK)
+

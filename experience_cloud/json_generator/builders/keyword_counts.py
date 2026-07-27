@@ -56,11 +56,15 @@ def build_keyword_count(keywords: Union[Dict[str, List[str]], List[str]], produc
                         if kw:
                             ranked_keywords.add(kw.strip().lower())
                             
-            for kw in keyword_list:
-                if not kw:
+            for kw_obj in keyword_list:
+                if not kw_obj:
+                    continue
+                    
+                kw_str = kw_obj.get("name") if isinstance(kw_obj, dict) else kw_obj
+                if not kw_str:
                     continue
 
-                kw_clean = kw.strip().lower()
+                kw_clean = kw_str.strip().lower()
 
                 # Always count keyword presence
                 title_count = count_occurrence(p.title, kw_clean)
@@ -69,7 +73,7 @@ def build_keyword_count(keywords: Union[Dict[str, List[str]], List[str]], produc
                 bullet_count = count_occurrence(bullets_text, kw_clean)
 
                 result[platform][product_title].append({
-                    "keyword": kw,
+                    "keyword": kw_str,
                     "is_ranked": kw_clean in ranked_keywords,
                     "counts": {
                         "title": title_count,
@@ -82,7 +86,7 @@ def build_keyword_count(keywords: Union[Dict[str, List[str]], List[str]], produc
 
 @handle_builder_exceptions
 def keyword_counts_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
-    brands = region_data.get("brands", [])
+    brands = region_data.get("display_brands", [])
     # Default to {} instead of [] to prevent .items() AttributeError
     keywords = region_data.get("keywords", {})
     brand_name = region_data.get("brand_name")

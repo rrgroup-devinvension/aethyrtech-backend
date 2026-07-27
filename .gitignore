@@ -1,48 +1,74 @@
-# Django
-*.pyc
+# =========================
+# Python / Django Core
+# =========================
+*.py[cod]
+*$py.class
 __pycache__/
-db.sqlite3
-*.sqlite3
-/media
-/staticfiles
-/static/
-.env
-*.env
-*.log
+*.so
 
-# VSCode
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# =========================
+# Environments
+# =========================
+.env
+.env.local
+.venv
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# =========================
+# Media and Static Files
+# =========================
+/media/
+/staticfiles/
+/static/
+
+# =========================
+# AethyrTech Specific
+# =========================
+/logs/
+*.sql
+
+# =========================
+# VSCode & IDEs
+# =========================
 .vscode/
 .history/
-
-# OS files
+.idea/
+*.swp
+*.swo
 .DS_Store
 Thumbs.db
 
-# Migrations
-*/migrations/
-*/migrations/*.pyc
-*/migrations/*.pyo
-*/migrations/*.db
+# =========================
+# Celery & Caching
+# =========================
+celerybeat-schedule
+celerybeat.pid
 
-# Node modules (if using frontend)
-node_modules/
-
-# Coverage reports
-htmlcov/
+# =========================
+# Testing & Coverage
+# =========================
 .coverage
 .coverage.*
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
 
-# Test and debug
-*.pot
-*.mo
-*.swp
-*.swo
-
-# Build
+# =========================
+# Packages & Builds
+# =========================
 build/
 dist/
 *.egg-info/
 .eggs/
-
-# IDEs
-/venv/
+node_modules/

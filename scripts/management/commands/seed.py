@@ -19,7 +19,7 @@ class Command(BaseCommand):
                 
             # Find any python file starting with 'seed'
             for filename in os.listdir(commands_dir):
-                if filename.startswith('seed') and filename.endswith('.py') and filename != 'seed_all.py':
+                if filename.startswith('seed') and filename.endswith('.py') and filename != 'seed.py':
                     cmd_name = filename[:-3] # remove .py
                     module_path = f"{app_config.name}.management.commands.{cmd_name}"
                     

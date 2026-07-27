@@ -73,7 +73,7 @@ def build_review_structure(products: ItemGenerator, brands: Optional[List[str]] 
 
 @handle_builder_exceptions
 def product_reviews_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
-    brands = region_data.get("brands", [])
+    brands = region_data.get("display_brands", [])
     t_id = getattr(task, 'id', 'unknown')
     
     logger.info(f"Starting PRODUCT_REVIEWS JSON build | Task={t_id}")

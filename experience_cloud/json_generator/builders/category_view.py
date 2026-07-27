@@ -4,7 +4,7 @@ from typing import List, Dict, Optional, Any, Union
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
 import logging
 
-from experience_cloud.json_generator.utils import match_brand, get_platform_list
+from experience_cloud.json_generator.utils import match_brand
 import re
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ def build_brand_stats(matched_products: list, brand: str) -> Optional[dict]:
     return {
         "brand": brand,
         "avg_discount": f"{avg_discount}%",
-        "avg_price": f"Γé╣{avg_price}",
+        "avg_price": f"₹{avg_price}",
         "rating": avg_rating,
         "reviews": total_reviews,
         "videos": total_videos
@@ -71,8 +71,7 @@ def platform_health_by_brand(matched_products: list, brand: str, platforms: list
             scores.append(avg)
     return scores
 
-def format_platform_titles(platforms: list) -> list:
-    return [p.replace("_", " ").title().replace(" ", "") for p in platforms]
+
 
 def build_availability_by_brand(brand_products_map: dict, brands: list) -> list:
     result = []
@@ -155,33 +154,7 @@ def build_category_data(brand_products_map: dict, brands: list) -> list:
 
     return result
 
-def get_combined_keyword(keywords: Union[dict, list], platforms: list) -> list:
-    combined_keywords = []
-    seen = set()
-    try:
-        # `keywords` is expected to be a mapping: platform -> list of keywords
-        if isinstance(keywords, dict):
-            for p in platforms:
-                platform_kws = keywords.get(p) or []
-                for kw in platform_kws:
-                    if not kw:
-                        continue
-                    if kw in seen:
-                        continue
-                    seen.add(kw)
-                    combined_keywords.append(kw)
-        else:
-            # fallback: if keywords is a flat list, preserve its order
-            for kw in (keywords or []):
-                if not kw:
-                    continue
-                if kw in seen:
-                    continue
-                seen.add(kw)
-                combined_keywords.append(kw)
-    except Exception:
-        logger.exception('Failed to build combined keywords list')
-    return combined_keywords
+
 
 
 def prepare_topkeywords(keywords: list, products: ItemGenerator) -> list:
@@ -237,23 +210,22 @@ def prepare_topkeywords(keywords: list, products: ItemGenerator) -> list:
 
 @handle_builder_exceptions
 def category_view_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
-    brands = region_data.get("brands", [])
+    brands = region_data.get("display_brands", [])
     keywords = region_data.get("keywords", [])
     brand_id = region_data.get("brand_id")
     brand_name = region_data.get("brand_name")
-    platform_type = region_data.get("platform_type", [])
-
+    
     """Build category view JSON and save."""
     t_id = getattr(task, 'id', 'unknown')
     logger.info(f"Starting CATEGORY_VIEW JSON build for task {t_id}")
     
-    # Build payload using DB aggregates
-    top_brands = []
-    platforms = get_platform_list(platform_type)
-    
-    if isinstance(keywords, dict):
-        platforms = [p for p in platforms if p in keywords.keys()]
+    # Extract platforms directly from region_data schema
+    platform_schemas = region_data.get("platforms", {})
         
+    platform_codes = list(platform_schemas.keys())
+    platform_names = [p.get("platform_name") for p in platform_schemas.values()]
+    
+    top_brands = []
     datasets = []
     
     # O(P*B) Grouping exactly once rather than looping in every aggregator
@@ -267,7 +239,7 @@ def category_view_builder(region_data: RegionDataSchema, task, products=None, te
     
     for brand in brands:
         matched_products = brand_products_map.get(brand, [])
-        health_scores = platform_health_by_brand(matched_products, brand, platforms)
+        health_scores = platform_health_by_brand(matched_products, brand, platform_codes)
         datasets.append({ "label": brand, "data": health_scores})
 
     for b in brands:
@@ -276,14 +248,13 @@ def category_view_builder(region_data: RegionDataSchema, task, products=None, te
         if stats:
             top_brands.append(stats)
 
-    combined_keywords = get_combined_keyword(keywords, platforms)
-
-    top_keywords = prepare_topkeywords(combined_keywords, products)
+    display_keywords = region_data.get("display_keywords", [])
+    top_keywords = prepare_topkeywords(display_keywords, products)
     payload = {
         "Category Data": build_category_data(brand_products_map, brands),
         "Availability": build_availability_by_brand(brand_products_map, brands),
         "PlatformHealthScores": {
-            "labels": format_platform_titles(platforms),
+            "labels": platform_names,
             "datasets": datasets
         },
         "Top Keywords": top_keywords,

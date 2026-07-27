@@ -40,7 +40,7 @@ class RegionJsonFileSerializer(BaseModelSerializer):
         fields = (
             'id', 'region', 'template', 'template_name', 'process_type',
             'file_name', 'file_path', 'file_size', 'checksum', 
-            'generation_duration', 'last_generated_at', 'task_id',
+            'generation_duration', 'products_processed', 'last_generated_at', 'task_id',
             'status', 'error_message',
             'created_at', 'updated_at'
         )

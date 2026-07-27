@@ -1,272 +1,208 @@
 # AethyrTech Backend
 
-This is the backend for the AethyrTech project, built with Django and Django REST Framework.
+Welcome to the AethyrTech Backend project. This is a Domain-Driven Django REST Framework (DRF) backend that powers the AethyrTech Cloud architecture, including Core services, Experience Cloud, Identity Cloud, and Media Cloud.
 
-## Requirements
+## Prerequisites
 
+Ensure you have the following installed on your machine:
 - Python 3.8+
-- MySQL
-- pip
+- MySQL (or a compatible MariaDB instance)
+- Redis (Required for Celery and caching)
+- Git
 
-## Setup
+## Project Architecture
 
-1. **Clone the repository:**
+The project follows a **Domain-Driven Design (DDD)** structure to keep apps modular and scalable:
 
-   ```sh
-   git clone <repo-url>
-   cd aethyrtech-backend
-   ```
+- `core/` - Core logic, authentication, users, organizations, and LLM integrations.
+- `experience_cloud/` - Core domain for E-Commerce analytics, catalog management, JSON generation, and market data integrations (e.g., XBytes, Karmatech).
+- `identity_cloud/` - Root logic for identity and access management.
+- `media_cloud/` - Root logic for media and asset management.
+- `shared/` - Global utilities, exceptions, pagination, and response formatting.
 
-2. **Install dependencies:**
+---
 
-   ```sh
-   pip install -r requirements.txt
-   pip install python-dotenv
-   ```
+## Getting Started
 
-3. **Configure environment variables:**
+### 1. Clone the repository
+```bash
+git clone <repo-url>
+cd aethyrtech-backend
+```
 
-   - Copy `.env.example` to `.env` and update values:
-     ```
-     SECRET_KEY=your_secret_key
-     DEBUG=True
-     DB_NAME=your_db_name
-     DB_USER=your_db_user
-     DB_PASSWORD=your_db_password
-     DB_HOST=localhost
-     DB_PORT=3306
-     ADMIN_EMAIL=admin@example.com
-     ADMIN_PASSWORD=your_admin_password
-     ```
+### 2. Set up the virtual environment
+It is highly recommended to use a virtual environment:
+```bash
+python -m venv venv
 
-4. **Apply migrations:**
+# On Windows:
+venv\Scripts\activate
 
-   ```sh
-   python manage.py makemigrations
-   python manage.py migrate
-   ```
+# On Mac/Linux:
+source venv/bin/activate
+```
 
-5. **Seed initial data (creates superuser):**
+### 3. Install dependencies
+```bash
+pip install -r requirements.txt
+pip install python-dotenv
+```
 
-   ```sh
-   python manage.py seed
-   ```
+### 4. Configure Environment Variables
+Copy the provided `.env.example` file to create your local `.env` file:
+```bash
+cp .env.example .env
+```
+Open `.env` and fill in your local MySQL database credentials, Redis URL, and any required email configurations. 
 
-6. **Run the development server:**
-   ```sh
-   python manage.py runserver
-   ```
+### 5. Database Setup & Migrations
+Because the project connects to multiple databases (Default, XBytes, and Karmatech), you must ensure your local MySQL server has these databases created as named in your `.env` file.
 
-## Common Project Commands
+Apply migrations to the default database:
+```bash
+python manage.py makemigrations
+python manage.py migrate
+```
 
-- **Create a new Django project:**
+Apply migrations to the external databases (if required by your routers):
+```bash
+# Example for XBytes data:
+python manage.py migrate market_integrations --database=xbytes_db
+```
 
-  ```sh
-  django-admin startproject <project_name>
-  ```
+### 6. Database Seeding (Master Seed Script)
+The backend is equipped with a dynamic master seed script that automatically discovers and executes all initial data scaffolding across every app.
 
-- **Create a new Django app:**
+To fully seed the database (including Roles, Users, Categories, Platforms, and JSON Templates) in one command, run:
+```bash
+python manage.py seed
+```
+*Note: This command will automatically use `ADMIN_EMAIL` and `ADMIN_PASSWORD` from your `.env` file to generate the initial superuser.*
 
-  ```sh
+**Running Individual Seeds:**
+If you prefer to run or re-run a specific seed script manually, you can execute them individually:
+```bash
+python manage.py seed_roles            # Seeds User Roles & Permissions
+python manage.py seed_users            # Seeds Admin Users
+python manage.py seed_categories       # Seeds core product categories
+python manage.py seed_platforms        # Seeds E-Commerce platforms (Amazon, Flipkart)
+python manage.py seed_json_templates   # Seeds the base templates for JSON builders
+```
+
+---
+
+## Running the Application
+
+### 1. Start the Django Server
+```bash
+python manage.py runserver
+```
+*For debugging in VSCode using `debugpy`:*
+```bash
+python -m debugpy --listen 5678 manage.py runserver
+```
+
+### 2. Start Celery (Background Tasks)
+Celery requires Redis to be running. 
+
+**On Mac/Linux:**
+```bash
+celery -A config worker --loglevel=info -Q scheduler,celery
+```
+
+**On Windows:**
+*Windows doesn't support Celery's default prefork pool, so you must use threads:*
+```bash
+python -m celery -A config worker --pool=threads --concurrency=4 --loglevel=info
+```
+
+### 3. Start Celery Beat (Scheduled Tasks)
+```bash
+celery -A config beat -l info
+```
+
+---
+
+## API Documentation
+
+The backend uses `drf-spectacular` to auto-generate beautiful OpenAPI 3.0 documentation. Once your Django server is running, you can access the documentation here:
+
+- **Swagger UI (Interactive API Tester)**: [http://127.0.0.1:8000/api/docs/swagger/](http://127.0.0.1:8000/api/docs/swagger/)
+- **Redoc UI (Clean reading format)**: [http://127.0.0.1:8000/api/docs/redoc/](http://127.0.0.1:8000/api/docs/redoc/)
+
+*Note: All API endpoints (except authentication/login) require a JWT Bearer token, which can be passed via the "Authorize" button in Swagger.*
+
+---
+
+## Common Developer Commands
+
+- **Create a new app**:
+  ```bash
   python manage.py startapp <app_name>
   ```
-
-- **Make migrations for changes in models:**
-
-  ```sh
-  python manage.py makemigrations
-  ```
-
-- **Apply migrations to the default database:**
-
-  ```sh
-  python manage.py migrate
-  ```
-
-- **Apply migrations to a specific secondary database (e.g., xbytesdata):**
-
-  ```sh
-  python manage.py migrate market_integrations --database=xbytesdata
-  ```
-
-- **Create a superuser manually:**
-
-  ```sh
-  python manage.py createsuperuser
-  ```
-
-- **Run the development server:**
-
-  ```sh
-  python manage.py runserver
-  ```
-
-- **Run custom seed command (creates initial superuser):**
-
-  ```sh
-  python manage.py seed
-  ```
-
-- **Collect static files:**
-
-  ```sh
+- **Collect static files**:
+  ```bash
   python manage.py collectstatic
   ```
-
-- **Run tests:**
-  ```sh
+- **Run tests**:
+  ```bash
   python manage.py test
   ```
-
-celery -A config worker --loglevel=info
-
-## Project Structure
-
-- `core/` - Core logic and utilities
-- `api/` - API endpoints
-- `apps/auths/` - Authentication app
-- `apps/users/` - Custom user model and user management
-- `apps/brand/` - Brand-related features
-
-## Features
-
-- Custom user model (`apps.users.User`)
-- JWT authentication
-- Exception handling
-- Global request/response formatting
-- Pagination
-
-## API Usage
-
-- All API endpoints require authentication (JWT or session).
-- Example endpoint for JSON POST:
-  ```
-  POST /api/json-post/
-  Content-Type: application/json
-  {
-    "key": "value"
-  }
+- **Import/Export MySQL Dumps** (Examples):
+  ```bash
+  mysql -u root -p atech_new < aethyrtech.sql
+  mysqldump -u root -p compx_db > store_backup.sql
   ```
 
-## Development
+---
 
-- Use `python manage.py startapp <appname>` to create new apps.
-- Add new apps to `INSTALLED_APPS` in `config/settings.py`.
+## Project Standards & Architecture Details
 
-<!-- todo -->
+### 1. Formatting & Linting (Ruff)
+This project uses **Ruff** for blazing-fast linting and code formatting (replacing Black and Flake8). 
+- **Check for issues**: `ruff check .`
+- **Auto-fix issues**: `ruff check --fix .`
+- **Format code**: `ruff format .`
 
-update api call of analytics
-base on user show menus
-base on brand open page
-json builder
+### 2. Git Workflow & Pre-Commit Hooks
+We strictly enforce code quality before commits using the `pre-commit` framework.
+- **Setup hooks (Run once after cloning)**: `pre-commit install`
+- **Run manually against all files**: `pre-commit run --all-files`
+*The pre-commit hooks will automatically fix trailing whitespace, check YAML formats, and run Ruff formatting.*
 
+### 3. Request/Response Standards
+The project strictly enforces a global response wrapper via `shared.response.StandardJSONRenderer`. 
+You do not need to manually wrap successful dictionary returns in your views; the renderer handles standardizing the output into a unified JSON format for the frontend.
 
-python -m debugpy --listen 5678 manage.py runserver
+### 4. Code Commenting
+- **Python Docstrings**: Use PEP 257 standard `"""docstrings"""` for all Classes and Service layer functions.
+- **Typing**: Use standard Python type hinting (`def process(user_id: int) -> dict:`) especially in domain logic and serializers to aid IDEs and developers.
 
-mysql -u root -p atech_new < aethyrtech.sql
+### 5. API Versioning
+APIs should be versioned via the URL routing setup (e.g. `api/v1/...`). Avoid making breaking changes to `v1` routes; create `v2` routes if structural domain changes are required.
 
-mysqldump -u root -p compx_db1 > store_backup.sql
+### 6. API Idempotency (Safe Retries)
+The backend implements a custom `shared.middlewares.IdempotencyMiddleware`. 
+For critical actions (like payments or data processing), the frontend can safely retry failed network requests without triggering the same action twice, ensuring robust data integrity.
 
+### 7. Pagination, Filtering & Sorting
+- **Pagination**: Controlled globally by `shared.pagination.StandardResultsSetPagination`. List endpoints automatically return paginated data (default `PAGE_SIZE = 20`).
+- **Filtering/Sorting**: Handled natively by `DjangoFilterBackend` and `OrderingFilter`. 
+  *Example API call: `/api/v1/users/?ordering=-created_at&is_active=true`*
 
-celery -A config beat -l info
+### 8. Error & Validation Handling
+Exception handling is centralized via `shared.exceptions.custom_exception_handler`. 
+Never return raw HTTP response errors manually. Instead, raise standard DRF exceptions (`ValidationError`, `NotFound`, `PermissionDenied`). The global handler intercepts these and formats them into a predictable JSON error schema for the frontend.
 
-celery -A config worker --loglevel=info -Q scheduler,celery
+### 9. Docker Setup
+A `docker-compose.yml` is provided for containerized deployment/testing. It spins up the entire stack:
+- `db` (Postgres/MySQL)
+- `redis` (Cache & Celery Broker)
+- `web` (Django Application)
+- `worker` (Celery Background Tasks)
+- `beat` (Celery Scheduler)
 
-For windows - 
-celery -A config worker --pool=threads --concurrency=4 --loglevel=info
-python -m celery -A config worker --pool=threads --concurrency=4 --loglevel=info
-
-php -S localhost:8002
-
-
-SELECT *
-FROM qc_products
-WHERE brand IN ('Moto', 'Samsung', 'Xiaomi', 'Realme', 'Oppo', 'Lava', 'Vivo')
-  AND `rank` <= 55
-LIMIT 100
-
-
-SELECT pincode, keyword, COUNT(*) from qc_products GROUP BY pincode, keyword LIMIT 100
-
-
-
-
-https://aethyrtech.ai/new/dashboard.php
-
-https://aethyrtech.ai/new/dashboard-positive.php
-
-https://aethyrtech.ai/new/insights.php
-
-
-
-
-SELECT COUNT(*) AS total_rankings FROM product_rankings pr JOIN products p ON pr.sku = p.sku WHERE p.scraper_id = 1000000020 AND pr.scraper_id = 1000000020 AND p.id NOT IN ( 15979,16064,16100,16156,16160,16170,16175,16176, 16181,16186,16214,16216,16220,16222,16225,16226, 16229,16230,16236,16244,16252 );
-
-
-SELECT COUNT(*) AS total_rankings FROM product_rankings pr JOIN products p ON pr.sku = p.sku WHERE p.scraper_id = 1000000020 AND pr.scraper_id = 1000000020;
-SELECT COUNT(*) AS total FROM products WHERE scraper_id = 1000000020;
-
-SELECT p.id, p.sku FROM products p LEFT JOIN product_rankings pr ON pr.sku = p.sku WHERE pr.id IS NULL and p.scraper_id=1000000020;
-SELECT pr.id, pr.product_id, pr.sku FROM product_rankings pr LEFT JOIN products p ON pr.sku = p.sku WHERE p.id IS NULL and pr.scraper_id=1000000020;
-
-
-
-
-
-110001
-110002
-110003
-110004
-110005
-110006
-110011
-110016
-110017
-110018
-110021
-110023
-110024
-110025
-110026
-110027
-110029
-110031
-110032
-110034
-110035
-110037
-110039
-110045
-110048
-110051
-110052
-110053
-110054
-110055
-110062
-110065
-110071
-110072
-110075
-110078
-110084
-110085
-110091
-110092
-121001
-121003
-121004
-121006
-121010
-121012
-121102
-122001
-122004
-122010
-122011
-122101
-122104
-122105
-122108
-131001
-132103
+*To run via Docker:*
+```bash
+docker-compose up --build
+```

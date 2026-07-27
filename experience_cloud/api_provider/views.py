@@ -7,8 +7,9 @@ from rest_framework import status
 import logging
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from shared.base.views import BaseViewSet
-from .models import ApiProvider
+from .models import ApiProvider, APIUsageLog, APIUsageSummary
 from .serializers import ApiProviderSerializer
+from django.db.models import Sum, Avg, Count, Case, When, IntegerField
 
 logger = logging.getLogger(__name__)
 
@@ -193,3 +194,113 @@ class ApiProviderViewSet(BaseViewSet):
             "response_body": response_body,
             "last_health_check": timezone.now()
         }, status=status.HTTP_200_OK)
+from rest_framework import viewsets
+from rest_framework.pagination import PageNumberPagination
+
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+class ApiProviderAnalysisViewSet(viewsets.ViewSet):
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        # KPIs from Summaries
+        summaries = APIUsageSummary.objects.all()
+        agg = summaries.aggregate(
+            total_calls=Sum('total_calls'),
+            success_calls=Sum('success_calls'),
+            failed_calls=Sum('failed_calls'),
+            total_cost=Sum('total_cost')
+        )
+        
+        total_calls = agg['total_calls'] or 0
+        success_calls = agg['success_calls'] or 0
+        total_cost = agg['total_cost'] or 0.0
+        success_rate = (success_calls / total_calls * 100) if total_calls > 0 else 0
+
+        # Avg response time from logs
+        logs = APIUsageLog.objects.all()
+        avg_rt = logs.aggregate(avg_time=Avg('response_time'))['avg_time'] or 0
+
+        # Time Series Chart
+        # Group by date from summaries
+        daily_stats = summaries.values('date').annotate(
+            calls=Sum('total_calls')
+        ).order_by('date')
+        
+        time_series = {
+            "labels": [s['date'].strftime('%b %d') for s in daily_stats],
+            "datasets": [{
+                "label": "Total Calls",
+                "data": [s['calls'] for s in daily_stats],
+                "backgroundColor": "#3b82f6",
+                "borderRadius": 4,
+            }]
+        }
+
+        # Status Distribution Chart from Logs
+        status_dist = logs.values('status').annotate(count=Count('id'))
+        status_labels = []
+        status_data = []
+        status_colors = []
+        for s in status_dist:
+            status_labels.append(s['status'])
+            status_data.append(s['count'])
+            if s['status'] == 'SUCCESS':
+                status_colors.append('#10b981')
+            elif s['status'] == 'FAILED':
+                status_colors.append('#ef4444')
+            else:
+                status_colors.append('#f59e0b')
+
+        status_distribution = {
+            "labels": status_labels,
+            "datasets": [{
+                "data": status_data,
+                "backgroundColor": status_colors,
+                "borderWidth": 0
+            }]
+        }
+
+        return Response({
+            "status": "ok",
+            "data": {
+                "kpis": {
+                    "total_calls": total_calls,
+                    "success_rate": round(success_rate, 2),
+                    "avg_response_time": round(avg_rt, 2),
+                    "total_cost": float(total_cost)
+                },
+                "charts": {
+                    "time_series": time_series,
+                    "status_distribution": status_distribution
+                }
+            }
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'])
+    def history(self, request):
+        queryset = APIUsageLog.objects.select_related('api_provider').order_by('-timestamp')
+        paginator = StandardResultsSetPagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        
+        data = []
+        for log in (page if page is not None else queryset):
+            data.append({
+                "id": log.id,
+                "timestamp": log.timestamp,
+                "provider_name": log.api_provider.name if log.api_provider else "Unknown",
+                "status": log.status,
+                "response_time": log.response_time,
+                "cost": log.cost,
+            })
+            
+        if page is not None:
+            return paginator.get_paginated_response(data)
+            
+        return Response({
+            "status": "ok",
+            "count": len(data),
+            "results": data
+        })

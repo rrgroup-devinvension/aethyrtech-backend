@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 @handle_builder_exceptions
 def catalog_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
-    brands = region_data.get("brands", [])
+    brands = region_data.get("display_brands", [])
     keywords = region_data.get("keywords", [])
     brand_id = region_data.get("brand_id")
     brand_name = region_data.get("brand_name")

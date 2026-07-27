@@ -22,6 +22,7 @@ class RegionJsonFile(BaseModel):
     file_size = models.BigIntegerField(null=True, blank=True)
     checksum = models.CharField(max_length=255, null=True, blank=True)
     generation_duration = models.FloatField(null=True, blank=True)
+    products_processed = models.IntegerField(null=True, blank=True)
     last_generated_at = models.DateTimeField(null=True, blank=True)
     task_id = models.CharField(max_length=255, null=True, blank=True)
     status = models.CharField(max_length=50, null=True, blank=True)

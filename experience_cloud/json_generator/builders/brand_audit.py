@@ -37,19 +37,10 @@ def get_audit_data(brands, products):
     } for brand in brands}
 
     for p in products:
-        if not p.brand:
+        if not p.brand or p.brand not in brand_stats:
             continue
             
-        matched_brand = None
-        for brand in brands:
-            if match_brand(brand, p.brand):
-                matched_brand = brand
-                break
-                
-        if not matched_brand:
-            continue
-            
-        stats = brand_stats[matched_brand]
+        stats = brand_stats[p.brand]
         stats["sku_count"] += 1
         
         if (p.availability_status or "").lower() == "available":
@@ -108,7 +99,7 @@ def get_audit_data(brands, products):
 
 @handle_builder_exceptions
 def brand_audit_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
-    brands = region_data.get("brands", [])
+    brands = region_data.get("display_brands", [])
     keywords = region_data.get("keywords", [])
     brand_id = region_data.get("brand_id")
     brand_name = region_data.get("brand_name")

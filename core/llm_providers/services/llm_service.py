@@ -17,36 +17,49 @@ class LLMService(ABC):
         self.last_usage = None
 
     @staticmethod
-    def get_service(provider_code: str = None) -> 'LLMService':
-        if provider_code:
-            provider = None
-            try:
-                # In case provider_code field doesn't exist yet in the DB model
-                provider = LLMProvider.objects.filter(provider_code=provider_code, enabled=True).first()
-            except Exception:
-                pass
-            
-            # Fallback to provider_code as name if provider_code field isn't in DB yet
-            if not provider:
-                provider = LLMProvider.objects.filter(name__icontains=provider_code, enabled=True).first()
-        else:
-            provider = LLMProvider.objects.filter(is_default=True, enabled=True).first()
-            if not provider:
-                provider = LLMProvider.objects.filter(enabled=True).first()
+    def get_service(provider_code: str = None, provider: LLMProvider = None) -> 'LLMService':
+        if not provider:
+            if provider_code:
+                try:
+                    # In case provider_code field doesn't exist yet in the DB model
+                    provider = LLMProvider.objects.filter(provider_code=provider_code, enabled=True).first()
+                except Exception:
+                    pass
+                
+                # Fallback to provider_code as name if provider_code field isn't in DB yet
+                if not provider:
+                    provider = LLMProvider.objects.filter(name__icontains=provider_code, enabled=True).first()
+            else:
+                provider = LLMProvider.objects.filter(is_default=True, enabled=True).first()
+                if not provider:
+                    provider = LLMProvider.objects.filter(enabled=True).first()
 
         if not provider:
             raise Exception(f"No active LLM provider found for code: {provider_code or 'default'}")
 
         # Map provider name to correct subclass
-        name_lower = provider.name.lower()
+        name_lower = provider.name.lower() if provider.name else ""
+        
+        # Use decrypted API key
+        api_key = provider.get_decrypted_api_key() if hasattr(provider, 'get_decrypted_api_key') else provider.api_key
+        
         if 'gemini' in name_lower:
-            return GeminiService(provider.api_key, provider.model, provider)
+            return GeminiService(api_key, provider.model, provider)
         elif 'openai' in name_lower:
-            return OpenAIService(provider.api_key, provider.model, provider)
+            return OpenAIService(api_key, provider.model, provider)
         elif 'anthropic' in name_lower:
-            return AnthropicService(provider.api_key, provider.model, provider)
+            return AnthropicService(api_key, provider.model, provider)
         else:
             raise Exception(f"Unsupported LLM Provider: {provider.name}")
+
+    def test_connection(self) -> str:
+        """
+        Tests the connection by sending a basic Ping prompt.
+        Returns the string response from the LLM.
+        """
+        messages = [{'role': 'user', 'content': 'Ping. Reply with exactly the word: Pong'}]
+        response = self.generate_content(messages, action='test_connection')
+        return response.text if response and hasattr(response, 'text') else str(response)
 
     @abstractmethod
     def generate_content(self, messages: List[Dict[str, str]], action: str = None, brand_id: int = None, brand_name: str = None) -> LLMResponse:

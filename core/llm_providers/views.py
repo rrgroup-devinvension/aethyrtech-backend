@@ -77,30 +77,159 @@ class LLMProviderViewSet(BaseViewSet):
         logger.info(f"Testing connection for LLM Provider id {id}")
         provider = self.get_object()
         
-        if not provider.base_url:
-            return Response({"detail": "Base URL is required to test connection"}, status=status.HTTP_400_BAD_REQUEST)
-            
-        test_url = provider.base_url.rstrip('/')
-        if provider.health_check_path:
-            test_url = f"{test_url}/{provider.health_check_path.lstrip('/')}"
-            
-        headers = {}
-        if provider.api_key:
-            headers['Authorization'] = f"Bearer {provider.api_key}"
-            
+        from core.llm_providers.services.llm_service import LLMService
         try:
-            res = requests.get(test_url, headers=headers, timeout=provider.timeout_seconds or 10)
-            if res.status_code < 400:
-                provider.health_check_status = 'UP'
-            else:
-                provider.health_check_status = f'DOWN ({res.status_code})'
+            service = LLMService.get_service(provider=provider)
+            response_body = service.test_connection()
+            provider.health_check_status = 'UP'
         except Exception as e:
             provider.health_check_status = 'DOWN (Exception)'
+            response_body = str(e)
+            logger.error(f"Test connection failed: {e}")
             
         provider.last_health_check = timezone.now()
         provider.save()
         
         return Response({
             "health_check_status": provider.health_check_status,
-            "last_health_check": provider.last_health_check
+            "last_health_check": provider.last_health_check,
+            "response_body": response_body
         }, status=status.HTTP_200_OK)
+
+    @extend_schema(summary="Test New LLM Provider Connection", request=dict, responses={200: dict})
+    @action(detail=False, methods=["post"], url_path="test-connection")
+    def test_new_connection(self, request):
+        logger.info(f"Testing new connection for LLM Provider")
+        
+        api_key = request.data.get('api_key')
+        name = request.data.get('name')
+        model = request.data.get('model')
+        
+        if not api_key:
+            return Response({"detail": "API Key is required to test connection"}, status=status.HTTP_400_BAD_REQUEST)
+        if not name:
+            return Response({"detail": "Name is required to test connection (e.g. Gemini, OpenAI)"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        from core.llm_providers.models import LLMProvider
+        from core.llm_providers.services.llm_service import LLMService
+        
+        # Determine if api_key is encrypted already. If so, decrypt it for the mock test.
+        # This occurs when testing from the detail page before saving changes.
+        from experience_cloud.api_provider.utils import decrypt_string
+        if api_key.startswith(('gAAAAAB', 'b64:')):
+            api_key = decrypt_string(api_key)
+            
+        # Create a mock provider for testing
+        mock_provider = LLMProvider(name=name, api_key=api_key, model=model)
+        
+        try:
+            service = LLMService.get_service(provider=mock_provider)
+            response_body = service.test_connection()
+            health_check_status = 'UP'
+        except Exception as e:
+            health_check_status = 'DOWN (Exception)'
+            response_body = str(e)
+            logger.error(f"Test new connection failed: {e}")
+            
+        return Response({
+            "health_check_status": health_check_status,
+            "response_body": response_body
+        }, status=status.HTTP_200_OK)
+from rest_framework import viewsets
+from django.db.models import Sum, Count
+from django.db.models.functions import TruncDate
+from .models import TokenUsageLog
+
+from shared.pagination import StandardResultsSetPagination
+
+class LLMAnalysisViewSet(viewsets.ViewSet):
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        
+        # 1. Total KPIs
+        total_stats = TokenUsageLog.objects.aggregate(
+            total_requests=Count('id'),
+            total_prompt_tokens=Sum('prompt_tokens', default=0),
+            total_completion_tokens=Sum('completion_tokens', default=0),
+            total_cost=Sum('estimated_cost', default=0.00)
+        )
+        
+        # 2. Daily Token Burn (Bar Chart)
+        daily_stats = TokenUsageLog.objects.annotate(
+            date=TruncDate('timestamp')
+        ).values('date').annotate(
+            total_tokens=Sum('total_tokens', default=0)
+        ).order_by('date')
+        
+        time_labels = [str(ds['date']) for ds in daily_stats if ds['date']]
+        time_data = [ds['total_tokens'] for ds in daily_stats if ds['date']]
+        
+        # 3. Brand Distribution (Doughnut Chart)
+        brand_stats = TokenUsageLog.objects.values('brand_name').annotate(
+            total_tokens=Sum('total_tokens', default=0)
+        ).order_by('-total_tokens')
+        
+        brand_labels = [bs['brand_name'] or 'Unknown' for bs in brand_stats]
+        brand_data = [bs['total_tokens'] for bs in brand_stats]
+        
+
+        
+        return Response({
+            "status": "ok",
+            "kpis": {
+                "total_requests": total_stats['total_requests'],
+                "total_prompt_tokens": total_stats['total_prompt_tokens'],
+                "total_completion_tokens": total_stats['total_completion_tokens'],
+                "total_cost": float(total_stats['total_cost'])
+            },
+            "charts": {
+                "time_series": {
+                    "labels": time_labels,
+                    "datasets": [
+                        {
+                            "label": "Total Tokens Consumed",
+                            "data": time_data,
+                            "backgroundColor": "#10b981",
+                            "borderRadius": 6,
+                            "barPercentage": 0.6
+                        }
+                    ]
+                },
+                "brand_distribution": {
+                    "labels": brand_labels,
+                    "datasets": [
+                        {
+                            "data": brand_data,
+                            "backgroundColor": ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444"],
+                            "borderWidth": 0,
+                            "hoverOffset": 4
+                        }
+                    ]
+                }
+            }
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'])
+    def history(self, request):
+        queryset = TokenUsageLog.objects.select_related('provider').order_by('-timestamp')
+        paginator = StandardResultsSetPagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        
+        history_data = [
+            {
+                "id": log.id,
+                "timestamp": log.timestamp.isoformat(),
+                "brand": log.brand_name or "Unknown",
+                "type": log.type or "Unknown",
+                "total_tokens": log.total_tokens,
+                "prompt_tokens": log.prompt_tokens,
+                "completion_tokens": log.completion_tokens,
+                "estimated_cost": float(log.estimated_cost)
+            }
+            for log in (page if page is not None else queryset)
+        ]
+        
+        if page is not None:
+            return paginator.get_paginated_response(history_data)
+            
+        return Response(history_data, status=status.HTTP_200_OK)

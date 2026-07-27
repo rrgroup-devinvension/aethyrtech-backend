@@ -6,7 +6,7 @@ class Platform(BaseModel):
     code = models.CharField(max_length=100, unique=True, null=True, blank=True, db_index=True)
     platform_type = models.CharField(max_length=100, null=True, blank=True)
     api_provider = models.ForeignKey('experience_cloud_api_provider.ApiProvider', on_delete=models.SET_NULL, null=True, blank=True, related_name='platforms')
-    json_configuration = models.JSONField(default=dict, blank=True)
+    configuration = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=50, default='Active')
 
     class Meta:

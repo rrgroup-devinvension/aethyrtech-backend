@@ -15,6 +15,7 @@ class LocationItem(TypedDict):
 class PlatformSchema(TypedDict):
     platform_name: str
     platform_id: int
+    platform_code: str
     api_provider_name: str
     api_provider_code: str
     api_provider_id: int
@@ -26,8 +27,9 @@ class RegionDataSchema(TypedDict):
     brand_id: int
     region_name: str
     region_id: int
-    brands: List[str]
-    platforms: List[PlatformSchema]
+    brands: Dict[str, List[str]]
+    display_brands: List[str]
+    platforms: Dict[str, PlatformSchema]
     keywords: List[SimpleItem]
     locations: List[LocationItem]
     display_locations: List[str]

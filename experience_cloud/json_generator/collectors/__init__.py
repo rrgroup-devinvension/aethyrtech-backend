@@ -15,9 +15,9 @@ def get_all_products_generator(region_data: RegionDataSchema) -> Generator[Produ
     karmatech_called = False
     xbytes_called = False
     
-    platforms = region_data.get("platforms", [])
+    platforms = region_data.get("platforms", {})
     
-    for platform in platforms:
+    for platform in platforms.values():
         provider_code = platform.get("api_provider_code", "").lower()
         
         if provider_code == "karmatech" and not karmatech_called:

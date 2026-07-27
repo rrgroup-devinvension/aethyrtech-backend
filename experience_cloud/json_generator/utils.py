@@ -9,6 +9,8 @@ from experience_cloud.json_generator.exceptions import FileWriteException, Datab
 import re
 import shutil
 from datetime import datetime
+import json
+from django.core.serializers.json import DjangoJSONEncoder
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +58,13 @@ def save_json_to_file(json_data, brand_name, template, region_name="unknown", ex
         region_slug = slugify(region_name)
         template_slug = slugify(template)
         
-        folder = os.path.join(settings.MEDIA_ROOT, 'brands', brand_slug, region_slug, template_slug)
+        folder = os.path.join(settings.MEDIA_ROOT, 'brands', brand_slug, region_slug)
         os.makedirs(folder, exist_ok=True)
         filename = f"{template_slug}.json"
         filepath = os.path.join(folder, filename)
-        relative_path = f"brands/{brand_slug}/{region_slug}/{template_slug}/{filename}"
+        relative_path = f"brands/{brand_slug}/{region_slug}/{filename}"
         with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(json_data, f, ensure_ascii=False, indent=4)
+            json.dump(json_data, f, ensure_ascii=False, indent=4, cls=DjangoJSONEncoder)
             
         logger.info(f"{ctx} Saved JSON file -> {filepath}")
         return filename, relative_path
@@ -86,15 +88,31 @@ def match_brands(brands, input_brand):
         return None
     ib = input_brand.strip().lower()
     ib_no_hyphen = ib.replace('-', '')    
-    for brand in brands:
-        if not brand:
-            continue
-        pb = brand.strip().lower()
-        if re.search(rf"\b{re.escape(pb)}\b", ib):
-            return brand
-        pb_no_hyphen = pb.replace('-', '')
-        if pb_no_hyphen and re.search(rf"\b{re.escape(pb_no_hyphen)}\b", ib_no_hyphen):
-            return brand
+    
+    if isinstance(brands, dict):
+        for brand, aliases in brands.items():
+            if not brand:
+                continue
+            names_to_check = [brand] + (aliases if aliases else [])
+            for name in names_to_check:
+                if not name:
+                    continue
+                pb = name.strip().lower()
+                if re.search(rf"\b{re.escape(pb)}\b", ib):
+                    return brand
+                pb_no_hyphen = pb.replace('-', '')
+                if pb_no_hyphen and re.search(rf"\b{re.escape(pb_no_hyphen)}\b", ib_no_hyphen):
+                    return brand
+    else:
+        for brand in brands:
+            if not brand:
+                continue
+            pb = brand.strip().lower()
+            if re.search(rf"\b{re.escape(pb)}\b", ib):
+                return brand
+            pb_no_hyphen = pb.replace('-', '')
+            if pb_no_hyphen and re.search(rf"\b{re.escape(pb_no_hyphen)}\b", ib_no_hyphen):
+                return brand
     return None
 
 from collections import defaultdict
@@ -243,14 +261,64 @@ def normalize_availability(value: Any, default: Optional[str] = "Unavailable") -
 from typing import Any, Callable
 
 class ItemGenerator:
-    """A wrapper for a generator function and its args so it can be iterated multiple times."""
+    """
+    A wrapper for a generator function and its args so it can be iterated multiple times.
+    Implements a local JSON Lines (.jsonl) file cache to prevent hitting the database multiple times.
+    """
     def __init__(self, func: Callable, *args: Any, **kwargs: Any):
         self.func = func
         self.args = args
         self.kwargs = kwargs
+        self._is_cached = False
+        self._cache_file = None
+        self.total_count = 0
 
     def __iter__(self):
-        return self.func(*self.args, **self.kwargs)
+        import json
+        import os
+        from django.core.serializers.json import DjangoJSONEncoder
+        from experience_cloud.json_generator.schemas import ProductSchema
+        
+        if not self._is_cached:
+            import tempfile
+            fd, self._cache_file = tempfile.mkstemp(suffix='.jsonl', prefix='agy_item_cache_')
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                for item in self.func(*self.args, **self.kwargs):
+                    f.write(json.dumps(item.__dict__, cls=DjangoJSONEncoder) + '\n')
+                    self.total_count += 1
+                    yield item
+            self._is_cached = True
+            logger.info(f"ItemGenerator built local cache -> {self._cache_file}")
+        else:
+            if self._cache_file and os.path.exists(self._cache_file):
+                with open(self._cache_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        if not line.strip():
+                            continue
+                        data = json.loads(line)
+                        item = ProductSchema()
+                        for k, v in data.items():
+                            if k == 'scraped_date' and isinstance(v, str):
+                                try:
+                                    from django.utils.dateparse import parse_datetime, parse_date
+                                    parsed = parse_datetime(v)
+                                    if parsed is None:
+                                        parsed = parse_date(v)
+                                    if parsed is not None:
+                                        v = parsed
+                                except Exception:
+                                    pass
+                            setattr(item, k, v)
+                        yield item
+
+    def cleanup(self):
+        import os
+        if self._cache_file and os.path.exists(self._cache_file):
+            try:
+                os.remove(self._cache_file)
+                logger.info(f"ItemGenerator cleaned up cache -> {self._cache_file}")
+            except Exception as e:
+                logger.error(f"Failed to cleanup ItemGenerator cache {self._cache_file}: {e}")
 
 from experience_cloud.json_generator.models import RegionJsonFile
 from rest_framework.exceptions import NotFound, APIException
@@ -298,7 +366,7 @@ def serve_region_template_json(region_id: int, template_name: str):
     
     return load_json_response(full_path)
 
-def save_or_update_region_json(region_id: int, template_name: str, json_data: dict, brand_name: str, task=None):
+def save_or_update_region_json(region_id: int, template_name: str, json_data: dict, brand_name: str, task=None, products_processed: int = 0):
     """
     Saves a JSON file and updates the corresponding RegionJsonFile record.
     Used internally by complex builders that need to handle their own saving logic.
@@ -329,6 +397,7 @@ def save_or_update_region_json(region_id: int, template_name: str, json_data: di
         "file_path": file_path,
         "file_size": file_size,
         "checksum": "calculated",
+        "products_processed": products_processed,
         "status": 'SUCCESS',
         "last_generated_at": timezone.now()
     }

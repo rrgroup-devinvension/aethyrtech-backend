@@ -42,13 +42,13 @@ class LLMProvider(BaseModel):
             LLMProvider.objects.filter(is_default=True).update(is_default=False)
             
         # Encrypt API key if it was changed (meaning it's plain text from the admin form)
-        if self.api_key and self.api_key != self._original_api_key:
-            # We don't want to re-encrypt an already encrypted string unless the user explicitly pasted a new one.
-            # Assuming the UI passes plain text. If it's already encrypted, the UI would have passed the encrypted string.
-            # Actually, standard practice for passwords/keys is if it changed, it's a new plain-text key.
-            # However, just to be safe, if the string looks like our encryption format, we might skip.
-            # But the _original_api_key check handles most Admin/form updates.
-            self.api_key = encrypt_string(self.api_key)
+        # Also encrypt on creation if it's not already encrypted.
+        if self.api_key:
+            is_changed = self.api_key != self._original_api_key
+            is_new_unencrypted = not self.pk and not self.api_key.startswith(('gAAAAAB', 'b64:'))
+            
+            if is_changed or is_new_unencrypted:
+                self.api_key = encrypt_string(self.api_key)
             
         if self.pk:
             if (self.base_url != self._original_base_url or 

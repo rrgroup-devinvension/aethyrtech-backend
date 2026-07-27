@@ -26,11 +26,10 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
         
     keywords_map = {}
     pincodes_map = {}
-    for plat in region_data.get("platforms", []):
-        plat_name = plat.get("platform_name")
-        if plat_name:
-            keywords_map[plat_name] = [kw.get("name") for kw in plat.get("keywords", [])]
-            pincodes_map[plat_name] = [loc.get("name") for loc in plat.get("locations", [])]
+    for plat_code, plat in region_data.get("platforms", {}).items():
+        if plat_code:
+            keywords_map[plat_code] = [kw.get("name") for kw in plat.get("keywords", [])]
+            pincodes_map[plat_code] = [loc.get("name") for loc in plat.get("locations", [])]
 
     platforms = list(keywords_map.keys())
     qs = XBytesProduct.objects.filter(platform__in=platforms).order_by("product_uid")

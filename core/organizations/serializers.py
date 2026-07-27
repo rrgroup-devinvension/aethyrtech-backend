@@ -28,7 +28,7 @@ class OrganizationSerializer(BaseModelSerializer):
 class CompetitorSerializer(BaseModelSerializer):
     class Meta:
         model = Competitor
-        fields = ('id', 'created_at', 'updated_at', 'region', 'name', 'description', 'is_active')
+        fields = ('id', 'created_at', 'updated_at', 'region', 'name', 'description', 'aliases', 'is_active')
         read_only_fields = ('id', 'created_at', 'updated_at')
 
 
@@ -40,7 +40,7 @@ class BrandSerializer(BaseModelSerializer):
     class Meta(BaseModelSerializer.Meta):
         model = Brand
         fields = BaseModelSerializer.Meta.fields + (
-            "name", "code", "description",
+            "name", "code", "description", "aliases",
             "organization", "organization_name",
             "category", "category_name",
             "is_active", "logo", "regions_count",

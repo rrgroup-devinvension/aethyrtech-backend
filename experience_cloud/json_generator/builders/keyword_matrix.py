@@ -10,47 +10,35 @@ from experience_cloud.json_generator.utils import match_brand
 logger = logging.getLogger(__name__)
 
 def build_keyword_matrix(region_data: RegionDataSchema, products: ItemGenerator) -> dict:
-    brands = region_data.get("brands", [])
+    brands = region_data.get("display_brands", [])
     brand_name = region_data.get("brand_name")
     
-    # Using distinct_keywords directly from region_data as per the new schema
-    brand_keywords = region_data.get("distinct_keywords", [])
-    if not brand_keywords:
-        # Fallback just in case
-        brand_keywords = region_data.get("display_keywords", [])
+    # Using display_keywords directly from region_data as per the new schema
+    brand_keywords = region_data.get("display_keywords", [])
         
     result = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
     aggregate_bucket = defaultdict(
         lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     )
     
-    # Resolve brand_pincodes safely from region_data
-    brand_pincodes = []
-    pincode_map = region_data.get('pincodes', {})
-    if isinstance(pincode_map, dict):
-        for pins in pincode_map.values():
-            brand_pincodes.extend(pins)
-    brand_pincodes = list(set(brand_pincodes)) if brand_pincodes else ["000000"]
+    # Build a map of specific locations for each platform
+    platform_locations_map = {}
+    for plat_code, plat in region_data.get("platforms", {}).items():
+        if plat_code:
+            locs = [loc.get("pincode") or loc.get("location") for loc in plat.get("locations", [])]
+            platform_locations_map[plat_code] = [l for l in locs if l]
 
     for p in products:
         if not p.brand or not p.title or not p.uid:
             continue
             
-        product_brand = str(p.brand).strip()
-        matched_brand = None
-        for b in brands:
-            if match_brand(b, product_brand):
-                matched_brand = b
-                break
-                
-        if not matched_brand:
-            continue
-            
-        brand = matched_brand
+        brand = str(p.brand).strip()
         title = str(p.title).strip()
-        ranking_data = p.rankings or {}
-        
-        product_pincode = brand_pincodes
+        ranking_data = p.rankings or {}        
+        product_pincode = platform_locations_map.get(p.platform, ["000000"])
+        if not product_pincode:
+            product_pincode = ["000000"]
+            
         if p.platform_type == "marketplace":
             product_pincode = ["000000"]
             

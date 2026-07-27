@@ -9,7 +9,7 @@ class PlatformSerializer(BaseModelSerializer):
         model = Platform
         fields = (
             'id', 'created_at', 'updated_at', 
-            'name', 'code', 'platform_type', 'api_provider', 'api_provider_name', 'json_configuration', 'status'
+            'name', 'code', 'platform_type', 'api_provider', 'api_provider_name', 'configuration', 'status'
         )
         read_only_fields = ('id', 'created_at', 'updated_at')
 

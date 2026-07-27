@@ -10,12 +10,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("SECRET_KEY")
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
-LLM_CONFIG = {
-    "service": os.getenv("LLM_SERVICE", 'gemini'),
-    "api_key": os.getenv("LLM_API", ''),
-    "model":  os.getenv("LLM_MODEL", 'gemini-2.5-flash'),
-}
-
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
 
 INSTALLED_APPS = [
@@ -225,26 +219,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'core_users.User'
 
-# Scheduler defaults
-# Base folder under MEDIA_ROOT where JSONs will be saved
-SCHEDULER_JSON_MEDIA_SUBPATH = 'jsons'
-
-JSON_BUILDER_DB = None
-_jb_host = os.getenv('JSON_BUILDER_DB_HOST')
-print("JSON_BUILDER_DB_HOST:", _jb_host)
-if _jb_host:
-    JSON_BUILDER_DB = {
-        'host': _jb_host,
-        'port': int(os.getenv('JSON_BUILDER_DB_PORT', 3306)),
-        'user': os.getenv('JSON_BUILDER_DB_USER'),
-        'password': os.getenv('JSON_BUILDER_DB_PASSWORD'),
-        'database': os.getenv('JSON_BUILDER_DB_NAME'),
-    }
-
-# External API configuration for DATA_DUMP tasks (fill later)
-XBYTE_API_URL = os.getenv('XBYTE_API_URL', '')
-XBYTE_API_KEY = os.getenv('XBYTE_API_KEY', '')
-
 # ============================================================================
 # Celery Configuration
 # ============================================================================
@@ -259,11 +233,11 @@ CELERY_TASK_TIME_LIMIT = 30 * 60
 
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'your@gmail.com'
-EMAIL_HOST_PASSWORD = 'app-password'
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 
 # ============================================================================
 # Caching (Redis)
@@ -291,7 +265,6 @@ SPECTACULAR_SETTINGS = {
 # ============================================================================
 # Logging Configuration
 # ============================================================================
-import os
 LOGS_DIR = os.path.join(BASE_DIR, 'logs')
 os.makedirs(LOGS_DIR, exist_ok=True)
 
@@ -382,4 +355,4 @@ LOGGING = {
         }
     },
 }
-
+
