@@ -1,10 +1,11 @@
 import logging
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from drf_spectacular.utils import extend_schema
 
-from core.users.models import User
+from drf_spectacular.utils import extend_schema
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
 from core.organizations.models import Brand, Organization
+from core.users.models import User
 from experience_cloud.executions.models import ActiveExecution
 
 logger = logging.getLogger(__name__)
@@ -14,14 +15,24 @@ class DashboardDataView(APIView):
 
     @extend_schema(summary="Get System Global Metrics", tags=["Global Analytics"])
     def get(self, request):
+        """Retrieve global system metrics for the dashboard.
+
+        This endpoint aggregates top-level counts for core entities including
+        users, brands, and organizations. It also fetches a list of the 20
+        most recent active executions across the system to display current
+        processing activity.
+
+        Returns:
+            Response: A JSON payload containing the aggregate counts and recent execution data.
+        """
         logger.info("Fetching global system metrics")
         users_count = User.objects.count()
         brands_count = Brand.objects.count()
         orgs_count = Organization.objects.count()
-        
+
         # Recent running executions as a stand-in for "scraping logs"
         recent_executions = ActiveExecution.objects.order_by('-started_at')[:20]
-        
+
         executions_data = [
             {
                 "id": str(exec.id),

@@ -1,19 +1,22 @@
-from core.authentication.permissions import AppPermissions
 import logging
-from django.utils import timezone
+from typing import ClassVar
+
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from drf_spectacular.utils import extend_schema, extend_schema_view
 
+from core.authentication.permissions import AppPermissions
 from shared.base.views import BaseViewSet
-from .models import (
-    Scheduler, ActiveExecution, ExecutionHistory,
-    DataDumpTask, JsonFileTask, TaskHistory
-)
+
+from .models import ActiveExecution, DataDumpTask, ExecutionHistory, JsonFileTask, Scheduler, TaskHistory
 from .serializers import (
-    SchedulerSerializer, ActiveExecutionSerializer, ExecutionHistorySerializer,
-    DataDumpTaskSerializer, JsonFileTaskSerializer, TaskHistorySerializer
+    ActiveExecutionSerializer,
+    DataDumpTaskSerializer,
+    ExecutionHistorySerializer,
+    JsonFileTaskSerializer,
+    SchedulerSerializer,
+    TaskHistorySerializer,
 )
 from .services import ExecutionManager
 
@@ -28,11 +31,12 @@ logger = logging.getLogger(__name__)
     destroy=extend_schema(summary="Delete Scheduler")
 )
 class SchedulerViewSet(BaseViewSet):
-    action_permission_mapping = {
+    """ViewSet for managing scheduler configurations and manual triggers."""
+    action_permission_mapping: ClassVar[dict] = {
         'run': AppPermissions.START_EXECUTION,
         'set_status': AppPermissions.UPDATE_SCHEDULER,
     }
-    permission_mapping = {
+    permission_mapping: ClassVar[dict] = {
         'GET': AppPermissions.READ_SCHEDULERS,
         'POST': AppPermissions.CREATE_SCHEDULER,
         'PUT': AppPermissions.UPDATE_SCHEDULER,
@@ -49,9 +53,10 @@ class SchedulerViewSet(BaseViewSet):
     @extend_schema(summary="Manually trigger a scheduler")
     @action(detail=True, methods=['post'])
     def run(self, request, pk=None):
+        """Manually trigger a scheduler execution run."""
         scheduler = self.get_object()
         logger.info(f"Manual run triggered for scheduler: {scheduler.id}")
-        
+
         try:
             execution = ExecutionManager.create_execution_from_scheduler(
                 scheduler=scheduler,
@@ -63,20 +68,24 @@ class SchedulerViewSet(BaseViewSet):
                 'status': execution.status
             }, status=status.HTTP_201_CREATED)
         except Exception as e:
-            logger.error(f"Failed to start execution: {str(e)}")
+            logger.exception(f"Failed to start execution: {e!s}")
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @extend_schema(summary="Set status of a scheduler")
     @action(detail=True, methods=['post'], url_path='set-status')
     def set_status(self, request, pk=None, **kwargs):
+        """Set the active status of a scheduler."""
         scheduler = self.get_object()
         new_status = request.data.get('status')
         if not new_status or new_status not in ['Active', 'Inactive']:
-            return Response({'error': 'Invalid status provided. Must be Active or Inactive.'}, status=status.HTTP_400_BAD_REQUEST)
-        
+            return Response(
+                {'error': 'Invalid status provided. Must be Active or Inactive.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         scheduler.status = new_status
         scheduler.save(update_fields=['status'])
-        
+
         return Response({
             'message': 'Status updated successfully',
             'status': scheduler.status
@@ -92,10 +101,11 @@ class SchedulerViewSet(BaseViewSet):
     destroy=extend_schema(summary="Delete Active Execution")
 )
 class ActiveExecutionViewSet(BaseViewSet):
-    action_permission_mapping = {
+    """ViewSet for tracking and managing actively running executions."""
+    action_permission_mapping: ClassVar[dict] = {
         'stop': AppPermissions.STOP_EXECUTION,
     }
-    permission_mapping = {
+    permission_mapping: ClassVar[dict] = {
         'GET': AppPermissions.READ_EXECUTIONS,
         'POST': AppPermissions.START_EXECUTION,
         'PUT': AppPermissions.START_EXECUTION,
@@ -110,13 +120,14 @@ class ActiveExecutionViewSet(BaseViewSet):
     @extend_schema(summary="Stop a running execution")
     @action(detail=True, methods=['post'])
     def stop(self, request, pk=None, **kwargs):
+        """Manually stop a running execution and archive it."""
         execution = self.get_object()
         if execution.status != 'RUNNING' and execution.status != 'PENDING':
             return Response({
                 'error': f'Execution is not running. Current status: {execution.status}'
             }, status=status.HTTP_400_BAD_REQUEST)
-            
-        stopped_execution = ExecutionManager.stop_execution(execution)
+
+        ExecutionManager.stop_execution(execution)
         return Response({
             'message': 'Execution stopped successfully and archived to history'
         }, status=status.HTTP_200_OK)
@@ -131,7 +142,8 @@ class ActiveExecutionViewSet(BaseViewSet):
     destroy=extend_schema(exclude=True)
 )
 class ExecutionHistoryViewSet(BaseViewSet):
-    permission_mapping = {
+    """ViewSet for retrieving archived execution history records."""
+    permission_mapping: ClassVar[dict] = {
         'GET': AppPermissions.READ_EXECUTIONS,
         'POST': AppPermissions.START_EXECUTION,
         'PUT': AppPermissions.START_EXECUTION,
@@ -145,10 +157,11 @@ class ExecutionHistoryViewSet(BaseViewSet):
 
 
 class DataDumpTaskViewSet(BaseViewSet):
-    action_permission_mapping = {
+    """ViewSet for tracking and managing data dump tasks."""
+    action_permission_mapping: ClassVar[dict] = {
         'stop': AppPermissions.STOP_EXECUTION,
     }
-    permission_mapping = {
+    permission_mapping: ClassVar[dict] = {
         'GET': AppPermissions.READ_TASKS,
         'POST': AppPermissions.START_EXECUTION,
         'PUT': AppPermissions.START_EXECUTION,
@@ -159,41 +172,43 @@ class DataDumpTaskViewSet(BaseViewSet):
     serializer_class = DataDumpTaskSerializer
     search_fields = ('status', 'api_dump_id', 'celery_task_id')
     ordering_fields = ('created_at', 'started_at', 'completed_at', 'status')
-    filterset_fields = ['execution', 'status']
+    filterset_fields: ClassVar[list] = ['execution', 'status']
 
     @action(detail=True, methods=['post'])
     def stop(self, request, pk=None, **kwargs):
+        """Manually stop a running data dump task."""
         task = self.get_object()
         if task.status not in ['RUNNING', 'PENDING']:
             return Response({'error': 'Task is not running or pending'}, status=status.HTTP_400_BAD_REQUEST)
-            
+
         if task.celery_task_id:
             try:
                 from celery import current_app
                 current_app.control.revoke(task.celery_task_id, terminate=True)
-            except Exception as e:
-                pass
-                
+            except (ConnectionError, TimeoutError, OSError) as e:
+                logger.warning(f"Could not revoke celery task {task.celery_task_id}: {e!s}")
+
         task.status = 'STOPPED'
         task.error_message = 'Task manually stopped'
         task.save(update_fields=['status', 'error_message'])
-        
+
         # Sync with ApiDump
         from experience_cloud.market_data.models import ApiDump
         ApiDump.objects.filter(task_id=str(task.id)).update(status='STOPPED', error_message='Task manually stopped')
-        
+
         # Update execution stopped count
         from .services import ExecutionManager
         ExecutionManager._check_and_finalize(task.execution_id, DataDumpTask)
-        
+
         return Response({'status': 'Task stopped successfully'})
 
 
 class JsonFileTaskViewSet(BaseViewSet):
-    action_permission_mapping = {
+    """ViewSet for tracking and managing JSON file generation tasks."""
+    action_permission_mapping: ClassVar[dict] = {
         'stop': AppPermissions.STOP_EXECUTION,
     }
-    permission_mapping = {
+    permission_mapping: ClassVar[dict] = {
         'GET': AppPermissions.READ_TASKS,
         'POST': AppPermissions.START_EXECUTION,
         'PUT': AppPermissions.START_EXECUTION,
@@ -204,38 +219,42 @@ class JsonFileTaskViewSet(BaseViewSet):
     serializer_class = JsonFileTaskSerializer
     search_fields = ('status', 'region_json_id', 'celery_task_id')
     ordering_fields = ('created_at', 'started_at', 'completed_at', 'status')
-    filterset_fields = ['execution', 'status']
+    filterset_fields: ClassVar[list] = ['execution', 'status']
 
     @action(detail=True, methods=['post'])
     def stop(self, request, pk=None, **kwargs):
+        """Manually stop a running JSON file task."""
         task = self.get_object()
         if task.status not in ['RUNNING', 'PENDING']:
             return Response({'error': 'Task is not running or pending'}, status=status.HTTP_400_BAD_REQUEST)
-            
+
         if task.celery_task_id:
             try:
                 from celery import current_app
                 current_app.control.revoke(task.celery_task_id, terminate=True)
-            except Exception as e:
-                pass
-                
+            except (ConnectionError, TimeoutError, OSError) as e:
+                logger.warning(f"Could not revoke celery task {task.celery_task_id}: {e!s}")
+
         task.status = 'STOPPED'
         task.error_message = 'Task manually stopped'
         task.save(update_fields=['status', 'error_message'])
-        
+
         # Sync with RegionJsonFile
         from experience_cloud.json_generator.models import RegionJsonFile
-        RegionJsonFile.objects.filter(task_id=str(task.id)).update(status='STOPPED', error_message='Task manually stopped')
-        
+        RegionJsonFile.objects.filter(task_id=str(task.id)).update(
+            status='STOPPED', error_message='Task manually stopped'
+        )
+
         # Update execution stopped count
         from .services import ExecutionManager
         ExecutionManager._check_and_finalize(task.execution_id, JsonFileTask)
-        
+
         return Response({'status': 'Task stopped successfully'})
 
 
 class TaskHistoryViewSet(BaseViewSet):
-    permission_mapping = {
+    """ViewSet for retrieving archived task history records."""
+    permission_mapping: ClassVar[dict] = {
         'GET': AppPermissions.READ_TASKS,
         'POST': AppPermissions.START_EXECUTION,
         'PUT': AppPermissions.START_EXECUTION,
@@ -246,4 +265,4 @@ class TaskHistoryViewSet(BaseViewSet):
     serializer_class = TaskHistorySerializer
     search_fields = ('status', 'task_type', 'resource_id', 'celery_task_id')
     ordering_fields = ('created_at', 'started_at', 'completed_at', 'status')
-    filterset_fields = ['execution', 'status', 'task_type']
+    filterset_fields: ClassVar[list] = ['execution', 'status', 'task_type']

@@ -1,16 +1,24 @@
-from experience_cloud.json_generator.schemas import RegionDataSchema
-from experience_cloud.json_generator.utils import safe_float
-from typing import Dict, List, Optional, Any, Union, Tuple
-from experience_cloud.json_generator.decorators import handle_builder_exceptions
-from experience_cloud.json_generator.utils import serve_region_template_json, save_or_update_region_json
 import re
 
+from experience_cloud.json_generator.decorators import handle_builder_exceptions
+from experience_cloud.json_generator.schemas import RegionDataSchema
+from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template_json
+
+
 @handle_builder_exceptions
-def brand_graph_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
+def brand_graph_builder(
+    region_data: RegionDataSchema, task, products=None, template="template-name"
+) -> tuple[bool, dict]:
+    """Process raw catalog data and keyword metrics to construct the Brand Graph JSON payload.
+
+    Executes complex scoring formulas across health, incentive, and anxiety metrics for each brand,
+    ultimately outputting a structured dataset ready for frontend visualization.
+    """
     region_id = region_data.get("region_id")
     current_brand = region_data.get("brand_name")
-    brand_id = region_data.get("brand_id")
-    
+    assert region_id is not None
+    assert current_brand is not None
+
     # ===============================
     # 1. LOAD DATA
     # ===============================
@@ -94,22 +102,21 @@ def brand_graph_builder(region_data: RegionDataSchema, task, products=None, temp
         if product_count > 0:
 
             V = total_health_score / product_count
-            I = total_incentive / product_count
+            i_val = total_incentive / product_count
             A = total_anxiety / product_count
             M = m_score
 
-            # EXACT PHP LOGIC
             if M > 33:
                 M = 32.5
 
             # C = 4M + 3V + 2(I - F) - 2A
-            C = (4 * (33 - M)) + (3 * V) + (2 * (I - F)) - (2 * A)
+            C = (4 * (33 - M)) + (3 * V) + (2 * (i_val - F)) - (2 * A)
 
             brand_graph_results.append({
                 "Brand": brand_name,
                 "M": round((100 - M), 2),   # EXACT
                 "V": round(V, 2),
-                "I": round(I, 2),
+                "I": round(i_val, 2),
                 "F": F,
                 "A": round(A, 2),
                 "C": round(C, 4)

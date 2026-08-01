@@ -34,6 +34,7 @@ venv.bak/
 # AethyrTech Specific
 # =========================
 /logs/
+/backups/
 *.sql
 
 # =========================

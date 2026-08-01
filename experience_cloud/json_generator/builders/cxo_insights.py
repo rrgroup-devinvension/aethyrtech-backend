@@ -1,18 +1,27 @@
-from experience_cloud.json_generator.schemas import RegionDataSchema
 import json
+
 from core.llm_providers.services.llm_service import LLMService
-from experience_cloud.json_generator.utils import serve_region_template_json, save_or_update_region_json
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
+from experience_cloud.json_generator.schemas import RegionDataSchema
+from experience_cloud.json_generator.utils import save_or_update_region_json, serve_region_template_json
 
 
 @handle_builder_exceptions
-def cxo_insights_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
+def cxo_insights_builder(
+    region_data: RegionDataSchema, task, products=None, template="template-name"
+) -> tuple[bool, dict]:
+    """Synthesize cross-functional catalog, keyword, and logistical data to generate CXO-level strategic insights.
 
+    Compiles fragmented market data payloads and orchestrates a highly contextualized prompt to the LLM,
+    returning deeply personalized, actionable insights structured for executive consumption.
+    """
     current_brand = region_data.get("brand_name")
+    assert current_brand is not None
     brand_id = region_data.get("brand_id")
 
 
     region_id = region_data.get("region_id")
+    assert region_id is not None
 
     # ===============================
     # LOAD REQUIRED DATA
@@ -53,7 +62,8 @@ def cxo_insights_builder(region_data: RegionDataSchema, task, products=None, tem
         },
         "recommended_actions": {
             "section_title": "Recommended Actions",
-            "note": "Content audit pending - comprehensive insights will be available after content analysis is completed."
+            "note": "Content audit pending - comprehensive insights will be available "
+                    "after content analysis is completed."
         },
         "core_content_analysis": {
             "section_title": "Core Content Analysis",
@@ -88,7 +98,7 @@ def cxo_insights_builder(region_data: RegionDataSchema, task, products=None, tem
         missing.append("pincodes")
 
     if missing:
-        raise Exception(
+        raise ValueError(
             f"Missing required data files for {current_brand}: {', '.join(missing)}"
         )
 
@@ -110,7 +120,7 @@ def cxo_insights_builder(region_data: RegionDataSchema, task, products=None, tem
 
             total_listings = len(brand_records)
             unique_pincodes = len(
-                set([r.get("Pincode") for r in brand_records])
+                {r.get("Pincode") for r in brand_records}
             )
 
             avg_rank = sum([(r.get("Rank") or 0) for r in brand_records]) / total_listings
@@ -139,8 +149,9 @@ def cxo_insights_builder(region_data: RegionDataSchema, task, products=None, tem
     # EXACT PROMPT (NO CHANGE)
     # ===============================
     prompt = f"""
-You are a Senior Data Scientist and Strategic Brand Consultant for {current_brand}. 
-Your task is to analyze the provided raw data and generate EXACTLY 16 high-impact strategic insights for the CMO (Marketing) and CCO (Commerce/Operations).
+You are a Senior Data Scientist and Strategic Brand Consultant for {current_brand}.
+Your task is to analyze the provided raw data and generate high-impact strategic insights for \
+the CMO (Marketing) and CCO (Commerce/Operations).
 
 ### DATA CONTEXT:
 1. BRAND PERFORMANCE (brand_graph.json):
@@ -159,7 +170,7 @@ Your task is to analyze the provided raw data and generate EXACTLY 16 high-impac
 {keywords_str}...
 
 ### OBJECTIVE:
-Generate 16 insights (8 positive 'Growth Units', 8 negative 'Risk Units'). 
+Generate 16 insights (8 positive 'Growth Units', 8 negative 'Risk Units').
 Balance ownership between CMO and CCO.
 Keep descriptions concise (under 20 words).
 Ensure insights are data-driven, highlighting specific metrics.
@@ -187,17 +198,19 @@ Schema:
     # ===============================
     # CALL LLM
     # ===============================
-    llm = LLMService.get_service()
-    content = llm.generate_content([{'role': 'user', 'content': prompt}], action="cxo_insights", brand_id=brand_id, brand_name=current_brand)
-    start = content.find("{")
-    end = content.rfind("}") + 1
+    response = LLMService.get_service().generate_content(
+        [{'role': 'user', 'content': prompt}], action="cxo_insights",
+        brand_id=brand_id, brand_name=current_brand
+    )
+    start = response.find("{")
+    end = response.rfind("}") + 1
     if start == -1 or end == -1:
-        raise Exception("Invalid JSON response from LLM")
+        raise ValueError("Invalid JSON response from LLM")
 
-    llm_data = json.loads(content[start:end])
+    llm_data = json.loads(response[start:end])
 
     if not llm_data or "cxo_insights" not in llm_data:
-        raise Exception("JSON Parsing Failed")
+        raise ValueError("JSON Parsing Failed")
 
     # ===============================
     # SAVE

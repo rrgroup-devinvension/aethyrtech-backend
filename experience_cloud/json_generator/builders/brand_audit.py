@@ -1,33 +1,20 @@
-from experience_cloud.json_generator.decorators import handle_builder_exceptions
-from typing import Dict
-from experience_cloud.executions.models import JsonFileTask
-from experience_cloud.json_generator.schemas import RegionDataSchema
-from experience_cloud.json_generator.utils import ItemGenerator
 import logging
+from datetime import datetime
 
-from experience_cloud.json_generator.exceptions import DataProcessingException
-from experience_cloud.json_generator.utils import match_brand
-from datetime import datetime, date
+from experience_cloud.json_generator.decorators import handle_builder_exceptions
+from experience_cloud.json_generator.schemas import RegionDataSchema
 
 logger = logging.getLogger(__name__)
 
 
 
-from datetime import datetime
 
 
 def get_audit_data(brands, products):
-    """
-    Build brand audit table rows.
+    """Iterate over the scraped product catalog to aggregate and build high-level brand audit table metrics.
 
-    Metrics:
-    - SKU count per brand
-    - Live availability %
-    - Average health score
-    - Last run date (latest scraped_date if available)
-    - Status class based on health score
+    Calculates aggregated SKU counts, average health scores, and stock availability percentages across all products.
     """
-
     brand_stats = {brand: {
         "sku_count": 0,
         "live_count": 0,
@@ -39,25 +26,23 @@ def get_audit_data(brands, products):
     for p in products:
         if not p.brand or p.brand not in brand_stats:
             continue
-            
+
         stats = brand_stats[p.brand]
         stats["sku_count"] += 1
-        
+
         if (p.availability_status or "").lower() == "available":
             stats["live_count"] += 1
-            
+
         try:
             score = p.health_score()
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             score = 0
-            
+
         stats["health_sum"] += score
         stats["health_count"] += 1
-        
+
         if getattr(p, "scraped_date", None):
             sd = p.scraped_date
-            if isinstance(sd, datetime):
-                sd = sd.date()
             if not stats["last_run"] or sd > stats["last_run"]:
                 stats["last_run"] = sd
 
@@ -66,19 +51,19 @@ def get_audit_data(brands, products):
         stats = brand_stats[brand]
         live_percent = 100
         avg_health = round(stats["health_sum"] / stats["health_count"]) if stats["health_count"] else 0
-        
+
         if stats["last_run"]:
             last_run_str = stats["last_run"].strftime("%d/%m/%Y")
         else:
             last_run_str = datetime.now().strftime("%d/%m/%Y")
-            
+
         if avg_health < 40:
             status_class = "status-red"
         elif avg_health < 70:
             status_class = "status-yellow"
         else:
             status_class = "status-green"
-            
+
         rows.append({
             "Audit Name": brand,
             "Frequency": "One Time",
@@ -98,12 +83,11 @@ def get_audit_data(brands, products):
 
 
 @handle_builder_exceptions
-def brand_audit_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
+def brand_audit_builder(
+    region_data: RegionDataSchema, task, products=None, template="template-name"
+) -> tuple[bool, dict]:
+    """Construct the JSON payload for the Brand Audit dashboard view, including flagged alerts and KPIs."""
     brands = region_data.get("display_brands", [])
-    keywords = region_data.get("keywords", [])
-    brand_id = region_data.get("brand_id")
-    brand_name = region_data.get("brand_name")
-    platform_type = region_data.get("platform_type", [])
 
     t_id = getattr(task, 'id', 'unknown')
     logger.info(f"Starting BRAND_AUDIT JSON build for task {t_id}")

@@ -1,6 +1,7 @@
 class ApiProviderException(Exception):
     """Base exception for ApiProvider errors."""
     def __init__(self, message, extra=None):
+        """Initialize exception."""
         super().__init__(message)
         self.message = message
         self.extra = extra

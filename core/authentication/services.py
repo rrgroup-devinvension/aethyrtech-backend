@@ -1,64 +1,89 @@
 import logging
-from django.utils import timezone
-from django.core.mail import send_mail
+import smtplib
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.mail import send_mail
+from django.db import DatabaseError
+from django.utils import timezone
+
 from .models import LoginHistory, PasswordResetOTP
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
 class AuthenticationService:
+    """Service class handling business logic for authentication.
+
+    Provides methods for tracking user logins/logouts, generating OTPs,
+    and managing the password reset flow.
+    """
     @staticmethod
     def record_login(user, ip_address=None, user_agent=None):
-        """Records a successful login in LoginHistory."""
+        """Record a successful login event for auditing and security monitoring.
+
+        Saves the user's IP address and browser agent in the LoginHistory model.
+        """
         try:
             LoginHistory.objects.create(
-                user=user, 
-                ip_address=ip_address, 
+                user=user,
+                ip_address=ip_address,
                 user_agent=user_agent
             )
             logger.info(f"Recorded login history for user {user.email}")
-        except Exception as e:
-            logger.error(f"Failed to record login history for user {user.email}: {str(e)}")
+        except DatabaseError as e:
+            logger.error(f"Failed to record login history for user {user.email}: {e!s}")
 
     @staticmethod
     def record_logout(user):
-        """Marks the active login session as logged out."""
+        """Mark all active login sessions for the user as logged out.
+
+        Finds any LoginHistory entries without a logout timestamp and updates
+        them with the current time.
+        """
         try:
             updated = LoginHistory.objects.filter(
-                user=user, 
+                user=user,
                 logged_out_at__isnull=True
             ).update(logged_out_at=timezone.now())
             logger.info(f"Recorded logout for user {user.email}, updated {updated} sessions.")
-        except Exception as e:
-            logger.error(f"Failed to record logout for user {user.email}: {str(e)}")
+        except DatabaseError as e:
+            logger.error(f"Failed to record logout for user {user.email}: {e!s}")
 
     @staticmethod
     def generate_and_send_otp(user):
-        """Generates an OTP for password reset and sends it via email."""
+        """Generate a secure One-Time Password and dispatch it to the user's email.
+
+        Creates a PasswordResetOTP database record and triggers the Django
+        send_mail utility to deliver it. Returns True if the email was sent successfully.
+        """
         # Create OTP
         otp_instance = PasswordResetOTP.create_otp(user)
         logger.info(f"Generated password reset OTP for user {user.email}")
-        
+
         # Send email with OTP
         try:
             send_mail(
                 subject='Password Reset OTP - AethyrTech',
-                message=f'Your OTP for password reset is: {otp_instance.otp}\n\nThis OTP will expire in 10 minutes.\n\nIf you did not request this, please ignore this email.',
+                message='You requested a password reset. Here is your One-Time Password (OTP):\n\n' + otp_instance.otp + '\n\nThis OTP will expire in 10 minutes.\n\nIf you did not request this, please ignore this email.',  # noqa: E501
                 from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[user.email],
                 fail_silently=False,
             )
             logger.info(f"Sent password reset OTP email to {user.email}")
             return True
-        except Exception as e:
-            logger.error(f"Failed to send OTP email to {user.email}: {str(e)}")
+        except (smtplib.SMTPException, OSError) as e:
+            logger.error(f"Failed to send OTP email to {user.email}: {e!s}")
             return False
 
     @staticmethod
     def verify_otp(user, otp):
-        """Verifies if the provided OTP is valid for the given user."""
+        """Validate the provided OTP against the user's active tokens.
+
+        Checks that the OTP exists, belongs to the correct user, hasn't been used yet,
+        and hasn't expired. Returns a boolean indicating success and either the
+        OTP instance or an error message.
+        """
         try:
             otp_instance = PasswordResetOTP.objects.filter(
                 user=user,
@@ -68,26 +93,30 @@ class AuthenticationService:
         except PasswordResetOTP.DoesNotExist:
             logger.warning(f"Failed OTP verification for user {user.email}: OTP not found or already used.")
             return False, "Invalid OTP"
-        
+
         if not otp_instance.is_valid():
             logger.warning(f"Failed OTP verification for user {user.email}: OTP expired.")
             return False, "OTP has expired or already been used"
-            
+
         logger.info(f"Successfully verified OTP for user {user.email}")
         return True, otp_instance
 
     @staticmethod
     def reset_password(user, otp_instance, new_password):
-        """Resets the user's password and marks the OTP as used."""
+        """Update the user's password and invalidate the used OTP.
+
+        Applies the new hashed password to the user model and marks the
+        PasswordResetOTP instance as used so it cannot be reused.
+        """
         try:
             user.set_password(new_password)
             user.save()
-            
+
             otp_instance.is_used = True
             otp_instance.save()
-            
+
             logger.info(f"Successfully reset password for user {user.email}")
             return True
-        except Exception as e:
-            logger.error(f"Failed to reset password for user {user.email}: {str(e)}")
+        except DatabaseError as e:
+            logger.error(f"Failed to reset password for user {user.email}: {e!s}")
             return False

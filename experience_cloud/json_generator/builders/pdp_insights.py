@@ -1,25 +1,30 @@
-from experience_cloud.json_generator.schemas import RegionDataSchema
 import json
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Union, Tuple
+
 from core.llm_providers.services.llm_service import LLMService
-from experience_cloud.json_generator.utils import safe_float
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
-from experience_cloud.json_generator.utils import serve_region_template_json, save_or_update_region_json
+from experience_cloud.json_generator.schemas import RegionDataSchema
+from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template_json
+
 
 @handle_builder_exceptions
-def pdp_insights_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
+def pdp_insights_builder(
+    region_data: RegionDataSchema, task, products=None, template="template-name"
+) -> tuple[bool, dict]:
+    """Analyze product detail page metrics to generate strategic PDP insights via LLM integration.
+
+    Evaluates catalog health scores, media penetration, and content component scoring to orchestrate
+    a contextual prompt, returning actionable merchandising insights for the frontend dashboard.
+    """
     # ===============================
     # BRAND (MATCH PHP)
     # ===============================
     current_brand = region_data.get("brand_name")
     brand_id = region_data.get("brand_id")
     region_id = region_data.get("region_id")
-    
+
     if not region_id or not current_brand:
-        raise Exception("Region ID and Brand Name are required.")
-        
-    region_id = region_id.upper()
+        raise ValueError("Region ID and Brand Name are required.")
 
     # ===============================
     # LOAD CATALOG DATA
@@ -29,19 +34,19 @@ def pdp_insights_builder(region_data: RegionDataSchema, task, products=None, tem
     )
 
     if not catalog_data_raw:
-        raise Exception("Catalog JSON file not found.")
+        raise ValueError("Catalog JSON file not found.")
 
     # ===============================
     # FIND BRAND KEY (CASE-INSENSITIVE)
     # ===============================
     actual_brand_key = None
-    for key in catalog_data_raw.keys():
+    for key in catalog_data_raw:
         if key.lower() == current_brand.lower():
             actual_brand_key = key
             break
 
     if not actual_brand_key:
-        raise Exception(f"No catalog data found for brand: {current_brand}")
+        raise ValueError(f"No catalog data found for brand: {current_brand}")
 
     products = catalog_data_raw[actual_brand_key]
 
@@ -53,7 +58,7 @@ def pdp_insights_builder(region_data: RegionDataSchema, task, products=None, tem
     total_images = 0
     products_with_video = 0
 
-    content_scores = {
+    content_scores: dict[str, float | int] = {
         "title": 0,
         "description": 0,
         "bullets": 0,
@@ -177,13 +182,13 @@ def pdp_insights_builder(region_data: RegionDataSchema, task, products=None, tem
     # LLM VALIDATION + CALL
     # ===============================
     if not getattr(LLMService, "enabled", True):
-        raise Exception("LLM not enabled")
+        raise ValueError("LLM not enabled")
 
     audit_sample = json.dumps(pdps_needing_improvement[:15])
     comp_sample = json.dumps(competitor_metrics)
 
-    prompt = f"""
-You are an AI data analyst expert focusing on E-commerce Product Detail Page (PDP) Content Optimization, Value Proposition, and Competitive Intelligence.
+    prompt = f"""You are an AI data analyst expert focusing on Product Detail Page (PDP) \
+Content Optimization, Value Proposition, and Competitive Intelligence.
 Analyze the following PDP health metrics for the brand {current_brand}.
 
 Overview Metrics:
@@ -206,39 +211,47 @@ Sample of PDPs Needing Improvement (Low Health Scores):
 
 Provide insights in the exact following JSON format:
 {{
-    "pdp_analysis_text": "A 3-4 sentence analytical summary of the brand's overall PDP content health and Value Proposition presentation.",
-    "competitive_analysis_text": "A 3-4 sentence analytical summary comparing {current_brand}'s PDP health, image count, and video penetration against its competitors.",
+    "pdp_analysis_text": "A 3-4 sentence analytical summary of the brand's overall PDP content \
+health and Value Proposition presentation.",
+    "competitive_analysis_text": "A 3-4 sentence analytical summary comparing {current_brand}'s \
+PDP health, image count, and video penetration against its competitors.",
     "content_audit_plan": [
-        {{ "area": "E.g. Images/Video", "deficiency": "Brief description of what's lacking", "recommendation": "Brief recommendation on what to optimize" }}
+        {{ "area": "E.g. Images/Video", "deficiency": "Brief description of what's lacking", \
+"recommendation": "Brief recommendation on what to optimize" }}
     ],
     "alerts_this_week": [
-        {{ "issue": "Brief description of a severe content issue (e.g., extremely low bullet score)", "severity": "critical/high/medium", "pct": 15 }}
+        {{ "issue": "Brief description of a severe content issue (e.g., extremely low bullet score)", \
+"severity": "critical/high/medium", "pct": 15 }}
     ]
 }}
 
 IMPORTANT:
-- content_audit_plan should have exactly 4 items based on the component scores (Title, Description, Bullets, Images/Video).
+- content_audit_plan should have exactly 4 items based on the component scores \
+(Title, Description, Bullets, Images/Video).
 - alerts_this_week MUST have exactly 3 items.
 Do NOT include markdown formatting. Return purely the JSON object.
 """
 
-    response = LLMService.get_service().generate_content([{'role': 'user', 'content': prompt}], action="pdp_insights", brand_id=brand_id, brand_name=current_brand)
+    response = LLMService.get_service().generate_content(
+        [{'role': 'user', 'content': prompt}], action="pdp_insights",
+        brand_id=brand_id, brand_name=current_brand
+    )
 
     if not response:
-        raise Exception("Empty LLM response")
+        raise ValueError("Empty LLM response")
 
-    content = response[0].get("content", "")
+    content = str(response)
 
     start = content.find("{")
     end = content.rfind("}")
 
     if start == -1 or end == -1:
-        raise Exception("Invalid JSON response from LLM")
+        raise ValueError("Invalid JSON response from LLM")
 
     llm_data = json.loads(content[start:end + 1])
 
     if not llm_data or "pdp_analysis_text" not in llm_data:
-        raise Exception("LLM JSON parsing failed")
+        raise ValueError("LLM JSON parsing failed")
 
     # ===============================
     # FINAL JSON
@@ -276,4 +289,4 @@ Do NOT include markdown formatting. Return purely the JSON object.
         "file_path": file_path,
         "success": True,
         "message": "PDP Insights successfully generated."
-    }    
+    }

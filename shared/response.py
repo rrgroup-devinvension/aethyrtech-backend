@@ -1,15 +1,35 @@
-from rest_framework.renderers import JSONRenderer
-from rest_framework.pagination import PageNumberPagination
+from collections.abc import Mapping
+from typing import Any
+
 from django.utils.timezone import now
-from rest_framework.response import Response
+from rest_framework.renderers import JSONRenderer
 
 
 class StandardJSONRenderer(JSONRenderer):
-    """
-    Wrap all DRF responses in a unified format.
+    """Wrap all DRF responses in a unified format.
+
     Handles standard responses and paginated responses.
     """
-    def render(self, data, accepted_media_type=None, renderer_context=None):
+
+    def render(
+        self,
+        data: Any,
+        accepted_media_type: str | None = None,
+        renderer_context: Mapping[str, Any] | None = None
+    ) -> Any:
+        """Render the response payload into JSON format.
+
+        Args:
+            data: The response data to render.
+            accepted_media_type: The media type accepted by the client.
+            renderer_context: Context dictionary containing request and response objects.
+
+        Returns:
+            The JSON encoded byte string of the standard or paginated response.
+        """
+        if renderer_context is None:
+            return super().render(data, accepted_media_type, renderer_context)
+
         response = renderer_context.get('response', None)
 
         if response is None:

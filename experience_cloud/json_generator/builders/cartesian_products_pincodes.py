@@ -1,23 +1,18 @@
-from experience_cloud.json_generator.decorators import handle_builder_exceptions
-from typing import Dict
-from experience_cloud.executions.models import JsonFileTask
-from experience_cloud.json_generator.schemas import RegionDataSchema
-from experience_cloud.json_generator.utils import ItemGenerator
 import logging
 
-from datetime import datetime
-from experience_cloud.json_generator.exceptions import SchedulerBaseException, DataProcessingException
-from core.organizations.models import Brand
 from experience_cloud.catalog.models import Location
+from experience_cloud.json_generator.decorators import handle_builder_exceptions
+from experience_cloud.json_generator.schemas import RegionDataSchema
+
 logger = logging.getLogger(__name__)
 
 def get_cartesian_products_pincodes_list(products, brand_name, is_competitor=False):
+    """Map the product catalog against geographic pincodes to establish regional ranking vectors.
+
+    Produces a Cartesian product mapping of every SKU against all available location pincodes,
+    incorporating scraped market metrics and availability logic.
+    """
     cartesian_products = []
-    
-    brand_category_map = {
-        b.name.strip().lower(): b.category_id
-        for b in Brand.objects.select_related("category")
-    }
 
     category_pincode_map = {
         loc.pincode: loc.id
@@ -26,12 +21,11 @@ def get_cartesian_products_pincodes_list(products, brand_name, is_competitor=Fal
 
     for p in products:
         rankings = p.rankings or {}
-        category_id = brand_category_map.get(brand_name.lower().strip())
 
         for pincode, rank_list in rankings.items():
             if pincode == "000000":
                 continue
-            
+
             pincode_id = category_pincode_map.get(pincode)
             ranks = [
                 r.get("rank")
@@ -60,12 +54,15 @@ def get_cartesian_products_pincodes_list(products, brand_name, is_competitor=Fal
     return cartesian_products
 
 @handle_builder_exceptions
-def cartesian_products_pincodes_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
-    brands = region_data.get("display_brands", [])
-    keywords = region_data.get("keywords", [])
-    brand_id = region_data.get("brand_id")
+def cartesian_products_pincodes_builder(
+    region_data: RegionDataSchema, task, products=None, template="template-name"
+) -> tuple[bool, dict]:
+    """Construct the JSON payload for the Cartesian Products by Pincodes dashboard.
+
+    Integrates regional demographic affinity matrices with the cartesian mapped product catalog
+    to output a unified visualization payload.
+    """
     brand_name = region_data.get("brand_name")
-    platform_type = region_data.get("platform_type", [])
 
     t_id = getattr(task, 'id', 'unknown')
     logger.info(f"Starting Cartesian Products Pincode JSON build | Task={t_id}")
@@ -119,6 +116,6 @@ def cartesian_products_pincodes_builder(region_data: RegionDataSchema, task, pro
         ]
     }
     payload["Sheet1"] = get_cartesian_products_pincodes_list(products, brand_name, False)
-      
+
     logger.info(f"Completed Cartesian Products Pincode JSON build | Task={t_id}")
     return False, payload

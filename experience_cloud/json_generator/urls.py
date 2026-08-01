@@ -1,6 +1,7 @@
-from django.urls import path, include
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from .views import JsonTemplateViewSet, RegionJsonFileViewSet, JsonGenerationStatsView, DebugRunJsonBuildView
+
+from .views import DebugRunJsonBuildView, JsonGenerationStatsView, JsonTemplateViewSet, RegionJsonFileViewSet
 
 router = DefaultRouter()
 router.register(r'templates', JsonTemplateViewSet, basename='json-template')

@@ -134,6 +134,40 @@ The backend uses `drf-spectacular` to auto-generate beautiful OpenAPI 3.0 docume
 
 ---
 
+## Debugging APIs
+
+To easily test execution pipelines synchronously (without background tasks or auth requirements), we expose the following open debug endpoints. These are extremely useful for quick testing via Postman or cURL.
+
+### 1. Data Dump Debug Run
+Synchronously extract data for a specific keyword and location.
+
+- **URL:** `POST /api/v1/experience-cloud/market-data/debug-run/`
+- **Auth Required:** No
+- **Payload:**
+  ```json
+  {
+      "location_id": 1,
+      "keyword_id": 25
+  }
+  ```
+- **Returns:** Raw JSON API response from the external provider and generation duration.
+
+### 2. JSON Generator Debug Run
+Synchronously build a JSON file for a specific template and region.
+
+- **URL:** `POST /api/v1/experience-cloud/json-generator/debug-run/`
+- **Auth Required:** No
+- **Payload:**
+  ```json
+  {
+      "template_name": "region_base",
+      "region_id": 1
+  }
+  ```
+- **Returns:** Saved file path and generation duration.
+
+---
+
 ## Common Developer Commands
 
 - **Create a new app**:
@@ -153,22 +187,29 @@ The backend uses `drf-spectacular` to auto-generate beautiful OpenAPI 3.0 docume
   mysql -u root -p atech_new < aethyrtech.sql
   mysqldump -u root -p compx_db > store_backup.sql
   ```
+- **Generate Python-based SQL Dumps** (No mysqldump required):
+  *Backups are automatically saved to `backups/<db_name>/<YYYY-MM-DD>/<db_name>_<timestamp>.sql`*
+  ```bash
+  python scripts/db_backup.py --db default
+  python scripts/db_backup.py --db xbytes_db
+  ```
 
 ---
 
 ## Project Standards & Architecture Details
 
-### 1. Formatting & Linting (Ruff)
-This project uses **Ruff** for blazing-fast linting and code formatting (replacing Black and Flake8). 
-- **Check for issues**: `ruff check .`
-- **Auto-fix issues**: `ruff check --fix .`
+### 1. Formatting, Linting & Typing (Ruff + Mypy)
+This project uses **Ruff** for blazing-fast linting/formatting and **Mypy** for strict enterprise type checking.
+- **Check for lint issues**: `ruff check .`
+- **Auto-fix lint issues**: `ruff check --fix .`
 - **Format code**: `ruff format .`
+- **Check for typing issues**: `mypy .`
 
 ### 2. Git Workflow & Pre-Commit Hooks
-We strictly enforce code quality before commits using the `pre-commit` framework.
+We strictly enforce code quality and typing before commits using the `pre-commit` framework.
 - **Setup hooks (Run once after cloning)**: `pre-commit install`
 - **Run manually against all files**: `pre-commit run --all-files`
-*The pre-commit hooks will automatically fix trailing whitespace, check YAML formats, and run Ruff formatting.*
+*The pre-commit hooks will automatically fix trailing whitespace, run Ruff formatting, and execute Mypy. If your code is missing types or has type mismatch errors, the commit will be blocked!*
 
 ### 3. Request/Response Standards
 The project strictly enforces a global response wrapper via `shared.response.StandardJSONRenderer`. 
@@ -186,7 +227,9 @@ The backend implements a custom `shared.middlewares.IdempotencyMiddleware`.
 For critical actions (like payments or data processing), the frontend can safely retry failed network requests without triggering the same action twice, ensuring robust data integrity.
 
 ### 7. Pagination, Filtering & Sorting
-- **Pagination**: Controlled globally by `shared.pagination.StandardResultsSetPagination`. List endpoints automatically return paginated data (default `PAGE_SIZE = 20`).
+- **Pagination Strategy**: We use a dual-pagination enterprise strategy located in `shared.pagination`:
+  - **`EnterpriseOffsetPagination` (Default)**: Used for standard CRUD views. Allows jumping to specific pages.
+  - **`EnterpriseCursorPagination`**: Provides `O(1)` time complexity for infinite scrolling on massive datasets (e.g. millions of market data rows). Prevents skipping or duplicating records during real-time data ingestion.
 - **Filtering/Sorting**: Handled natively by `DjangoFilterBackend` and `OrderingFilter`. 
   *Example API call: `/api/v1/users/?ordering=-created_at&is_active=true`*
 
@@ -194,15 +237,32 @@ For critical actions (like payments or data processing), the frontend can safely
 Exception handling is centralized via `shared.exceptions.custom_exception_handler`. 
 Never return raw HTTP response errors manually. Instead, raise standard DRF exceptions (`ValidationError`, `NotFound`, `PermissionDenied`). The global handler intercepts these and formats them into a predictable JSON error schema for the frontend.
 
-### 9. Docker Setup
-A `docker-compose.yml` is provided for containerized deployment/testing. It spins up the entire stack:
-- `db` (Postgres/MySQL)
-- `redis` (Cache & Celery Broker)
-- `web` (Django Application)
-- `worker` (Celery Background Tasks)
-- `beat` (Celery Scheduler)
+### 9. Docker Setup (Local Development & Testing)
+We use a **Docker Compose Profiles** strategy to support different developer workflows without container friction.
 
-*To run via Docker:*
+#### For Backend Developers
+When developing backend features, you want the databases running in Docker, but Django running natively on your host machine for better debugging (`pdb`) and hot-reloading:
 ```bash
-docker-compose up --build
+# This spins up ONLY the dependencies (Postgres & Redis)
+docker-compose up -d
 ```
+Then run the app locally: `python manage.py runserver`
+
+#### For Frontend Developers / QA
+When you need the entire backend API running instantly without setting up a Python virtual environment, use the `fullstack` profile to spin up the App and Celery workers alongside the databases:
+```bash
+# This spins up the ENTIRE stack (Postgres, Redis, Django Web, Celery Worker, Celery Beat)
+docker-compose --profile fullstack up -d --build
+```
+
+### 10. Testing Standards
+We strictly use **Pytest** for our testing suite. Do not use Django's default `unittest` or `TestCase`.
+
+- **Test Placement**: Tests must live inside a `tests/` folder within their respective domain app (e.g., `experience_cloud/api_provider/tests/`), not in a global root folder.
+- **Data Generation**: Do not use static JSON fixtures. Use **`factory_boy`** to dynamically generate mock database records in memory.
+- **The AAA Pattern**: Every test must clearly follow the **Arrange, Act, Assert** pattern for maximum readability.
+- **No Real Network Calls**: Tests must never hit external endpoints (like XBytes or Karmatech). Use the `responses` library or `unittest.mock.patch` to intercept requests.
+- **Run the test suite**:
+  ```bash
+  pytest
+  ```

@@ -1,55 +1,79 @@
 import logging
-from typing import Generator, Any
+from collections.abc import Generator
+from typing import Any
+
 from django.db.models.query import QuerySet
-from experience_cloud.json_generator.schemas import RegionDataSchema, ProductSchema
-from experience_cloud.json_generator.utils import match_brands
+
+from experience_cloud.json_generator.schemas import ProductSchema, RegionDataSchema
+from experience_cloud.json_generator.utils import match_brands, parse_metric
 from experience_cloud.market_integrations.models.xbytes import XBytesProduct
 
 logger = logging.getLogger(__name__)
 
 def chunked_queryset(queryset: QuerySet, chunk_size: int = 1000) -> Generator[Any, None, None]:
+    """Iterate over a large Django QuerySet efficiently by chunking via primary keys.
+
+    Mitigates memory overhead when streaming massive datasets by executing paginated queries
+    based on the primary key sequence instead of utilizing SQL OFFSET limitations.
+    """
     pk = 0
     while True:
         chunk = list(queryset.filter(pk__gt=pk).order_by('pk')[:chunk_size])
         if not chunk:
             break
-        for obj in chunk:
-            yield obj
+        yield from chunk
         pk = chunk[-1].pk
 
 def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductSchema, None, None]:
-    brands = region_data.get('brands', [])
+    """Stream localized product data sequentially from the XBytes secondary database.
+
+    Aggregates product attributes, availability statuses, and multi-location keyword rankings,
+    mapping them strictly into uniform ProductSchema instances for JSON payload generation.
+    """
+    brands: dict[str, list[str]] = region_data.get('brands', {})
     if not brands:
         return
-        
+
     ctx = f"[JSON Gen Collector | Brand: {region_data.get('brand_name', 'Unknown')}]"
-        
+
     keywords_map = {}
     pincodes_map = {}
     for plat_code, plat in region_data.get("platforms", {}).items():
         if plat_code:
-            keywords_map[plat_code] = [kw.get("name") for kw in plat.get("keywords", [])]
-            pincodes_map[plat_code] = [loc.get("name") for loc in plat.get("locations", [])]
+            keywords_map[plat_code] = [kw["name"] for kw in plat.get("keywords", []) if kw.get("name")]
+            pincodes_map[plat_code] = [loc["pincode"] for loc in plat.get("locations", []) if loc.get("pincode")]
 
     platforms = list(keywords_map.keys())
     qs = XBytesProduct.objects.filter(platform__in=platforms).order_by("product_uid")
-    
+
     scraper_id = None
     scraped_date = None
-    
+
     current_uid = None
     current_pf = None
+    current_pf_valid = False
 
     for p in chunked_queryset(qs, chunk_size=1000):
         if scraped_date is None:
-            scraped_date = p.created_at
+            raw_date = p.created_at
+            if raw_date:
+                from datetime import datetime
+                if isinstance(raw_date, str):
+                    try:
+                        scraped_date = datetime.strptime(raw_date[:10], "%Y-%m-%d").date()
+                    except ValueError:
+                        scraped_date = None
+                elif isinstance(raw_date, datetime):
+                    scraped_date = raw_date.date()
+                else:
+                    scraped_date = getattr(raw_date, 'date', lambda: None)()
             scraper_id = None  # Removed search relation
-            
+
         matched_brand = match_brands(brands, p.brand)
         if not matched_brand:
             logger.error(f"{ctx} Product {p.product_uid} skipped due to brand mismatch ({p.brand})")
             continue
-            
+
         product_uid = p.product_uid
         ranking_entry = {
             "platform": p.platform,
@@ -60,8 +84,8 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
         ranking_data = {
             p.location or "000000": [ranking_entry]
         }
-        
-        if current_uid == product_uid:
+
+        if current_uid == product_uid and current_pf is not None:
             existing_rankings = current_pf.rankings or {}
             for pin, ranks in ranking_data.items():
                 if pin not in existing_rankings:
@@ -74,10 +98,10 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
                             existing_rankings[pin].append(r)
             current_pf.set_rankings(existing_rankings)
             continue
-            
-        if current_pf is not None and getattr(current_pf, "_is_available_correct", False):
+
+        if current_pf is not None and current_pf_valid:
             yield current_pf
-            
+
         current_uid = product_uid
         current_pf = ProductSchema()
         current_pf.set_basic(
@@ -100,12 +124,12 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
             images=p.images,
             thumbnail=p.thumbnail,
             main_image=p.main_image,
-            image_count=p.image_count,
-            video_count=p.video_count
+            image_count=parse_metric(p.image_count),
+            video_count=parse_metric(p.video_count)
         )
         val_rating = p.rating if p.rating and str(p.rating).strip() not in ("0", "0.0", "NA") else p.brand_rating
         val_reviews = p.reviews if p.reviews and str(p.reviews).strip() not in ("0", "0.0", "NA") else p.brand_reviews
-        
+
         current_pf.set_rating_direct(val_rating, val_reviews)
         current_pf.set_bullets(p.bullets if p.bullets else [])
         current_pf.set_category(category=p.category)
@@ -117,9 +141,9 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
         )
         current_pf.set_rankings(ranking_data)
         is_avaible_correct = current_pf.set_availability(p.availability)
-        current_pf._is_available_correct = is_avaible_correct
+        current_pf_valid = bool(is_avaible_correct)
         if not is_avaible_correct:
              logger.error(f"{ctx} Product {p.product_uid} availability mismatch")
-            
-    if current_pf is not None and getattr(current_pf, "_is_available_correct", False):
+
+    if current_pf is not None and current_pf_valid:
         yield current_pf

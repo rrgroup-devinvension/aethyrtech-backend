@@ -20,6 +20,7 @@ services:
       - redis_data:/data
 
   web:
+    profiles: ["fullstack"]
     build: .
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
@@ -37,6 +38,7 @@ services:
       - redis
 
   worker:
+    profiles: ["fullstack"]
     build: .
     command: celery -A config worker -l info
     volumes:
@@ -52,6 +54,7 @@ services:
       - redis
 
   beat:
+    profiles: ["fullstack"]
     build: .
     command: celery -A config beat -l info
     volumes:

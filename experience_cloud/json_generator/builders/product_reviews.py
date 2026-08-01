@@ -1,35 +1,25 @@
-from experience_cloud.json_generator.decorators import handle_builder_exceptions
-from typing import Dict, List, Optional, Any, Union
-from experience_cloud.executions.models import JsonFileTask
-from experience_cloud.json_generator.schemas import RegionDataSchema
-from experience_cloud.json_generator.utils import ItemGenerator
 import logging
 from collections import defaultdict
-from experience_cloud.json_generator.utils import match_brands
+
+from experience_cloud.json_generator.decorators import handle_builder_exceptions
+from experience_cloud.json_generator.schemas import RegionDataSchema
+from experience_cloud.json_generator.utils import ItemGenerator, match_brands
 
 logger = logging.getLogger(__name__)
 
-def build_review_structure(products: ItemGenerator, brands: Optional[List[str]] = None) -> dict:
-    """
-    Builds review JSON structure for ALL brands:
+def build_review_structure(products: ItemGenerator | None, brands: list[str] | None = None) -> dict:
+    """Compile and normalize multi-platform product review data into a structured schema.
 
-    {
-        brand_name: {
-            product_sku: [
-                { review_data }
-            ]
-        }
-    }
-
-    If brands is provided -> filters that brand only.
+    Groups verified reviews, ratings, and feedback text hierarchically by brand and SKU.
+    Applies optional brand filtering to isolate specific competitor segments.
     """
     if brands is None:
         brands = []
 
     # Using standard dict for the final payload is safer for JSON serialization
-    result = defaultdict(lambda: defaultdict(list))
+    result: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
 
-    for p in products:
+    for p in (products or []):
         product_brand = getattr(p, "brand", None)
         sku = getattr(p, "uid", None)
 
@@ -58,7 +48,7 @@ def build_review_structure(products: ItemGenerator, brands: Optional[List[str]] 
                 }
                 result[matched_brand][sku].append(review_data)
 
-            except Exception:
+            except (KeyError, TypeError, AttributeError, ValueError):
                 logger.exception(
                     f"Failed processing review | Brand={product_brand} | SKU={sku}"
                 )
@@ -68,16 +58,19 @@ def build_review_structure(products: ItemGenerator, brands: Optional[List[str]] 
     final_dict = {}
     for brand, skus in result.items():
         final_dict[brand] = dict(skus)
-        
+
     return final_dict
 
 @handle_builder_exceptions
-def product_reviews_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
+def product_reviews_builder(
+    region_data: RegionDataSchema, task, products=None, template="template-name"
+) -> tuple[bool, dict]:
+    """Process unformatted product reviews into a structured JSON payload for the frontend dashboard."""
     brands = region_data.get("display_brands", [])
     t_id = getattr(task, 'id', 'unknown')
-    
+
     logger.info(f"Starting PRODUCT_REVIEWS JSON build | Task={t_id}")
     payload = build_review_structure(products, brands)
-    
+
     logger.info(f"Completed PRODUCT_REVIEWS JSON build | Task={t_id}")
     return False, payload

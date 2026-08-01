@@ -1,13 +1,16 @@
-from core.authentication.permissions import AppPermissions
 import logging
+from typing import ClassVar
+
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from drf_spectacular.utils import extend_schema, extend_schema_view
 
+from core.authentication.permissions import AppPermissions
 from shared.base.views import BaseViewSet
-from .models import Platform, Location, Keyword
-from .serializers import PlatformSerializer, LocationSerializer, KeywordSerializer
+
+from .models import Keyword, Location, Platform
+from .serializers import KeywordSerializer, LocationSerializer, PlatformSerializer
 from .services import BulkDataService
 
 logger = logging.getLogger(__name__)
@@ -21,14 +24,15 @@ logger = logging.getLogger(__name__)
     destroy=extend_schema(summary="Delete Platform")
 )
 class PlatformViewSet(BaseViewSet):
-    action_permission_mapping = {
+    """API ViewSet for managing e-commerce and external platforms."""
+    action_permission_mapping: ClassVar[dict] = {
         'upload-file': AppPermissions.CREATE_PLATFORM,
         'export-data': AppPermissions.READ_PLATFORMS,
         'download-template': AppPermissions.READ_PLATFORMS,
         'bulk-delete': AppPermissions.DELETE_PLATFORM,
     }
-    
-    permission_mapping = {
+
+    permission_mapping: ClassVar[dict] = {
         'GET': AppPermissions.READ_PLATFORMS,
         'POST': AppPermissions.CREATE_PLATFORM,
         'PUT': AppPermissions.UPDATE_PLATFORM,
@@ -51,13 +55,14 @@ class PlatformViewSet(BaseViewSet):
     destroy=extend_schema(summary="Delete Location")
 )
 class LocationViewSet(BaseViewSet):
-    action_permission_mapping = {
+    """API ViewSet for managing catalog tracking locations."""
+    action_permission_mapping: ClassVar[dict] = {
         'upload_file': AppPermissions.MANAGE_TAXONOMY,
         'export_data': AppPermissions.READ_TAXONOMY,
         'download_template': AppPermissions.READ_TAXONOMY,
         'bulk_delete': AppPermissions.MANAGE_TAXONOMY,
     }
-    permission_mapping = {
+    permission_mapping: ClassVar[dict] = {
         'GET': AppPermissions.READ_TAXONOMY,
         'POST': AppPermissions.MANAGE_TAXONOMY,
         'PUT': AppPermissions.MANAGE_TAXONOMY,
@@ -68,11 +73,12 @@ class LocationViewSet(BaseViewSet):
     serializer_class = LocationSerializer
     search_fields = ('pincode', 'address')
     ordering_fields = ('pincode', 'address', 'platform__name', 'category__name', 'created_at', 'updated_at')
-    filterset_fields = ['platform', 'category', 'region']
+    filterset_fields: ClassVar[tuple] = ('platform', 'category', 'region')
 
     @extend_schema(summary="Upload Locations File")
     @action(detail=False, methods=['post'], url_path='upload-file')
     def upload_file(self, request):
+        """Upload and process a bulk locations CSV or XLSX file."""
         category_id = request.data.get('category_id')
         region_id = request.data.get('region_id')
         platform_ids = request.data.getlist('platform_id')
@@ -84,26 +90,28 @@ class LocationViewSet(BaseViewSet):
         try:
             result = BulkDataService.process_locations_file(file, file.name, category_id, region_id, platform_ids)
             return Response(result, status=status.HTTP_200_OK)
-        except Exception as e:
+        except ValueError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @extend_schema(summary="Export Locations Data")
     @action(detail=False, methods=['get'], url_path='export-data')
     def export_data(self, request):
+        """Export filtered locations data to a CSV or XLSX file."""
         queryset = self.filter_queryset(self.get_queryset())
         format_type = request.query_params.get('format', 'xlsx')
         columns = [('pincode', 'pincode'), ('address', 'address'), ('lat', 'lat'), ('lng', 'lng')]
-        
+
         category_id = request.query_params.get('category')
         region_id = request.query_params.get('region')
         platform_id = request.query_params.get('platform')
         filename = BulkDataService.generate_export_filename('locations', category_id, region_id, platform_id)
-        
+
         return BulkDataService.generate_export_response(queryset, filename, columns, format_type)
 
     @extend_schema(summary="Download Locations Template")
     @action(detail=False, methods=['get'], url_path='download-template')
     def download_template(self, request):
+        """Download a blank template for bulk uploading locations."""
         format_type = request.query_params.get('format', 'xlsx')
         columns = ['pincode', 'address', 'lat', 'lng']
         return BulkDataService.generate_template_response('locations_template', columns, format_type)
@@ -111,6 +119,7 @@ class LocationViewSet(BaseViewSet):
     @extend_schema(summary="Bulk Delete Locations")
     @action(detail=False, methods=['post'], url_path='bulk-delete')
     def bulk_delete(self, request):
+        """Delete multiple location records in bulk."""
         ids = request.data.get('ids', [])
         if not ids:
             return Response({'detail': 'No ids provided.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -127,13 +136,14 @@ class LocationViewSet(BaseViewSet):
     destroy=extend_schema(summary="Delete Keyword")
 )
 class KeywordViewSet(BaseViewSet):
-    action_permission_mapping = {
+    """API ViewSet for managing targeted SEO keywords."""
+    action_permission_mapping: ClassVar[dict] = {
         'upload_file': AppPermissions.MANAGE_TAXONOMY,
         'export_data': AppPermissions.READ_TAXONOMY,
         'download_template': AppPermissions.READ_TAXONOMY,
         'bulk_delete': AppPermissions.MANAGE_TAXONOMY,
     }
-    permission_mapping = {
+    permission_mapping: ClassVar[dict] = {
         'GET': AppPermissions.READ_TAXONOMY,
         'POST': AppPermissions.MANAGE_TAXONOMY,
         'PUT': AppPermissions.MANAGE_TAXONOMY,
@@ -144,11 +154,12 @@ class KeywordViewSet(BaseViewSet):
     serializer_class = KeywordSerializer
     search_fields = ('keyword',)
     ordering_fields = ('keyword', 'platform__name', 'category__name', 'display_order', 'created_at')
-    filterset_fields = ['platform', 'category', 'region']
+    filterset_fields: ClassVar[tuple] = ('platform', 'category', 'region')
 
     @extend_schema(summary="Upload Keywords File")
     @action(detail=False, methods=['post'], url_path='upload-file')
     def upload_file(self, request):
+        """Upload and process a bulk keywords CSV or XLSX file."""
         category_id = request.data.get('category_id')
         region_id = request.data.get('region_id')
         platform_ids = request.data.getlist('platform_id')
@@ -160,26 +171,28 @@ class KeywordViewSet(BaseViewSet):
         try:
             result = BulkDataService.process_keywords_file(file, file.name, category_id, region_id, platform_ids)
             return Response(result, status=status.HTTP_200_OK)
-        except Exception as e:
+        except ValueError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @extend_schema(summary="Export Keywords Data")
     @action(detail=False, methods=['get'], url_path='export-data')
     def export_data(self, request):
+        """Export filtered keywords data to a CSV or XLSX file."""
         queryset = self.filter_queryset(self.get_queryset())
         format_type = request.query_params.get('format', 'xlsx')
         columns = [('keyword', 'keyword')]
-        
+
         category_id = request.query_params.get('category')
         region_id = request.query_params.get('region')
         platform_id = request.query_params.get('platform')
         filename = BulkDataService.generate_export_filename('keywords', category_id, region_id, platform_id)
-        
+
         return BulkDataService.generate_export_response(queryset, filename, columns, format_type)
 
     @extend_schema(summary="Download Keywords Template")
     @action(detail=False, methods=['get'], url_path='download-template')
     def download_template(self, request):
+        """Download a blank template for bulk uploading keywords."""
         format_type = request.query_params.get('format', 'xlsx')
         columns = ['keyword']
         return BulkDataService.generate_template_response('keywords_template', columns, format_type)
@@ -187,6 +200,7 @@ class KeywordViewSet(BaseViewSet):
     @extend_schema(summary="Bulk Delete Keywords")
     @action(detail=False, methods=['post'], url_path='bulk-delete')
     def bulk_delete(self, request):
+        """Delete multiple keyword records in bulk."""
         ids = request.data.get('ids', [])
         if not ids:
             return Response({'detail': 'No ids provided.'}, status=status.HTTP_400_BAD_REQUEST)

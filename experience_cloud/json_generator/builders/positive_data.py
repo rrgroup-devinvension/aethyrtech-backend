@@ -1,24 +1,30 @@
-from experience_cloud.json_generator.schemas import RegionDataSchema
 import random
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Union, Tuple
-from experience_cloud.json_generator.utils import serve_region_template_json, save_or_update_region_json
+
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
+from experience_cloud.json_generator.schemas import RegionDataSchema
+from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template_json
 
 
 @handle_builder_exceptions
-def positive_data_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
+def positive_data_builder(
+    region_data: RegionDataSchema, task, products=None, template="template-name"
+) -> tuple[bool, dict]:
+    """Compile quantitative brand health metrics into a singular competitive dashboard payload.
+
+    Aggregates product catalog metrics, search rankings, and media penetration across all
+    competitors to establish a market baseline and identify specific growth opportunities.
+    """
     # ===============================
     # BRAND (MATCH PHP)
     # ===============================
     current_brand = region_data.get("brand_name")
-    brand_id = region_data.get("brand_id")
+    assert current_brand is not None
     region_id = region_data.get("region_id")
+    assert region_id is not None
 
     if not region_id:
-        raise Exception("Region ID is required.")
-
-    region_id = region_id.upper()
+        raise ValueError("Region ID is required.")
 
     # ===============================
     # 1. LOAD DATA (WITH FALLBACK)
@@ -27,28 +33,28 @@ def positive_data_builder(region_data: RegionDataSchema, task, products=None, te
         pincode_data = serve_region_template_json(
             region_id, "cartesian-products-pincodes"
         )
-    except Exception:
+    except (OSError, ValueError, TypeError, AttributeError, KeyError):
         pincode_data = {"Sheet1": []}
 
     try:
         catalog_data = serve_region_template_json(
             region_id, "catalog-data-complete"
         )
-    except Exception:
-        catalog_data = {"Sheet1": []}
+    except (OSError, ValueError, TypeError, AttributeError, KeyError):
+        catalog_data = {}
 
     try:
         keyword_data = serve_region_template_json(
             region_id, "keyword-counts"
         )
-    except Exception:
-        keyword_data = {"Sheet1": []}
+    except (OSError, ValueError, TypeError, AttributeError, KeyError):
+        keyword_data = {}
 
     # ===============================
     # 2. VALIDATION
     # ===============================
     if "Sheet1" not in pincode_data:
-        raise Exception("cartesian_products_pincodes.json missing 'Sheet1' key.")
+        raise ValueError("cartesian_products_pincodes.json missing 'Sheet1' key.")
 
     rows = pincode_data["Sheet1"]
 
@@ -61,7 +67,7 @@ def positive_data_builder(region_data: RegionDataSchema, task, products=None, te
     ))
 
     # IMPORTANT: match PHP behavior (include nulls also)
-    total_pins = len(set(r.get("Pincode") for r in rows))
+    total_pins = len({r.get("Pincode") for r in rows})
 
     all_brand_stats = {}
 
@@ -123,7 +129,7 @@ def positive_data_builder(region_data: RegionDataSchema, task, products=None, te
         ratings = [r["Rating"] for r in brand_rows if "Rating" in r]
         avg_rating = (sum(ratings) / len(ratings)) if ratings else 0
 
-        brand_pins = len(set(r.get("Pincode") for r in brand_rows))
+        brand_pins = len({r.get("Pincode") for r in brand_rows})
         coverage = (brand_pins / total_pins) * 100 if total_pins else 0
 
         health_scores = [p.get("health_score") for p in brand_catalog if "health_score" in p]
@@ -152,7 +158,7 @@ def positive_data_builder(region_data: RegionDataSchema, task, products=None, te
         )
 
         conversion = round(
-            250 + (avg_rating * 20) - (anxiety * 10) + random.randint(0, 50),
+            250 + (avg_rating * 20) - (anxiety * 10) + random.randint(0, 50),  # noqa: S311
             1
         )
 
@@ -191,7 +197,7 @@ def positive_data_builder(region_data: RegionDataSchema, task, products=None, te
             "anxiety": anxiety,
             "health": round(avg_health),
             "rating": round(avg_rating, 1),
-            "incentive_efficiency": -11.7 + (random.randint(-20, 20) / 10),
+            "incentive_efficiency": -11.7 + (random.randint(-20, 20) / 10),  # noqa: S311
             "incentive_status": "Conversion Bonus",
             "keywords": opportunities
         }
@@ -216,19 +222,19 @@ def positive_data_builder(region_data: RegionDataSchema, task, products=None, te
     values = list(ranked_stats.values())
 
     if not values:
-        raise Exception("No brand stats generated")
+        raise ValueError("No brand stats generated")
 
     # ===============================
     # 5. MARKET AVERAGE
     # ===============================
     market_avg = {
-        "conversion": round(sum(v["conversion"] for v in values) / len(values), 1),
-        "share": round(sum(v["share"] for v in values) / len(values), 1),
-        "price": round(sum(v["price"] for v in values) / len(values)),
-        "health": round(sum(v["health"] for v in values) / len(values)),
-        "anxiety": round(sum(v["anxiety"] for v in values) / len(values), 1),
+        "conversion": round(sum(safe_float(v["conversion"]) for v in values) / len(values), 1),
+        "share": round(sum(safe_float(v["share"]) for v in values) / len(values), 1),
+        "price": round(sum(safe_float(v["price"]) for v in values) / len(values)),
+        "health": round(sum(safe_float(v["health"]) for v in values) / len(values)),
+        "anxiety": round(sum(safe_float(v["anxiety"]) for v in values) / len(values), 1),
         "incentive_efficiency": round(
-            sum(v["incentive_efficiency"] for v in values) / len(values),
+            sum(safe_float(v["incentive_efficiency"]) for v in values) / len(values),
             1
         ),
     }

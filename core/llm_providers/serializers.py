@@ -1,8 +1,16 @@
-from rest_framework import serializers
+from shared.base.serializers import BaseModelSerializer
+
 from .models import LLMProvider
 
-class LLMProviderSerializer(serializers.ModelSerializer):
-    class Meta:
+
+class LLMProviderSerializer(BaseModelSerializer):
+    """Serializer for the LLMProvider model.
+
+    Handles the serialization of provider configurations, ensuring that
+    sensitive data (like the decrypted API key) is handled securely and
+    properly formatted for API responses.
+    """
+    class Meta(BaseModelSerializer.Meta):
         model = LLMProvider
         fields = (
             'id', 'created_at', 'updated_at',

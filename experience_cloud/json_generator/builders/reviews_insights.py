@@ -1,29 +1,35 @@
-from experience_cloud.json_generator.schemas import RegionDataSchema
 import json
-import re
-from datetime import datetime, timedelta
-from collections import defaultdict
 import random
-from typing import Dict, List, Optional, Any, Union, Tuple
+import re
+from collections import defaultdict
+from datetime import datetime, timedelta
 
 from core.llm_providers.services.llm_service import LLMService
-from experience_cloud.json_generator.utils import safe_float
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
-from experience_cloud.json_generator.utils import serve_region_template_json, save_or_update_region_json
+from experience_cloud.json_generator.schemas import RegionDataSchema
+from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template_json
+
 
 @handle_builder_exceptions
-def reviews_insights_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
+def reviews_insights_builder(
+    region_data: RegionDataSchema, task, products=None, template="template-name"
+) -> tuple[bool, dict]:
+    """Compile a comprehensive sentiment analysis and competitive pulse JSON payload.
+
+    Analyzes product reviews across multiple platforms to extract sentiment trends,
+    top negative topics, alert statuses, and actionable recommendations using LLM insights.
+    """
     current_brand = region_data.get("brand_name")
+    assert current_brand is not None
     brand_id = region_data.get("brand_id")
     region_id = region_data.get("region_id")
-    
+    assert region_id is not None
+
     if not current_brand or not region_id:
-        raise Exception("Region ID and Brand Name are required.")
-    
-    region_id = region_id.upper()
+        raise ValueError("Region ID and Brand Name are required.")
 
     # Full Stop Words list from PHP
-    stop_words = set([
+    stop_words = {
         'the','and','for','this','that','with','was','have','has','not','but','are','from','its',
         'you','your','very','been','will','they','their','all','one','can','had','were','which',
         'more','when','would','there','what','just','out','some','also','about','than','into',
@@ -33,7 +39,7 @@ def reviews_insights_builder(region_data: RegionDataSchema, task, products=None,
         'really','printer','print','printing','product','bought','buy','using','used','good',
         'work','working','works','time','day','days','month','months','year','years','amazon',
         'flipkart','india','price','machine','don','didn','isn','doesn','wasn','won','couldn'
-    ])
+    }
 
     # ===============================
     # LOAD DATA
@@ -41,7 +47,7 @@ def reviews_insights_builder(region_data: RegionDataSchema, task, products=None,
     data = serve_region_template_json(
     region_id, "product-reviews-ratings")
     if not data:
-        raise Exception("Reviews JSON not found.")
+        raise ValueError("Reviews JSON not found.")
 
     catalog_data = serve_region_template_json(
     region_id, "catalog-data-complete") or {}
@@ -51,7 +57,8 @@ def reviews_insights_builder(region_data: RegionDataSchema, task, products=None,
     # ===============================
     product_titles = {}
     for _, products in catalog_data.items():
-        if not isinstance(products, list): continue
+        if not isinstance(products, list):
+            continue
         for p in products:
             sku = p.get("sku")
             model = p.get("detail_data", {}).get("model")
@@ -64,26 +71,27 @@ def reviews_insights_builder(region_data: RegionDataSchema, task, products=None,
     verified_unverified = []
     brand_sentiments = {"positive": 0, "neutral": 0, "negative": 0}
 
-    negative_reviews_text = []
+    negative_reviews_text: list[str] = []
     negative_verified_reviews = []
     all_negative_reviews_full = []
 
-    product_sentiments = {}
-    product_monthly_trend = {}
-    platform_stats = {}
+    from typing import Any
+    product_sentiments: dict[str, dict[str, int]] = {}
+    product_monthly_trend: dict[str, dict[str, dict[str, int]]] = {}
+    platform_stats: dict[str, Any] = {}
 
     total_rating = 0
     total_reviews = 0
 
-    monthly_trend = defaultdict(lambda: {"positive": 0, "neutral": 0, "negative": 0})
-    weekly_trend = defaultdict(lambda: {"positive": 0, "neutral": 0, "negative": 0})
-    daily_trend = defaultdict(lambda: {"positive": 0, "neutral": 0, "negative": 0})
+    monthly_trend: dict[str, dict[str, int]] = defaultdict(lambda: {"positive": 0, "neutral": 0, "negative": 0})
+    weekly_trend: dict[str, dict[str, int]] = defaultdict(lambda: {"positive": 0, "neutral": 0, "negative": 0})
+    daily_trend: dict[str, dict[str, int]] = defaultdict(lambda: {"positive": 0, "neutral": 0, "negative": 0})
 
     competitor_monthly_trend = []
-    word_freq = {}
+    word_freq: dict[str, int] = {}
 
     four_weeks_ago = (datetime.now() - timedelta(days=28)).strftime("%Y-%m-%d")
-    last_4_weeks_neg_reviews = []
+    last_4_weeks_neg_reviews: list[str] = []
 
     # ===============================
     # PASS 1: ALL BRANDS (Verified/Unverified + Comp Trends)
@@ -95,13 +103,15 @@ def reviews_insights_builder(region_data: RegionDataSchema, task, products=None,
 
         v_count = 0
         uv_count = 0
-        comp_trend = {}
+        comp_trend: dict[str, dict[str, float | int]] = {}
 
         for _, reviews in products.items():
             for review in reviews:
                 is_verified = review.get("verified_purchase") or review.get("verified")
-                if is_verified: v_count += 1
-                else: uv_count += 1
+                if is_verified:
+                    v_count += 1
+                else:
+                    uv_count += 1
 
                 rating = safe_float(review.get("rating", 0))
                 review_date = review.get("review_date")
@@ -123,7 +133,7 @@ def reviews_insights_builder(region_data: RegionDataSchema, task, products=None,
         verified_unverified.append({"brand": brand_name, "verified": v_count, "unverified": uv_count})
 
     if not actual_brand_key and data:
-        actual_brand_key = list(data.keys())[0]
+        actual_brand_key = next(iter(data.keys()))
 
     # ===============================
     # PASS 2: CURRENT BRAND DEEP ANALYSIS
@@ -136,12 +146,13 @@ def reviews_insights_builder(region_data: RegionDataSchema, task, products=None,
 
             for review in reviews:
                 rating = safe_float(review.get("rating", 0))
-                if rating == 0: continue
+                if rating == 0:
+                    continue
 
                 total_rating += rating
                 total_reviews += 1
 
-                review_date = review.get("review_date", "")
+                review_date = str(review.get("review_date") or "")
                 platform = review.get("platform", "unknown").lower()
                 is_verified = review.get("verified_purchase") or review.get("verified")
 
@@ -149,11 +160,11 @@ def reviews_insights_builder(region_data: RegionDataSchema, task, products=None,
                 if platform not in platform_stats:
                     platform_stats[platform] = {
                         "total_rating": 0, "count": 0, "positive": 0, "neutral": 0, "negative": 0,
-                        "stars": {i: 0 for i in range(1, 6)}
+                        "stars": dict.fromkeys(range(1, 6), 0)
                     }
                 platform_stats[platform]["total_rating"] += rating
                 platform_stats[platform]["count"] += 1
-                star_bucket = max(1, min(5, int(round(rating))))
+                star_bucket = max(1, min(5, round(rating)))
                 platform_stats[platform]["stars"][star_bucket] += 1
 
                 is_pos = rating >= 4
@@ -171,11 +182,11 @@ def reviews_insights_builder(region_data: RegionDataSchema, task, products=None,
                     brand_sentiments["negative"] += 1
                     product_sentiments[pid]["negative"] += 1
                     platform_stats[platform]["negative"] += 1
-                    
+
                     title = str(review.get("title") or "")
                     text = str(review.get("review_text") or "")
                     full_text = f"{title} {text}"
-                        
+
                     if len(negative_reviews_text) < 100:
                         negative_reviews_text.append(full_text)
 
@@ -206,34 +217,47 @@ def reviews_insights_builder(region_data: RegionDataSchema, task, products=None,
                 # Trends and Word Freq
                 if review_date:
                     month = review_date[:7]
-                    if is_pos: monthly_trend[month]["positive"] += 1
-                    elif is_neg: monthly_trend[month]["negative"] += 1
-                    else: monthly_trend[month]["neutral"] += 1
+                    if is_pos:
+                        monthly_trend[month]["positive"] += 1
+                    elif is_neg:
+                        monthly_trend[month]["negative"] += 1
+                    else:
+                        monthly_trend[month]["neutral"] += 1
 
                     try:
                         dt = datetime.strptime(review_date, "%Y-%m-%d")
                         week = dt.strftime("%G-W%V")
-                        if is_pos: weekly_trend[week]["positive"] += 1
-                        elif is_neg: weekly_trend[week]["negative"] += 1
-                        else: weekly_trend[week]["neutral"] += 1
-                    except: pass
+                        if is_pos:
+                            weekly_trend[week]["positive"] += 1
+                        elif is_neg:
+                            weekly_trend[week]["negative"] += 1
+                        else:
+                            weekly_trend[week]["neutral"] += 1
+                    except ValueError:
+                        pass
 
-                    if is_pos: daily_trend[review_date]["positive"] += 1
-                    elif is_neg: daily_trend[review_date]["negative"] += 1
-                    else: daily_trend[review_date]["neutral"] += 1
+                    if is_pos:
+                        daily_trend[review_date]["positive"] += 1
+                    elif is_neg:
+                        daily_trend[review_date]["negative"] += 1
+                    else:
+                        daily_trend[review_date]["neutral"] += 1
 
                     # Product monthly trend
                     if month not in product_monthly_trend[pid]:
                         product_monthly_trend[pid][month] = {"positive": 0, "negative": 0}
-                    if is_pos: product_monthly_trend[pid][month]["positive"] += 1
-                    elif is_neg: product_monthly_trend[pid][month]["negative"] += 1
+                    if is_pos:
+                        product_monthly_trend[pid][month]["positive"] += 1
+                    elif is_neg:
+                        product_monthly_trend[pid][month]["negative"] += 1
 
                 # Word Freq
                 title = str(review.get("title") or "")
                 text = str(review.get("review_text") or "")
                 words = re.split(r'[\s\W]+', (title + " " + text).lower())
                 for w in words:
-                    if len(w) < 3 or w.isnumeric() or w in stop_words: continue
+                    if len(w) < 3 or w.isnumeric() or w in stop_words:
+                        continue
                     word_freq[w] = word_freq.get(w, 0) + 1
 
     # ===============================
@@ -247,15 +271,16 @@ def reviews_insights_builder(region_data: RegionDataSchema, task, products=None,
     # ===============================
     random.shuffle(negative_reviews_text)
     sample_negative = "\n- ".join(negative_reviews_text[:40])
-    
+
     # Get Latest 3 Verified Neg for prompt
     negative_verified_reviews.sort(key=lambda x: x["date"], reverse=True)
     top_3_latest_neg = negative_verified_reviews[:3]
     latest_neg_json = json.dumps(top_3_latest_neg, indent=2)
 
     prompt = f"""
-You are an AI data analyst expert. Analyze brand {current_brand}.
-Sentiment counts: Positive: {brand_sentiments['positive']}, Neutral: {brand_sentiments['neutral']}, Negative: {brand_sentiments['negative']}.
+You are an AI data analyst expert. Analyze Brand '{current_brand}' Sentiments:
+Positive: {brand_sentiments['positive']}, Neutral: {brand_sentiments['neutral']}, \
+Negative: {brand_sentiments['negative']}.
 
 Sample negative reviews:
 - {sample_negative}
@@ -264,19 +289,23 @@ Latest 3 Verified Negative Reviews:
 {latest_neg_json}
 
 Recent negative reviews (last 4 weeks):
-- {"\n- ".join(last_4_weeks_neg_reviews[:30])}
+- {chr(10).join(['- ' + r for r in last_4_weeks_neg_reviews[:30]])}
 
 Return purely JSON (no markdown) with:
 - sentiment_analysis_text (3-4 sentences summary)
 - top_10_negative_topics (Exactly 10 items, keys: topic, score, description)
 - trending_issues_4_weeks (5-8 items, keys: issue, severity, description, count_mentions)
 - alerts_this_week (3-5 items, keys: issue, pct, severity)
-- latest_responses (3 items matching the Latest 3 Verified Reviews provided, keys: reviewer, date, original_review, recommended_response)
-- tactical_action_plan (Exactly 2 items in immediate, one_week, one_month; keys: action, owner, impact, priority)
+- latest_responses (3 items - recommended_responses for the specific negative reviews provided, keys: \
+reviewer, date, original_review, recommended_response)
+- tactical_action_plan (immediate short term actions for one_month; keys: action, owner, impact, priority)
 """
 
-    response = LLMService.get_service().generate_content([{'role': 'user', 'content': prompt}], action="reviews_insights", brand_id=brand_id, brand_name=current_brand)
-    content = response[0]["content"]
+    response = LLMService.get_service().generate_content(
+        [{'role': 'user', 'content': prompt}], action="reviews_insights",
+        brand_id=brand_id, brand_name=current_brand
+    )
+    content = str(response)
     llm_data = json.loads(content[content.find("{"): content.rfind("}") + 1])
 
     # ===============================
@@ -287,20 +316,26 @@ Return purely JSON (no markdown) with:
     latest_date = max(all_dates) if all_dates else datetime.now().strftime("%Y-%m-%d")
 
     def get_period_reviews(days):
+        """Fetch reviews within a specific day range."""
         cutoff = (datetime.strptime(latest_date, "%Y-%m-%d") - timedelta(days=days)).strftime("%Y-%m-%d")
-        return [r for r in all_negative_reviews_full if r["date"] >= cutoff], cutoff
+        return [r for r in all_negative_reviews_full if str(r.get("date") or "") >= cutoff], cutoff
 
     last_week_neg, week_start = get_period_reviews(7)
-    if len(last_week_neg) < 5: last_week_neg, week_start = get_period_reviews(14)
-    if len(last_week_neg) < 5: last_week_neg, week_start = get_period_reviews(30)
+    if len(last_week_neg) < 5:
+        last_week_neg, week_start = get_period_reviews(14)
+    if len(last_week_neg) < 5:
+        last_week_neg, week_start = get_period_reviews(30)
 
-    topic_csv_rows = [ [f"--- Period: {week_start} to {latest_date} | Brand: {current_brand} | Total Negative Reviews: {len(last_week_neg)} ---"] ]
+    topic_csv_rows = [ [
+        f"--- Period: {week_start} to {latest_date} | Brand: {current_brand} | "
+        f"Total Negative Reviews: {len(last_week_neg)} ---"
+    ] ]
     for topic in llm_data.get("top_10_negative_topics", []):
         name = topic.get("topic", "")
         score = topic.get("score", 0)
         # Match keywords logic: clean name, split, filter length >= 3
         topic_kws = [w for w in re.sub(r'[^a-zA-Z0-9\s]', '', name).lower().split() if len(w) >= 3]
-        
+
         matched = []
         for rev in last_week_neg:
             hay = (rev["title"] + " " + rev["text"][:1000]).lower()
@@ -308,10 +343,15 @@ Return purely JSON (no markdown) with:
                 matched.append(rev)
 
         if not matched:
-            topic_csv_rows.append([name, score, '-', '-', '-', '-', '-', '-', 'No matching reviews in this period', '-'])
+            topic_csv_rows.append([
+                name, score, '-', '-', '-', '-', '-', '-', 'No matching reviews in this period', '-'
+            ])
         else:
             for rev in matched:
-                topic_csv_rows.append([name, score, rev["date"], rev["reviewer"], rev["platform"], rev["product"], rev["rating"], rev["verified"], rev["title"], rev["text"][:1000]])
+                topic_csv_rows.append([
+                    name, score, rev["date"], rev["reviewer"], rev["platform"], rev["product"],
+                    rev["rating"], rev["verified"], rev["title"], rev["text"][:1000]
+                ])
 
     # ===============================
     # PLATFORM COMPARISON
@@ -335,14 +375,17 @@ Return purely JSON (no markdown) with:
     # ===============================
     prod_arr = []
     for pid, counts in product_sentiments.items():
-        name = product_titles.get(pid, pid)
-        if len(name) > 30: name = name[:27] + "..."
+        name = str(product_titles.get(pid, pid) or pid)
+        if len(name) > 30:
+            name = name[:27] + "..."
         prod_arr.append({ "product_id": pid, "product_name": name, **counts })
 
     most_positive_products = sorted(prod_arr, key=lambda x: x["positive"], reverse=True)[:5]
     most_negative_products = sorted(prod_arr, key=lambda x: x["negative"], reverse=True)[:5]
-    
-    top_product_ids = set([p["product_id"] for p in most_positive_products] + [p["product_id"] for p in most_negative_products])
+
+    top_product_ids = set(
+        [str(p["product_id"]) for p in most_positive_products] + [str(p["product_id"]) for p in most_negative_products]
+    )
     top_products_trend = {}
     for pid in top_product_ids:
         trend = product_monthly_trend.get(pid, {})
@@ -375,14 +418,14 @@ Return purely JSON (no markdown) with:
         "tactical_action_plan": llm_data.get("tactical_action_plan", {})
     }
 
-    alerts_html = build_alerts_html(current_brand, all_negative_reviews_full, llm_data)
-    tactical_html = build_tactical_html(current_brand, llm_data)
+    _alerts_html = build_alerts_html(current_brand, all_negative_reviews_full, llm_data)
+    _tactical_html = build_tactical_html(current_brand, llm_data)
 
 
     # ===============================
     # PRODUCT DEEPDIVE CSV (MATCH PHP)
     # ===============================
-    deep_dive_rows = []
+    deep_dive_rows: list[list[Any]] = []
 
     # Header
     deep_dive_rows.append([f"Product Deep-dive & Competitive Pulse — {current_brand}",
@@ -396,7 +439,7 @@ Return purely JSON (no markdown) with:
     deep_dive_rows.append(['Product ID', 'Product Name', 'Positive', 'Neutral', 'Negative', 'Total'])
 
     for p in most_positive_products:
-        total = p["positive"] + p["neutral"] + p["negative"]
+        total = int(p["positive"]) + int(p["neutral"]) + int(p["negative"])
         deep_dive_rows.append([
             p["product_id"], p["product_name"],
             p["positive"], p["neutral"], p["negative"], total
@@ -411,7 +454,7 @@ Return purely JSON (no markdown) with:
     deep_dive_rows.append(['Product ID', 'Product Name', 'Negative', 'Neutral', 'Positive', 'Total'])
 
     for p in most_negative_products:
-        total = p["positive"] + p["neutral"] + p["negative"]
+        total = int(p["positive"]) + int(p["neutral"]) + int(p["negative"])
         deep_dive_rows.append([
             p["product_id"], p["product_name"],
             p["negative"], p["neutral"], p["positive"], total
@@ -424,21 +467,22 @@ Return purely JSON (no markdown) with:
     # -------------------------------
     deep_dive_rows.append(['=== POSITIVE PRODUCTS — MONTHLY TREND ==='])
 
-    months = sorted({t["month"] for pid in top_product_ids for t in top_products_trend.get(pid, [])})
+    months_set = {str(t["month"]) for pid in top_product_ids for t in top_products_trend.get(pid, [])}
+    months = sorted(months_set)
 
     header = ['Month'] + [p["product_name"] for p in most_positive_products]
     deep_dive_rows.append(header)
 
     for m in months:
-        row = [m]
+        pos_row: list = [m]
         for p in most_positive_products:
-            pid = p["product_id"]
-            val = 0
+            pid = str(p["product_id"])
+            pos_val = 0
             for t in top_products_trend.get(pid, []):
-                if t["month"] == m:
-                    val = t["positive"]
-            row.append(val)
-        deep_dive_rows.append(row)
+                if str(t["month"]) == m:
+                    pos_val = int(str(t["positive"] or 0))
+            pos_row.append(pos_val)
+        deep_dive_rows.append(pos_row)
 
     deep_dive_rows.append([])
 
@@ -451,15 +495,15 @@ Return purely JSON (no markdown) with:
     deep_dive_rows.append(header)
 
     for m in months:
-        row = [m]
+        neg_row: list = [m]
         for p in most_negative_products:
-            pid = p["product_id"]
-            val = 0
+            pid = str(p["product_id"])
+            neg_val = 0
             for t in top_products_trend.get(pid, []):
-                if t["month"] == m:
-                    val = t["negative"]
-            row.append(val)
-        deep_dive_rows.append(row)
+                if str(t["month"]) == m:
+                    neg_val = int(str(t["negative"] or 0))
+            neg_row.append(neg_val)
+        deep_dive_rows.append(neg_row)
 
     deep_dive_rows.append([])
 
@@ -468,24 +512,25 @@ Return purely JSON (no markdown) with:
     # -------------------------------
     deep_dive_rows.append(['=== COMPETITOR AVERAGE RATING TREND ==='])
 
-    all_months = sorted({
-        t["month"]
+    all_months_set = {
+        str(t["month"])
         for b in competitor_monthly_trend
         for t in b["trend"]
-    })
+    }
+    all_months = sorted(all_months_set)
 
     header = ['Month'] + [b["brand"] for b in competitor_monthly_trend]
     deep_dive_rows.append(header)
 
     for m in all_months:
-        row = [m]
+        comp_row: list = [m]
         for b in competitor_monthly_trend:
-            val = ''
+            avg_val: str | float = ''
             for t in b["trend"]:
-                if t["month"] == m:
-                    val = t["avg_rating"]
-            row.append(val)
-        deep_dive_rows.append(row)
+                if str(t["month"]) == m:
+                    avg_val = float(str(t["avg_rating"] or 0))
+            comp_row.append(avg_val)
+        deep_dive_rows.append(comp_row)
 
     file_name, file_path = save_or_update_region_json(
         region_id,
@@ -504,6 +549,11 @@ Return purely JSON (no markdown) with:
 
 
 def build_alerts_html(brand, all_negative_reviews, llm_data):
+    """Generate a printable HTML report visualizing critical review alerts and negative topics.
+
+    Cross-references LLM-identified issues with raw reviews to highlight severe trends
+    and provides an exportable PDF format for tactical team reviews.
+    """
     import html
 
     # Merge topics + alerts (same as PHP)
@@ -641,7 +691,7 @@ body{{font-family:Inter,sans-serif;background:#f8fafc;color:#1e293b;padding:32px
         else:
             meta = f"{topic.get('severity','').capitalize()} · {topic.get('pct',0)}% of negative reviews"
 
-       
+
         html_content += f"""
 <div class="ts">
 <div class="th">
@@ -764,6 +814,11 @@ async function genPDF(){
 
 
 def build_tactical_html(brand, llm_data):
+    """Compile a printable HTML visualization of the LLM-driven tactical action plan.
+
+    Structures immediate, short-term, and mid-term operational directives into
+    an actionable dashboard complete with PDF export capabilities.
+    """
     tap = llm_data.get("tactical_action_plan", {})
     def render_sec(t, items):
         h = f"<h3>{t}</h3>"
@@ -772,7 +827,8 @@ def build_tactical_html(brand, llm_data):
             <div class="action-card">
                 <span class="action-title">{i+1}. {act.get('action')}</span>
                 <div class="action-meta">
-                    <b>Owner:</b> {act.get('owner')} | <b>Impact:</b> {act.get('impact')} | <b>Priority:</b> {act.get('priority')}
+                    <b>Owner:</b> {act.get('owner')} | <b>Impact:</b> {act.get('impact')} | \
+<b>Priority:</b> {act.get('priority')}
                 </div>
             </div>"""
         return h
@@ -793,10 +849,12 @@ def build_tactical_html(brand, llm_data):
             color: white; border: none; padding: 10px 20px; border-radius: 8px;
             font-weight: 700; cursor: pointer;
         }}
-        h2 {{ color: #818cf8; margin-bottom: 24px; font-size: 28px; }}
-        h3 {{ color: #94a3b8; margin-top: 32px; margin-bottom: 16px; text-transform: uppercase; font-size: 14px; letter-spacing: 0.1em; }}
+        h2 {{ margin-top: 0; color: #1e293b; margin-bottom: 16px; text-transform: uppercase; \
+font-size: 14px; letter-spacing: 0.1em; }}
+        h3 {{ color: #94a3b8; margin-top: 32px; margin-bottom: 16px; text-transform: uppercase; \
+font-size: 14px; letter-spacing: 0.1em; }}
         .action-card {{
-            margin-bottom: 16px; padding: 20px; background: #1e293b; 
+            margin-bottom: 16px; padding: 20px; background: #1e293b;
             border: 1px solid #334155; border-radius: 12px;
         }}
         .action-title {{ font-size: 18px; font-weight: 600; color: #f8fafc; margin-bottom: 8px; display: block; }}
@@ -815,7 +873,7 @@ def build_tactical_html(brand, llm_data):
     html += render_sec("Immediate", tap.get("immediate", []))
     html += render_sec("One Week", tap.get("one_week", []))
     html += render_sec("One Month", tap.get("one_month", []))
-    
+
     html += """
     </div>
     <script>
@@ -829,8 +887,8 @@ def build_tactical_html(brand, llm_data):
 
         try {
             const content = document.getElementById("pdfContent");
-            const canvas = await html2canvas(content, { 
-                scale: 1.5, 
+            const canvas = await html2canvas(content, {
+                scale: 1.5,
                 backgroundColor: '#0f172a',
                 useCORS: true,
                 allowTaint: true,
@@ -857,4 +915,4 @@ def build_tactical_html(brand, llm_data):
 </html>
 """
     return html
-    
+

@@ -1,5 +1,7 @@
 import re
+
 from rest_framework.exceptions import ValidationError
+
 
 def validate_phone_number(value):
     """Universal validator for phone numbers."""

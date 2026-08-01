@@ -1,7 +1,10 @@
-from pathlib import Path
-from dotenv import load_dotenv
 import os
+from datetime import timedelta
+from pathlib import Path
+
 from corsheaders.defaults import default_headers
+from django.core.exceptions import ImproperlyConfigured
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -11,6 +14,23 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
+
+# ============================================================================
+# Advanced Security Configurations
+# ============================================================================
+
+if not DEBUG and (not SECRET_KEY or SECRET_KEY == 'django-insecure-very-secret-key-change-this'):  # noqa: S105
+    raise ImproperlyConfigured("You must set a strong, unique SECRET_KEY in production!")
+
+SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "False") == "True"
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "False") == "True"
+CSRF_COOKIE_SECURE = os.getenv("CSRF_COOKIE_SECURE", "False") == "True"
+SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", 0))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+
+# Required if Django is behind a reverse proxy (Nginx, AWS ALB, etc.)
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -23,11 +43,11 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_filters',
     'drf_spectacular',
-    
+
     # Global Utilities
     'shared',
     'scripts',
-    
+
     # Core Cloud
     'core.analytics',
     'core.authentication',
@@ -35,7 +55,7 @@ INSTALLED_APPS = [
     'core.llm_providers',
     'core.organizations',
     'core.users',
-    
+
     # Experience Cloud
     'experience_cloud.analytics',
     'experience_cloud.api_provider',
@@ -44,7 +64,7 @@ INSTALLED_APPS = [
     'experience_cloud.json_generator',
     'experience_cloud.market_data',
     'experience_cloud.market_integrations',
-    
+
     # Identity & Media Clouds (Roots)
     'identity_cloud',
     'media_cloud',
@@ -53,7 +73,7 @@ INSTALLED_APPS = [
 ]
 
 REST_FRAMEWORK = {
-    "DEFAULT_PAGINATION_CLASS": "shared.pagination.StandardResultsSetPagination",
+    "DEFAULT_PAGINATION_CLASS": "shared.pagination.EnterpriseOffsetPagination",
     "PAGE_SIZE": 20,
     "DEFAULT_RENDERER_CLASSES": (
         "shared.response.StandardJSONRenderer",
@@ -78,7 +98,8 @@ REST_FRAMEWORK = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:4200",
 ]
-CORS_ALLOW_HEADERS = list(default_headers) + [
+CORS_ALLOW_HEADERS = [
+    *list(default_headers),
     "noauth",
 ]
 
@@ -86,7 +107,6 @@ CORS_EXPOSE_HEADERS = [
     "Content-Disposition",
 ]
 
-from datetime import timedelta
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),

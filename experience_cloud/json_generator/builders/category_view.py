@@ -1,17 +1,15 @@
-from experience_cloud.json_generator.schemas import RegionDataSchema
-from experience_cloud.json_generator.utils import ItemGenerator
-from typing import List, Dict, Optional, Any, Union
-from experience_cloud.json_generator.decorators import handle_builder_exceptions
 import logging
-
-from experience_cloud.json_generator.utils import match_brand
 import re
+
+from experience_cloud.json_generator.decorators import handle_builder_exceptions
+from experience_cloud.json_generator.schemas import RegionDataSchema
+from experience_cloud.json_generator.utils import ItemGenerator, match_brand
 
 logger = logging.getLogger(__name__)
 
 
-def build_brand_stats(matched_products: list, brand: str) -> Optional[dict]:
-
+def build_brand_stats(matched_products: list, brand: str) -> dict | None:
+    """Build high level metrics for a brand."""
     total_price = 0
     price_count = 0
     total_discount = 0
@@ -20,10 +18,10 @@ def build_brand_stats(matched_products: list, brand: str) -> Optional[dict]:
     rating_count = 0
     total_reviews = 0
     total_videos = 0
-    
+
     if not matched_products:
         return None
-        
+
     for p in matched_products:
         if p.selling_price:
             total_price += p.selling_price
@@ -50,6 +48,7 @@ def build_brand_stats(matched_products: list, brand: str) -> Optional[dict]:
     }
 
 def platform_health_by_brand(matched_products: list, brand: str, platforms: list) -> list:
+    """Calculate platform health split for a brand."""
     stats = {
         p: {"total": 0, "count": 0}
         for p in platforms
@@ -74,12 +73,13 @@ def platform_health_by_brand(matched_products: list, brand: str, platforms: list
 
 
 def build_availability_by_brand(brand_products_map: dict, brands: list) -> list:
+    """Aggregate availability metrics per brand."""
     result = []
     for brand in brands:
         matched_products = brand_products_map.get(brand, [])
         if not matched_products:
             continue
-            
+
         available_count = 0
         unavailable_count = 0
         for p in matched_products:
@@ -88,7 +88,7 @@ def build_availability_by_brand(brand_products_map: dict, brands: list) -> list:
                 available_count += 1
             else:
                 unavailable_count += 1
-                
+
         result.append({
             "Brand": brand,
             "SKU": str(available_count),
@@ -98,22 +98,23 @@ def build_availability_by_brand(brand_products_map: dict, brands: list) -> list:
 
 
 def build_category_data(brand_products_map: dict, brands: list) -> list:
+    """Build the category array structure for the final JSON."""
     result = []
     total_skus = 0
     total_live = 0
     total_health = 0
     total_health_count = 0
-    
+
     for brand in brands:
         matched_products = brand_products_map.get(brand, [])
         if not matched_products:
             continue
-            
+
         sku_count = 0
         live_count = 0
         health_sum = 0
         health_count = 0
-        
+
         for p in matched_products:
             sku_count += 1
             # Availability
@@ -123,7 +124,7 @@ def build_category_data(brand_products_map: dict, brands: list) -> list:
             score = p.health_score()
             health_sum += score
             health_count += 1
-            
+
         live_percent = round((live_count / sku_count) * 100) if sku_count else 0
         avg_health = round(health_sum / health_count) if health_count else 0
         result.append({
@@ -139,7 +140,7 @@ def build_category_data(brand_products_map: dict, brands: list) -> list:
         total_live += live_count
         total_health += health_sum
         total_health_count += health_count
-        
+
     # ---------- CATEGORY SUMMARY ROW ----------
     category_live_percent = round((total_live / total_skus) * 100) if total_skus else 0
     category_avg_health = round(total_health / total_health_count) if total_health_count else 0
@@ -157,7 +158,7 @@ def build_category_data(brand_products_map: dict, brands: list) -> list:
 
 
 
-def prepare_topkeywords(keywords: list, products: ItemGenerator) -> list:
+def prepare_topkeywords(keywords: list, products: ItemGenerator | None) -> list:
     """Compute top 5 keywords from `keywords` (ordered list).
 
     Ranking metric: total occurrences across product `title`, `description`, and `bullets`.
@@ -166,7 +167,7 @@ def prepare_topkeywords(keywords: list, products: ItemGenerator) -> list:
     """
     if not keywords:
         return []
-        
+
     # Pre-parse all products into sets of words (O(P) regex operations instead of O(P * K))
     product_word_sets = []
     for p in products or []:
@@ -178,9 +179,9 @@ def prepare_topkeywords(keywords: list, products: ItemGenerator) -> list:
             product_words = set(re.findall(r'\w+', combined))
             if product_words:
                 product_word_sets.append(product_words)
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             continue
-            
+
     # Pre-parse keywords
     kw_word_lists = []
     for kw in keywords:
@@ -188,7 +189,7 @@ def prepare_topkeywords(keywords: list, products: ItemGenerator) -> list:
             kw_words = re.findall(r'\w+', kw.lower())
             if kw_words:
                 kw_word_lists.append((kw, kw_words))
-            
+
     counts = []
     for idx, (kw, kw_words) in enumerate(kw_word_lists):
         # O(1) hash set lookup
@@ -209,34 +210,37 @@ def prepare_topkeywords(keywords: list, products: ItemGenerator) -> list:
 
 
 @handle_builder_exceptions
-def category_view_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
+def category_view_builder(
+    region_data: RegionDataSchema, task, products=None, template="template-name"
+) -> tuple[bool, dict]:
+    """Construct the JSON payload for the Category View dashboard.
+
+    Aggregates top-level catalog health, keyword frequency, platform-specific availability,
+    and competitor brand metrics into a unified summary payload.
+    """
     brands = region_data.get("display_brands", [])
-    keywords = region_data.get("keywords", [])
-    brand_id = region_data.get("brand_id")
-    brand_name = region_data.get("brand_name")
-    
-    """Build category view JSON and save."""
     t_id = getattr(task, 'id', 'unknown')
     logger.info(f"Starting CATEGORY_VIEW JSON build for task {t_id}")
-    
+
     # Extract platforms directly from region_data schema
     platform_schemas = region_data.get("platforms", {})
-        
+
     platform_codes = list(platform_schemas.keys())
     platform_names = [p.get("platform_name") for p in platform_schemas.values()]
-    
+
     top_brands = []
     datasets = []
-    
+
     # O(P*B) Grouping exactly once rather than looping in every aggregator
-    brand_products_map = {b: [] for b in brands}
-    for p in products:
-        if not p.brand: continue
+    brand_products_map: dict[str, list] = {b: [] for b in brands}
+    for p in (products or []):
+        if not p.brand:
+            continue
         for b in brands:
             if match_brand(b, p.brand):
                 brand_products_map[b].append(p)
                 break
-    
+
     for brand in brands:
         matched_products = brand_products_map.get(brand, [])
         health_scores = platform_health_by_brand(matched_products, brand, platform_codes)
@@ -258,7 +262,7 @@ def category_view_builder(region_data: RegionDataSchema, task, products=None, te
             "datasets": datasets
         },
         "Top Keywords": top_keywords,
-        "Top Brands": top_brands,   
+        "Top Brands": top_brands,
     }
     logger.info(f"Completed CATEGORY_VIEW JSON build for task {t_id}")
     return False, payload

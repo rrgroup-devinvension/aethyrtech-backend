@@ -1,11 +1,13 @@
-from core.authentication.permissions import AppPermissions
 import logging
+from typing import ClassVar
+
 from drf_spectacular.utils import extend_schema, extend_schema_view
-from rest_framework import status
-from rest_framework.response import Response
+
+from core.authentication.permissions import AppPermissions
 from shared.base.views import BaseViewSet
+
 from .models import Category
-from .serializers import CategorySerializer, CategoryDetailSerializer
+from .serializers import CategoryDetailSerializer, CategorySerializer
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +20,12 @@ logger = logging.getLogger(__name__)
     destroy=extend_schema(summary="Delete Category")
 )
 class CategoryViewSet(BaseViewSet):
-    action_permission_mapping = {
+    """ViewSet for managing categories.
+
+    Provides standard CRUD operations for the Category model and custom routing
+    for managing related entities like pincodes and keywords.
+    """
+    action_permission_mapping: ClassVar[dict[str, str]] = {
         'pincodes': AppPermissions.READ_CATEGORIES,
         'pincodes/add': AppPermissions.UPDATE_CATEGORY,
         'pincodes/update/(?P<pincode_id>[^/.]+)': AppPermissions.UPDATE_CATEGORY,
@@ -35,7 +42,7 @@ class CategoryViewSet(BaseViewSet):
     }
 
     organization_field = None
-    permission_mapping = {
+    permission_mapping: ClassVar[dict[str, str]] = {
         'GET': AppPermissions.READ_CATEGORIES,
         'POST': AppPermissions.CREATE_CATEGORY,
         'PUT': AppPermissions.UPDATE_CATEGORY,
@@ -48,15 +55,22 @@ class CategoryViewSet(BaseViewSet):
     ordering_fields = ('name', 'created_at', 'updated_at')
 
     def get_serializer_class(self):
+        """Dynamically determine the serializer class based on the action.
+
+        Uses CategoryDetailSerializer for retrieving a single category,
+        and CategorySerializer for listing and writing.
+        """
         if self.action == 'retrieve':
             return CategoryDetailSerializer
         return CategorySerializer
 
     def perform_create(self, serializer):
+        """Save the new category."""
         logger.info("Creating a new category")
-        serializer.save(created_by=self.request.user)
+        serializer.save()
 
     def perform_update(self, serializer):
+        """Save the updated category."""
         logger.info(f"Updating category {self.get_object().id}")
-        serializer.save(updated_by=self.request.user)
+        serializer.save()
 

@@ -1,97 +1,115 @@
-from typing import List, Optional, Any, Dict
+from dataclasses import dataclass, field
+from typing import Any
+from datetime import date
+
 from typing_extensions import TypedDict
-from experience_cloud.json_generator.utils import parse_metric, parse_float, parse_price, parse_array, to_list, split_path, normalize_availability
+
+from experience_cloud.json_generator.utils import (
+    normalize_availability,
+    parse_array,
+    parse_float,
+    parse_metric,
+    parse_price,
+    split_path,
+    to_list,
+)
+
 
 class SimpleItem(TypedDict):
+    """Simple dictionary representation of an item."""
     id: int
     name: str
 
 class LocationItem(TypedDict):
-    pincode: Optional[str]
-    location: Optional[str]
-    lat: Optional[float]
-    lng: Optional[float]
+    """Dictionary representation of a location's coordinates and details."""
+    pincode: str | None
+    location: str | None
+    lat: float | None
+    lng: float | None
 
 class PlatformSchema(TypedDict):
+    """Schema for platform and API provider mappings."""
     platform_name: str
     platform_id: int
     platform_code: str
     api_provider_name: str
     api_provider_code: str
     api_provider_id: int
-    keywords: List[SimpleItem]
-    locations: List[LocationItem]
+    keywords: list[SimpleItem]
+    locations: list[LocationItem]
 
 class RegionDataSchema(TypedDict):
+    """Aggregated region data used during JSON generation."""
     brand_name: str
     brand_id: int
     region_name: str
     region_id: int
-    brands: Dict[str, List[str]]
-    display_brands: List[str]
-    platforms: Dict[str, PlatformSchema]
-    keywords: List[SimpleItem]
-    locations: List[LocationItem]
-    display_locations: List[str]
-    display_keywords: List[str]
-    display_platforms: List[str]
+    brands: dict[str, list[str]]
+    display_brands: list[str]
+    platforms: dict[str, PlatformSchema]
+    keywords: list[SimpleItem]
+    locations: list[LocationItem]
+    display_locations: list[str]
+    display_keywords: list[str]
+    display_platforms: list[str]
 
 
-from dataclasses import dataclass, field
 
 @dataclass
 class ProductSchema:
+    """Standardized representation of a product across platforms."""
     # Core
-    scraped_date: Optional[str] = None
-    scraper_id: Optional[str] = None
-    keywords: List[str] = field(default_factory=list)
-    target_keyword: Optional[str] = None
-    id: Optional[str] = None
-    uid: Optional[str] = None
-    platform_type: Optional[str] = None
-    platform: Optional[str] = None
-    brand: Optional[str] = None
-    title: Optional[str] = None
-    description: Optional[str] = None
-    category: Optional[str] = None
-    sub_category_1: Optional[str] = None
-    sub_category_2: Optional[str] = None
-    sub_category_3: Optional[str] = None
-    sub_category_4: Optional[str] = None
-    availability: Optional[str] = None
-    availability_status: Optional[str] = None
-    product_url: Optional[str] = None
-    status: Optional[str] = None
-    platform_assured: Optional[bool] = None
+    scraped_date: date | None = None
+    scraper_id: int | str | None = None
+    keywords: list[str] = field(default_factory=list)
+    target_keyword: str | None = None
+    id: str | None = None
+    uid: str | None = None
+    platform_type: str | None = None
+    platform: str | None = None
+    brand: str | None = None
+    title: str | None = None
+    description: str | None = None
+    category: str | None = None
+    sub_category_1: str | None = None
+    sub_category_2: str | None = None
+    sub_category_3: str | None = None
+    sub_category_4: str | None = None
+    availability: str | None = None
+    availability_status: str | None = None
+    product_url: str | None = None
+    status: int | str | None = None
+    platform_assured: str | bool | None = None
 
     # Price
-    market_price: Optional[float] = None
-    selling_price: Optional[float] = None
-    discount_price: Optional[float] = None
-    discount_percentage: Optional[float] = None
+    market_price: float | None = None
+    selling_price: float | None = None
+    discount_price: float | None = None
+    discount_percentage: float | None = None
 
     # Rating
-    rating_value: Optional[float] = None
+    rating_value: float | None = None
     review_count: int = 0
 
     # Media
-    image_urls: List[str] = field(default_factory=list)
-    video_urls: List[str] = field(default_factory=list)
+    image_urls: list[str] = field(default_factory=list)
+    video_urls: list[str] = field(default_factory=list)
     image_count: int = 0
     video_count: int = 0
-    main_image: Optional[str] = None
-    thumbnail: Optional[str] = None
+    main_image: str | None = None
+    thumbnail: str | None = None
 
     # Detail data
-    model: Optional[str] = None
-    manufacturer_part: Optional[str] = None
-    sold_by: Optional[str] = None
-    shipped_by: Optional[str] = None
-    bullets: List[str] = field(default_factory=list)
-    rankings: Dict[str, Any] = field(default_factory=dict)
-    reviews: List[Dict[str, Any]] = field(default_factory=list)
+    model: str | None = None
+    manufacturer_part: str | None = None
+    sold_by: str | None = None
+    shipped_by: str | None = None
+    bullets: list[str] = field(default_factory=list)
+    rankings: dict[str, Any] = field(default_factory=dict)
+    reviews: list[dict[str, Any]] = field(default_factory=list)
 
     def reset(self) -> 'ProductSchema':
+        """Reset all product attributes to their default values."""
         # Core
         self.scraped_date = None
         self.scraper_id = None
@@ -139,12 +157,16 @@ class ProductSchema:
         self.reviews = []
         return self
 
-    def set_basic(self, uid: Optional[str] = None, keywords: Optional[List[str]] = None, status: Optional[int] = None, target_keyword: Optional[str] = None,
-                  platform: Optional[str] = None, brand: Optional[str] = None, title: Optional[str] = None, description: Optional[str] = None,
-                  product_url: Optional[str] = None, platform_type: Optional[str] = None, scraped_date: Optional[str] = None,
-                  scraper_id: Optional[int] = None, platform_assured: Optional[str] = None) -> 'ProductSchema':
+    def set_basic(
+        self, uid: str | None = None, keywords: list[str] | None = None, status: int | None = None,
+        target_keyword: str | None = None, platform: str | None = None, brand: str | None = None,
+        title: str | None = None, description: str | None = None, product_url: str | None = None,
+        platform_type: str | None = None, scraped_date: date | None = None,
+        scraper_id: int | None = None, is_competitor_brand: bool = False, platform_assured: str | None = None
+    ) -> 'ProductSchema':
+        """Set the basic information for the product."""
         self.uid = uid
-        self.keywords = keywords
+        self.keywords = keywords or []
         self.status = status
         self.target_keyword = target_keyword
         self.platform = platform
@@ -159,6 +181,7 @@ class ProductSchema:
         return self
 
     def set_price(self, mrp: Any, sale: Any) -> 'ProductSchema':
+        """Set the product pricing."""
         self.market_price = parse_price(mrp)
         self.selling_price = parse_price(sale)
         # Offer price logic
@@ -173,23 +196,29 @@ class ProductSchema:
         return self
 
     def set_rating_direct(self, value: Any, count: Any) -> 'ProductSchema':
+        """Set the rating value and review count directly."""
         self.rating_value = parse_float(value)
         self.review_count = parse_metric(count)
         return self
-    
-    def set_reviews(self, reviews: List[dict]) -> 'ProductSchema':
+
+    def set_reviews(self, reviews: list[dict]) -> 'ProductSchema':
+        """Set the product reviews."""
         self.reviews = reviews or []
         return self
 
-    def set_media(self, images: Any = None, videos: Any = None, thumbnail: Optional[str] = None, main_image: Optional[str] = None, image_count: Optional[int] = None, video_count: Optional[int] = None) -> 'ProductSchema':
+    def set_media(
+        self, images: Any = None, videos: Any = None, thumbnail: str | None = None,
+        main_image: str | None = None, image_count: int | None = None, video_count: int | None = None
+    ) -> 'ProductSchema':
+        """Set the product media assets."""
         self.image_urls = parse_array(images) or []
         self.video_urls = parse_array(videos) or []
         self.thumbnail = thumbnail
         self.main_image = main_image
-        if main_image==None and self.image_urls and len(self.image_urls)>0:
+        if main_image is None and self.image_urls and len(self.image_urls)>0:
             self.main_image = self.image_urls[0]
             self.thumbnail = self.image_urls[0]
-        if thumbnail==None and self.image_urls and len(self.image_urls)>1:
+        if thumbnail is None and self.image_urls and len(self.image_urls)>1:
             self.thumbnail = self.image_urls[1]
         if image_count:
             self.image_count = image_count
@@ -200,12 +229,17 @@ class ProductSchema:
         else:
             self.video_count = len(self.video_urls)
         return self
-    
+
     def set_bullets(self, bullets: Any) -> 'ProductSchema':
+        """Set the product bullet points."""
         self.bullets = to_list(bullets)
         return self
 
-    def set_detail(self, model: Optional[str] = None, manufacturer_part: Optional[str] = None, sold_by: Optional[str] = None, shipped_by: Optional[str] = None) -> 'ProductSchema':
+    def set_detail(
+        self, model: str | None = None, manufacturer_part: str | None = None,
+        sold_by: str | None = None, shipped_by: str | None = None
+    ) -> 'ProductSchema':
+        """Set detailed information about the product."""
         self.model=model
         self.manufacturer_part=manufacturer_part
         self.sold_by=sold_by
@@ -213,6 +247,7 @@ class ProductSchema:
         return self
 
     def set_category(self, category: Any) -> 'ProductSchema':
+        """Set the product category based on a path or list."""
         values = split_path(category)
         self.category = None
         self.sub_category_1 = None
@@ -234,17 +269,20 @@ class ProductSchema:
             self.sub_category_4 = subs[3]
         return self
     def set_rankings(self, rankings: dict) -> 'ProductSchema':
+        """Set the product rankings."""
         self.rankings = rankings or {}
         return self
-    
-    def set_availability(self, availability: Any) -> Optional[str]:
+
+    def set_availability(self, availability: Any) -> str | None:
+        """Set the availability status and return the normalized value."""
         self.availability = availability
         temp = normalize_availability(availability)
         self.availability_status = temp or "Available"
         return temp
-    
+
     def health_score(self) -> float:
-        score = 0
+        """Calculate the overall health score of the product."""
+        score: float = 0.0
         score += self.image_score()*0.10
         score += self.video_score()*0.05
         score += self.title_score()*0.15
@@ -261,9 +299,11 @@ class ProductSchema:
         return score
 
     def gallery_score(self) -> float:
+        """Calculate the gallery score (average of image and video scores)."""
         return (self.image_score() + self.video_score())/2
-    
+
     def image_score(self) -> float:
+        """Calculate the score based on the number of images."""
         count = self.image_count or 0
         score_value = 0
         if count == 0:
@@ -274,17 +314,16 @@ class ProductSchema:
             score_value =  60
         score_value =  100
         return score_value
-    
+
     def video_score(self) -> float:
+        """Calculate the score based on the number of videos."""
         count = self.video_count or 0
         score_value = 0
-        if count >= 1:
-            score_value = 100
-        else:
-            score_value = 0
+        score_value = 100 if count >= 1 else 0
         return score_value
 
     def title_score(self) -> float:
+        """Calculate the score based on the title length."""
         title_len = len(self.title.strip()) if self.title else 0
         score_value = 0
         if title_len < 60:
@@ -296,8 +335,9 @@ class ProductSchema:
         else:  # > 100 characters
             score_value = 80
         return score_value
-    
+
     def description_score(self) -> float:
+        """Calculate the content score for the product description."""
         desc = self.description.strip() if hasattr(self, "description") and self.description else ""
         word_count = len(desc.split()) if desc else 0
         score_value = 0
@@ -310,8 +350,9 @@ class ProductSchema:
         else:  # > 300 words
             score_value = 80
         return score_value
-    
+
     def review_count_score(self) -> float:
+        """Calculate the score based on the number of reviews."""
         count = self.review_count or 0
         score_value = 0
         if count < 10:
@@ -323,8 +364,9 @@ class ProductSchema:
         else:  # >= 50 reviews
             score_value = 100
         return score_value
-    
+
     def rating_score(self) -> float:
+        """Calculate the score based on the product rating."""
         rating = self.rating_value or 0
         score_value = 0
         if rating < 3.5:
@@ -336,12 +378,10 @@ class ProductSchema:
         else:  # >= 4.2
             score_value = 100
         return score_value
-    
+
     def bullets_score(self) -> float:
-        if self.bullets and isinstance(self.bullets, list):
-            text = " ".join(self.bullets)
-        else:
-            text = ""
+        """Calculate the content score for the product bullet points."""
+        text = " ".join(self.bullets) if self.bullets and isinstance(self.bullets, list) else ""
         word_count = len(text.split()) if text else 0
         score_value = 0
         if word_count < 50:
@@ -353,36 +393,31 @@ class ProductSchema:
         else:  # > 300 words
             score_value = 80
         return score_value
-    
+
     def discount_score(self) -> float:
-        if self.discount_price and self.discount_price > 0:
-            score_value = 100
-        else:
-            score_value = 0
+        """Calculate the score based on whether the product has a discount."""
+        score_value = 100 if self.discount_price and self.discount_price > 0 else 0
         return score_value
-    
+
     def availability_score(self) -> float:
+        """Calculate the score based on product availability."""
         if not self.availability:
             return 0
-        value = str(self.availability).strip().lower()
+        value = self.availability.strip().lower()
         available_keywords = { "in stock", "available", "yes", "true", "1", "instock"}
-        if value in available_keywords:
-            score_value = 100
-        else:
-            score_value = 0
+        score_value = 100 if value in available_keywords else 0
         return score_value
-    
+
     def flipkart_assured_score(self) -> float:
+        """Calculate the score for Flipkart Assured or similar platform guarantees."""
         if not hasattr(self, "platform_assured") or not self.platform_assured:
             return 0
         value = str(self.platform_assured).strip().lower()
-        if str(value).strip().lower() == "yes" and str(self.platform).strip().lower() == "flipkart":
-            score_value = 100
-        else:
-            score_value = 0
+        score_value = 100 if value == "yes" and self.platform and self.platform.strip().lower() == "flipkart" else 0
         return score_value
-    
+
     def keyword_density_score(self) -> float:
+        """Calculate the score based on keyword density in the title and description."""
         if not self.keywords or len(self.keywords) == 0:
             return 0
         title_text = self.title.lower() if self.title else ""
@@ -403,8 +438,9 @@ class ProductSchema:
             score_value = 100
         return score_value
 
-    def to_catalog_json(self, brand_name: str, is_competitor: bool = False) -> dict:
-        base = {
+    def to_catalog_json(self, brand_name: str, is_competitor: bool = False) -> dict[str, Any]:
+        """Convert the schema to a dictionary for catalog JSON generation."""
+        base: dict[str, Any] = {
             "id": self.id,
             "scraped_date": self.scraped_date,
             "scraper_id": self.scraper_id,

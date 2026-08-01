@@ -1,58 +1,65 @@
+import json
 import logging
 import os
-import json
+
 from django.conf import settings
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.exceptions import NotFound, APIException
 from drf_spectacular.utils import extend_schema
-from core.organizations.models import Region, Brand
+from rest_framework.exceptions import APIException, NotFound
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from core.llm_providers.services.llm_service import LLMService
+from core.organizations.models import Brand, Region
 from core.users.models import User
 from experience_cloud.json_generator.models import RegionJsonFile
-from core.llm_providers.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
 
 class RegionBaseDataView(APIView):
-    """Base view for fetching region-specific JSON analytics."""
+    """Base API view providing utility methods to fetch region-specific JSON analytics files from the disk."""
+    from shared.serializers import EmptySerializer
+    serializer_class = EmptySerializer
     def get_region_or_404(self, region_id):
+        """Retrieve a Region object by its primary key, or return None if it does not exist."""
         try:
             return Region.objects.get(id=region_id)
         except Region.DoesNotExist:
             return None
 
     def fetch_analytics_data(self, region, template_slug):
-        """
-        Fetches the JSON payload from the disk for the given region and template.
-        """
+        """Locate, read, and parse the most recent JSON payload file for a specific region and template."""
         try:
             rjf = RegionJsonFile.objects.filter(region=region, template__template=template_slug).latest("created_at")
-        except RegionJsonFile.DoesNotExist:
-            raise NotFound(detail=f"Data not available for region {region.id} and template {template_slug}")
+        except RegionJsonFile.DoesNotExist as e:
+            raise NotFound(detail=f"Data not available for region {region.id} and template {template_slug}") from e
 
         if not rjf.file_path:
             raise NotFound(detail=f"File path missing for region {region.id} and template {template_slug}")
 
-        full_path = os.path.join(settings.MEDIA_ROOT, rjf.file_path)
-        
+        full_path = os.path.join(str(settings.MEDIA_ROOT), str(rjf.file_path))
+
         try:
-            with open(full_path, 'r', encoding='utf-8') as f:
+            with open(full_path, encoding='utf-8') as f:
                 return json.load(f)
-        except FileNotFoundError:
-            raise NotFound(detail=f"File not found on disk: {full_path}")
+        except FileNotFoundError as e:
+            raise NotFound(detail=f"File not found on disk: {full_path}") from e
         except UnicodeDecodeError as e:
-            raise APIException(detail=f"Encoding error: {str(e)}")
+            raise APIException(detail=f"Encoding error: {e!s}") from e
         except json.JSONDecodeError as e:
-            raise APIException(detail=f"JSON error: {str(e)}")
+            raise APIException(detail=f"JSON error: {e!s}") from e
 
 
 class DashboardDataView(APIView):
-    """Global dashboard data (not region-specific)."""
+    """API view for retrieving high-level global dashboard metrics."""
+    from shared.serializers import EmptySerializer
+    serializer_class = EmptySerializer
+
     @extend_schema(summary="Get Global Dashboard Data", tags=["Global Analytics"])
     def get(self, request):
+        """Retrieve aggregated global platform statistics like total users and brands."""
         users_count = User.objects.count()
         brands_count = Brand.objects.count()
-        
+
         return Response({
             "brands_count": brands_count,
             "users_count": users_count,
@@ -61,8 +68,10 @@ class DashboardDataView(APIView):
 
 
 class RegionDashboardDataView(RegionBaseDataView):
+    """API view for retrieving top-level analytics tailored to a specific region's dashboard."""
     @extend_schema(summary="Get Region Dashboard Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
+        """Handle GET request."""
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
@@ -70,20 +79,25 @@ class RegionDashboardDataView(RegionBaseDataView):
 
 
 class InsightsDataView(RegionBaseDataView):
+    """API view for retrieving actionable insights and risk data for a specific region."""
     @extend_schema(summary="Get Insights Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
+        """Handle GET request."""
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
         return Response({
+            "brand_name": region.brand.name,
             "dashboard": self.fetch_analytics_data(region, "risk_data"),
             "insights": self.fetch_analytics_data(region, "insights")
         }, status=200)
 
 
 class DashboardPositiveDataView(RegionBaseDataView):
+    """API view for retrieving positive performance indicators for a specific region."""
     @extend_schema(summary="Get Positive Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
+        """Handle GET request."""
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
@@ -91,8 +105,10 @@ class DashboardPositiveDataView(RegionBaseDataView):
 
 
 class CROBarriersDataView(RegionBaseDataView):
+    """API view for retrieving Conversion Rate Optimization (CRO) barriers graph data."""
     @extend_schema(summary="Get CRO Barriers Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
+        """Handle GET request."""
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
@@ -100,8 +116,10 @@ class CROBarriersDataView(RegionBaseDataView):
 
 
 class PlpInsightsDataView(RegionBaseDataView):
+    """API view for retrieving Product Listing Page (PLP) insights."""
     @extend_schema(summary="Get PLP Insights Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
+        """Handle GET request."""
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
@@ -109,8 +127,10 @@ class PlpInsightsDataView(RegionBaseDataView):
 
 
 class IncentiveInsightsDataView(RegionBaseDataView):
+    """API view for retrieving pricing and promotional incentive insights."""
     @extend_schema(summary="Get Incentive Insights Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
+        """Handle GET request."""
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
@@ -118,8 +138,10 @@ class IncentiveInsightsDataView(RegionBaseDataView):
 
 
 class PdpInsightsDataView(RegionBaseDataView):
+    """API view for retrieving Product Detail Page (PDP) insights."""
     @extend_schema(summary="Get PDP Insights Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
+        """Handle GET request."""
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
@@ -127,8 +149,10 @@ class PdpInsightsDataView(RegionBaseDataView):
 
 
 class ReviewsInsightsDataView(RegionBaseDataView):
+    """API view for retrieving customer review insights and sentiment analysis."""
     @extend_schema(summary="Get Reviews Insights Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
+        """Handle GET request."""
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
@@ -136,8 +160,10 @@ class ReviewsInsightsDataView(RegionBaseDataView):
 
 
 class CategoryDataView(RegionBaseDataView):
+    """API view for retrieving category-level performance views."""
     @extend_schema(summary="Get Category Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
+        """Handle GET request."""
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
@@ -145,8 +171,10 @@ class CategoryDataView(RegionBaseDataView):
 
 
 class BrandAuditDataView(RegionBaseDataView):
+    """API view for retrieving comprehensive brand audit metrics across categories."""
     @extend_schema(summary="Get Brand Audit Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
+        """Handle GET request."""
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
@@ -157,8 +185,10 @@ class BrandAuditDataView(RegionBaseDataView):
 
 
 class ContentInsightsDataView(RegionBaseDataView):
+    """API view for retrieving insights on content effectiveness and completeness."""
     @extend_schema(summary="Get Content Insights Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
+        """Handle GET request."""
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
@@ -166,62 +196,68 @@ class ContentInsightsDataView(RegionBaseDataView):
 
 
 class ProductCatalogDataView(RegionBaseDataView):
+    """API view for retrieving the raw product catalog data for a specific region."""
     @extend_schema(summary="Get Product Catalog Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
+        """Handle GET request."""
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
-        
+
         sub_type = (request.query_params.get("id") or "")
         catalog_data = self.fetch_analytics_data(region, "catalog")
-        
+
         if not sub_type:
-            raise NotFound(detail=f"Catalog filter 'id' not provided")
-            
+            raise NotFound(detail="Catalog filter 'id' not provided")
+
         catalog_response = catalog_data.get(sub_type, "")
         return Response(catalog_response, status=200)
 
 
 class CatalogDetailView(RegionBaseDataView):
+    """API view for retrieving highly detailed information and keywords for a specific product."""
     @extend_schema(summary="Get Catalog Detail Data", tags=["Region Analytics"])
     def get(self, request, region_id: int, product_id: str):
+        """Handle GET request."""
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
-            
+
         products_data = self.fetch_analytics_data(region, "catalog")
-        
+
         # Legacy assumed brand name as the top-level key. Verify this matches the new structure.
         brand_name = region.brand.name
         brand_data = products_data.get(brand_name)
         if not brand_data:
             raise NotFound(detail=f"Catalog data not found for brand {brand_name}")
-            
-        product_response = next((p for p in brand_data if str(p.get("id")) == str(product_id)), None)
+
+        product_response = next((p for p in brand_data if str(p.get("id")) == product_id), None)
         if not product_response:
             raise NotFound(detail=f"Product with id {product_id} not found in region {region_id} catalog")
-            
+
         keywords_data = self.fetch_analytics_data(region, "keyword_counts")
         product_title = product_response.get("product_title")
         filtered_keywords = {}
-        
+
         if keywords_data and product_title:
             for platform, products in keywords_data.items():
                 if product_title in products:
                     filtered_keywords[platform] = {
                         product_title: products[product_title]
                     }
-                    
+
         return Response({"product": product_response, "keywords": filtered_keywords}, status=200)
 
 
 class ReportsDataView(RegionBaseDataView):
+    """API view for retrieving geographical reports and pincode availability data."""
     @extend_schema(summary="Get Reports Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
+        """Handle GET request."""
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
-        
+
         # Keep backward compatibility for pincodes
         return Response({
             "reports": self.fetch_analytics_data(region, "cartesian_products_pincodes"),
@@ -235,8 +271,10 @@ class ReportsDataView(RegionBaseDataView):
 
 
 class GenerateContentView(RegionBaseDataView):
+    """API view to trigger the LLM service for generating SEO-optimized product content."""
     @extend_schema(summary="Generate Content for Product", tags=["Region Analytics"])
     def post(self, request):
+        """Handle POST request."""
         product_id = request.data.get("product_id")
         section = request.data.get("section")
         region_id = request.data.get("region_id")
@@ -288,9 +326,21 @@ Rules:
 3. Keep natural readability.
 """
         if section == "features":
-            prompt += "\nGenerate 5-6 bullet features:\n- Total words: 100-300\n- Each bullet starts with **Feature Name:**\n- Professional tone\n- Keywords integrated naturally\n"
+            prompt += (
+                "\nGenerate 5-6 bullet features:\n"
+                "- Total words: 100-300\n"
+                "- Each bullet starts with **Feature Name:**\n"
+                "- Professional tone\n"
+                "- Keywords integrated naturally\n"
+            )
         else:
-            prompt += "\nGenerate description:\n- 100-300 words\n- No bullet points\n- British English tone\n- Professional yet engaging\n"
+            prompt += (
+                "\nGenerate description:\n"
+                "- 100-300 words\n"
+                "- No bullet points\n"
+                "- British English tone\n"
+                "- Professional yet engaging\n"
+            )
 
         prompt += "\nReturn ONLY final content.\n"
 
@@ -303,13 +353,15 @@ Rules:
             brand_id=region.brand.id,
             brand_name=region.brand.name
         )
-             
+
         return Response({"content": results})
 
 
 class UpdateProductContentView(RegionBaseDataView):
+    """API view to save updated product content directly back into the region's JSON catalog file."""
     @extend_schema(summary="Update Product Content JSON", tags=["Region Analytics"])
     def post(self, request):
+        """Handle POST request."""
         product_id = request.data.get("product_id")
         region_id = request.data.get("region_id")
         section = request.data.get("section")
@@ -334,11 +386,11 @@ class UpdateProductContentView(RegionBaseDataView):
 
         try:
             rjf = RegionJsonFile.objects.filter(region=region, template__template="catalog").latest("created_at")
-            full_path = os.path.join(settings.MEDIA_ROOT, rjf.file_path)
+            full_path = os.path.join(str(settings.MEDIA_ROOT), str(rjf.file_path))
             with open(full_path, "w", encoding="utf-8") as f:
                 json.dump(catalog, f, indent=4)
         except Exception as e:
-            raise APIException(f"Failed to save JSON: {str(e)}")
+            raise APIException(f"Failed to save JSON: {e!s}") from e
 
         return Response({"success": True})
 

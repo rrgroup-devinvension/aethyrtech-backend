@@ -1,33 +1,36 @@
+# ruff: noqa: DJ001, RUF012, DJ008
 from django.db import models
 
 
 class XBytesProduct(models.Model):
-    
+    """External mapping for XBytes products."""
+
     # Core lookup fields
+    objects = models.Manager()  # type: ignore
     platform = models.CharField(max_length=50)
     keyword = models.CharField(max_length=255)
     location = models.CharField(max_length=100)
     product_uid = models.CharField(max_length=100, null=True, blank=True)
     rank = models.IntegerField(null=True, blank=True)
-    
+
     # Basic Details
-    title = models.CharField(max_length=1024, null=True, blank=True)
+    title = models.TextField(null=True, blank=True)
     brand = models.CharField(max_length=255, null=True, blank=True)
-    category = models.CharField(max_length=255, null=True, blank=True)
+    category = models.TextField(null=True, blank=True)
     description = models.TextField(null=True, blank=True)
-    
+
     # Pricing & Availability
     availability = models.CharField(max_length=100, null=True, blank=True)
     mrp = models.CharField(max_length=50, null=True, blank=True)
     sell_price = models.CharField(max_length=50, null=True, blank=True)
-    
+
     # Ratings & Reviews
     rating = models.CharField(max_length=20, null=True, blank=True)
     reviews = models.CharField(max_length=50, null=True, blank=True)
     brand_rating = models.CharField(max_length=50, null=True, blank=True)
     brand_reviews = models.CharField(max_length=50, null=True, blank=True)
     brand_review_text = models.TextField(max_length=1000, null=True, blank=True)
-    
+
     # Manufacturer & Logistics
     manufacturer = models.CharField(max_length=255, null=True, blank=True)
     manufacturer_part = models.CharField(max_length=255, null=True, blank=True)
@@ -35,29 +38,29 @@ class XBytesProduct(models.Model):
     upc_retailer_id = models.CharField(max_length=100, null=True, blank=True)
     sold_by = models.CharField(max_length=255, null=True, blank=True)
     shipped_by = models.CharField(max_length=255, null=True, blank=True)
-    
+
     # Media & URLs
     product_url = models.TextField(null=True, blank=True)
     thumbnail = models.TextField(null=True, blank=True)
     main_image = models.TextField(null=True, blank=True)
     images = models.JSONField(null=True, blank=True)
-    
+
     # Media Counts & Booleans
-    image_count = models.IntegerField(default=0)
-    video_count = models.IntegerField(default=0)
-    document_count = models.IntegerField(default=0)
-    product_view_360 = models.BooleanField(default=False)
-    
+    image_count = models.CharField(max_length=50, null=True, blank=True)
+    video_count = models.CharField(max_length=50, null=True, blank=True)
+    document_count = models.CharField(max_length=50, null=True, blank=True)
+    product_view_360 = models.CharField(max_length=50, null=True, blank=True)
+
     # Structured Data
     bullets = models.JSONField(default=list, blank=True)
     raw_data = models.JSONField(null=True, blank=True)
-    
+
     # Meta Data
     run_date = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    class Meta:
+    class Meta:  # type: ignore
         db_table = 'products'
         indexes = [
             # Core indexes
@@ -65,11 +68,11 @@ class XBytesProduct(models.Model):
             models.Index(fields=['rank'], name='idx_apidump_rank'),
             models.Index(fields=['platform', 'keyword', 'location'], name='idx_plat_key_loc'),
             models.Index(fields=['created_at'], name='idx_product_created_at'),
-            
+
             # Restored indexes for faster text searches
             models.Index(fields=['brand'], name='idx_product_brand'),
         ]
-            
+
         constraints = [
             models.UniqueConstraint(
                 fields=['platform', 'keyword', 'location', 'product_uid'],
@@ -78,6 +81,7 @@ class XBytesProduct(models.Model):
         ]
 
     def save(self, *args, **kwargs):
+        """Clean and format bullets before saving to the database."""
         # Cleans and formats the 'bullets' JSON list before hitting the database
         if not self.bullets:
             self.bullets = []
@@ -85,5 +89,5 @@ class XBytesProduct(models.Model):
             self.bullets = [self.bullets.strip()]
         elif isinstance(self.bullets, list):
             self.bullets = [b.strip() for b in self.bullets if b and isinstance(b, str) and b.strip()]
-            
+
         super().save(*args, **kwargs)

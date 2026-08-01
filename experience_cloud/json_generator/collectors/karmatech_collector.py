@@ -1,22 +1,32 @@
 import logging
-from typing import List
-from experience_cloud.json_generator.schemas import RegionDataSchema, ProductSchema
+
+from experience_cloud.json_generator.schemas import ProductSchema, RegionDataSchema
 from experience_cloud.json_generator.utils import match_brands
-from experience_cloud.market_integrations.models.karmatech import KarmatechProduct, KarmatechProductRanking, KarmatechReview
+from experience_cloud.market_integrations.models.karmatech import (
+    KarmatechProduct,
+    KarmatechProductRanking,
+    KarmatechReview,
+)
 
 logger = logging.getLogger(__name__)
 
-def get_all_karmatech_products(region_data: RegionDataSchema) -> List[ProductSchema]:
-    brands = region_data.get("brands", [])
+def get_all_karmatech_products(region_data: RegionDataSchema) -> list[ProductSchema]:
+    """Retrieve localized product data and analytics from the Karmatech primary database.
+
+    Extracts recent product metrics, keyword search rankings, and verified customer reviews
+    for authorized brand portfolios, aggressively normalizing the output into a unified list
+    of standardized ProductSchema instances.
+    """
+    brands: dict[str, list[str]] = region_data.get("brands", {})
     if not brands:
         return []
-        
+
     ctx = f"[JSON Gen Collector | Brand: {region_data.get('brand_name', 'Unknown')}]"
-    
+
     keywords_map = {}
     for plat_code, plat in region_data.get("platforms", {}).items():
         if plat_code:
-            keywords_map[plat_code] = [kw.get("name") for kw in plat.get("keywords", [])]
+            keywords_map[plat_code] = [kw["name"] for kw in plat.get("keywords", []) if kw.get("name")]
 
     # Find the latest scraper_id
     latest_product = KarmatechProduct.objects.filter(brand__in=brands).order_by('-scraper_id').first()
@@ -25,6 +35,15 @@ def get_all_karmatech_products(region_data: RegionDataSchema) -> List[ProductSch
 
     scraper_id = latest_product.scraper_id
     scraped_date = latest_product.scraped_date
+    if scraped_date:
+        from datetime import datetime
+        if isinstance(scraped_date, str):
+            try:
+                scraped_date = datetime.strptime(scraped_date[:10], "%Y-%m-%d").date()
+            except ValueError:
+                scraped_date = None
+        elif isinstance(scraped_date, datetime):
+            scraped_date = scraped_date.date()
 
     products = KarmatechProduct.objects.filter(scraper_id=scraper_id, brand__in=brands)
     if not products.exists():
@@ -35,34 +54,34 @@ def get_all_karmatech_products(region_data: RegionDataSchema) -> List[ProductSch
     rankings_qs = KarmatechProductRanking.objects.select_related('keyword').filter(sku__in=skus, scraper_id=scraper_id)
     reviews_qs = KarmatechReview.objects.filter(sku__in=skus)
 
-    ranking_map = {}
+    ranking_map: dict[str, list[dict]] = {}
     for r in rankings_qs:
         ranking_entry = {
             "platform": r.platform,
-            "keyword": r.keyword.keyword if r.keyword else None,
+            "keyword": getattr(r.keyword, "keyword", None),
             "rank": r.position,
             "page": r.page
         }
         ranking_map.setdefault(r.sku, []).append(ranking_entry)
 
-    review_map = {}
-    for r in reviews_qs:
+    review_map: dict[str, list[dict]] = {}
+    for rev in reviews_qs:
         review_entry = {
-            "id": r.id,
-            "product_id": r.product_id,
-            "sku": r.sku,
-            "platform": r.platform,
-            "review_id": r.review_id,
-            "reviewer_name": r.reviewer_name,
-            "rating": float(r.rating) if r.rating else 0,
-            "review_title": r.review_title,
-            "review_text": r.review_text,
-            "review_date": r.review_date,
-            "verified_purchase": r.verified_purchase,
-            "helpful_count": r.helpful_count,
-            "review_images": r.review_images if r.review_images else []
+            "id": rev.id,
+            "product_id": rev.product_id,
+            "sku": rev.sku,
+            "platform": rev.platform,
+            "review_id": rev.review_id,
+            "reviewer_name": rev.reviewer_name,
+            "rating": float(rev.rating) if rev.rating else 0,
+            "review_title": rev.review_title,
+            "review_text": rev.review_text,
+            "review_date": rev.review_date,
+            "verified_purchase": rev.verified_purchase,
+            "helpful_count": rev.helpful_count,
+            "review_images": rev.review_images if rev.review_images else []
         }
-        review_map.setdefault(r.sku, []).append(review_entry)
+        review_map.setdefault(rev.sku, []).append(review_entry)
 
     formatted_products = []
     for p in products:
@@ -70,8 +89,8 @@ def get_all_karmatech_products(region_data: RegionDataSchema) -> List[ProductSch
         matched_brand = match_brands(brands, p.brand)
         if not matched_brand:
             logger.error(f"{ctx} Product {p.sku} skipped due to brand mismatch ({p.brand})")
-            continue 
-            
+            continue
+
         pf = ProductSchema()
         pf.set_basic(
             uid=sku,
@@ -86,7 +105,7 @@ def get_all_karmatech_products(region_data: RegionDataSchema) -> List[ProductSch
             platform_type="marketplace",
             scraped_date=scraped_date,
             scraper_id=scraper_id,
-            platform_assured=p.amazon_choice
+            platform_assured=str(p.amazon_choice)
         )
         pf.set_price(p.price, p.sale_price)
         pf.set_media(
@@ -111,11 +130,11 @@ def get_all_karmatech_products(region_data: RegionDataSchema) -> List[ProductSch
         })
         if sku in review_map:
             pf.set_reviews(review_map[sku])
-            
+
         is_avaible_correct = pf.set_availability(p.inventory_status)
         if is_avaible_correct:
             formatted_products.append(pf)
         else:
             logger.error(f"{ctx} Product {p.sku} availability mismatch")
-            
+
     return formatted_products

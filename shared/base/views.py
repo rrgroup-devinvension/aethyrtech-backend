@@ -1,75 +1,91 @@
+from typing import Any, ClassVar
+
+from rest_framework import viewsets
 from rest_framework.exceptions import PermissionDenied
 
+
 class UUIDLookupMixin:
-    """
-    Use UUID as lookup by default; set lookup_field in ViewSets.
-    """
-    lookup_field = "id"
-    lookup_url_kwarg = "id"
+    """Use UUID as lookup by default; set lookup_field in ViewSets."""
+    lookup_field: str = "id"
+    lookup_url_kwarg: str | None = "id"
 
 class UserOwnedMixin:
-    """
-    Auto-assigns request.user as owner on create; enforces owner-only updates (unless staff).
+    """Auto-assigns request.user as owner on create; enforces owner-only updates (unless staff).
+
     Requires model with `owner` FK to settings.AUTH_USER_MODEL.
     """
     owner_field = "owner"
 
-    def perform_create(self, serializer):
+    def perform_create(self: Any, serializer):
+        """Set the owner field to the current user upon creation."""
         serializer.save(**{self.owner_field: self.request.user})
 
-    def perform_update(self, serializer):
+    def perform_update(self: Any, serializer):
+        """Ensure only the owner or an admin can update the object."""
         instance = self.get_object()
         owner = getattr(instance, self.owner_field, None)
-        is_staff_equivalent = getattr(self.request.user, 'is_staff', False) or (hasattr(self.request.user, 'role') and self.request.user.role and self.request.user.role.role_type == 'INTERNAL')
+        has_role = hasattr(self.request.user, 'role') and self.request.user.role
+        is_internal = has_role and self.request.user.role.role_type == 'INTERNAL'
+        is_staff_equivalent = getattr(self.request.user, 'is_staff', False) or is_internal
         if not (self.request.user and (is_staff_equivalent or owner == self.request.user)):
             raise PermissionDenied("You do not have permission to edit this resource.")
         serializer.save()
 
-from rest_framework import viewsets
 
 class BaseViewSet(UUIDLookupMixin, viewsets.ModelViewSet):
-    """
-    Standard base ViewSet for all models in Aethyrtech.
+    """Standard base ViewSet for all models in Aethyrtech.
+
     Uses UUID lookup by default.
     Supports dynamic `permission_mapping` and `organization_field` row-level filtering.
     """
-    
+
+    action_permission_mapping: ClassVar[dict[str, str]] = {}
+    permission_mapping: ClassVar[dict[str, str]] = {}
+    organization_field: str | None = None
+
     def get_permissions(self):
-        perms = super().get_permissions()
-        
+        """Dynamically resolve permissions based on action or method mapping."""
+        perms = list(super().get_permissions())
+
         # Check if the current action has a specifically mapped permission
         action_perm = None
-        if hasattr(self, 'action_permission_mapping') and hasattr(self, 'action') and self.action in self.action_permission_mapping:
+        has_action = hasattr(self, 'action')
+        if has_action and getattr(self, 'action', None) in self.action_permission_mapping:
             action_perm = self.action_permission_mapping[self.action]
-            
+
         if action_perm:
             from shared.permissions import HasPermission
             perms.append(HasPermission(action_perm)())
         # Fallback to general HTTP method mapping
-        elif hasattr(self, 'permission_mapping'):
-            required_perm = self.permission_mapping.get(self.request.method)
-            if required_perm:
-                from shared.permissions import HasPermission
-                perms.append(HasPermission(required_perm)())
-                
+        else:
+            method = getattr(self.request, 'method', None)
+            if method:
+                required_perm = self.permission_mapping.get(str(method))
+                if required_perm:
+                    from shared.permissions import HasPermission
+                    perms.append(HasPermission(required_perm)())
+
         return perms
 
     def get_queryset(self):
+        """Filter the queryset to only return records belonging to the user's organization."""
         qs = super().get_queryset()
         user = self.request.user
-        
+
         if not user or not user.is_authenticated:
             return qs.none()
-            
+
         # Admin or Internal users see everything
-        if getattr(user, 'is_staff', False) or (user.role and user.role.role_type == 'INTERNAL'):
+        user_role = getattr(user, 'role', None)
+        if getattr(user, 'is_staff', False) or (user_role and getattr(user_role, 'role_type', None) == 'INTERNAL'):
             return qs
-            
+
         # Organization users only see data for their org
         org_field = getattr(self, 'organization_field', None)
-        if org_field and user.organization_id:
-            filter_kwargs = {org_field: user.organization_id}
+        user_org_id = getattr(user, 'organization_id', None)
+        if org_field and user_org_id:
+            filter_kwargs = {org_field: user_org_id}
             return qs.filter(**filter_kwargs)
-            
+
         return qs
 

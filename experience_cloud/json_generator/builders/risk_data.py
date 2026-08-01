@@ -1,22 +1,29 @@
-from experience_cloud.json_generator.schemas import RegionDataSchema
 import random
-from typing import Dict, List, Optional, Any, Union, Tuple
-from experience_cloud.json_generator.utils import serve_region_template_json, save_or_update_region_json
+from typing import Any
+
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
+from experience_cloud.json_generator.schemas import RegionDataSchema
+from experience_cloud.json_generator.utils import save_or_update_region_json, serve_region_template_json
+
 
 @handle_builder_exceptions
-def risk_data_builder(region_data: RegionDataSchema, task, products=None, template="template-name") -> tuple[bool, dict]:
+def risk_data_builder(
+    region_data: RegionDataSchema, task, products=None, template="template-name"
+) -> tuple[bool, dict]:
+    """Compile a comprehensive risk and catalog health data payload.
+
+    Aggregates product pincode data, catalog health scores, and keyword SEO blindspots
+    to calculate actionable brand anxiety scores and benchmark against competitors.
+    """
     # ===============================
     # BRAND (MATCH PHP)
     # ===============================
     current_brand = region_data.get("brand_name")
-    brand_id = region_data.get("brand_id")
     region_id = region_data.get("region_id")
+    assert current_brand is not None
 
     if not region_id:
-        raise Exception("Region ID is required.")
-
-    region_id = region_id.upper()
+        raise ValueError("Region ID is required.")
 
     # ===============================
     # 1. LOAD DATA (same as PHP)
@@ -25,35 +32,35 @@ def risk_data_builder(region_data: RegionDataSchema, task, products=None, templa
         pincode_data = serve_region_template_json(
             region_id, "cartesian-products-pincodes"
         )
-    except Exception:
-        raise Exception("Failed to load pincode data")
+    except Exception as e:
+        raise ValueError("Failed to load pincode data") from e
 
     try:
         catalog_data = serve_region_template_json(
             region_id, "catalog-data-complete"
         )
-    except Exception:
-        raise Exception("Failed to load catalog data")
+    except Exception as e:
+        raise ValueError("Failed to load catalog data") from e
 
     try:
-        keyword_data = serve_region_template_json(
+        keyword_data: dict[str, Any] = serve_region_template_json(
             region_id, "keyword-counts"
         )
-    except Exception:
-        keyword_data = {"Sheet1": []}
+    except (OSError, ValueError):
+        keyword_data = {}
 
     # ===============================
     # VALIDATION
     # ===============================
     if "Sheet1" not in pincode_data:
-        raise Exception("cartesian_products_pincodes.json missing 'Sheet1' key.")
+        raise ValueError("cartesian_products_pincodes.json missing 'Sheet1' key.")
 
     rows = pincode_data["Sheet1"]
 
-    brands = list(set([r.get("Brand") for r in rows if r.get("Brand")]))
+    brands = list({r.get("Brand") for r in rows if r.get("Brand")})
     total_listing_count = len(rows)
 
-    all_brand_stats = {}
+    all_brand_stats: dict[str, Any] = {}
 
     # ===============================
     # HELPERS (same as PHP)
@@ -130,7 +137,7 @@ def risk_data_builder(region_data: RegionDataSchema, task, products=None, templa
         ) * 100
 
         # EXACT PHP: rand(5,15)
-        oos_rate = random.randint(5, 15)
+        oos_rate = random.randint(5, 15)  # noqa: S311
 
         anxiety = min(
             5.0,
@@ -183,7 +190,7 @@ def risk_data_builder(region_data: RegionDataSchema, task, products=None, templa
             "oos_rate": round(oos_rate),
             "health_score": round(avg_health),
             "unrated_listings": round(unrated),
-            "premium_health_drop": random.randint(10, 30),  # EXACT PHP
+            "premium_health_drop": random.randint(10, 30),  # EXACT PHP  # noqa: S311
             "description_coverage": round(100 - missing_desc),
             "media_coverage": round(100 - missing_media),
             "review_coverage": round(100 - missing_reviews),

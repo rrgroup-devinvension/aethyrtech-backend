@@ -1,14 +1,16 @@
 from django.urls import path
+
 from .views import (
-    HierarchyCategoryListView, 
-    HierarchyPlatformListView, 
-    HierarchyKeywordListView, 
+    HierarchyCategoryListView,
+    HierarchyKeywordListView,
     HierarchyLocationListView,
-    RunDataDumpView,
-    ProductsListView,
-    ProductsDetailView,
+    HierarchyPlatformListView,
     MarketDataStatsView,
-    StopDataDumpView
+    ProductsDetailView,
+    ProductsListView,
+    RunDataDumpView,
+    StopDataDumpView,
+    DebugRunDataDumpView,
 )
 
 urlpatterns = [
@@ -21,4 +23,5 @@ urlpatterns = [
     path('products/<uuid:id>/', ProductsDetailView.as_view(), name='products-detail'),
     path('stats/', MarketDataStatsView.as_view(), name='market-data-stats'),
     path('locations/<int:id>/stop/', StopDataDumpView.as_view(), name='stop-data-dump'),
+    path('debug-run/', DebugRunDataDumpView.as_view(), name='debug-data-dump'),
 ]

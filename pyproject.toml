@@ -12,6 +12,7 @@ exclude = [
     "migrations",
     "__pycache__",
     "manage.py",
+    "backups",
 ]
 
 [tool.ruff.lint]
@@ -23,6 +24,14 @@ select = [
     "C4",  # flake8-comprehensions
     "B",   # flake8-bugbear
     "D",   # pydocstyle
+    "UP",  # pyupgrade (modern Python syntax)
+    "DJ",  # flake8-django (Django best practices)
+    "PT",  # flake8-pytest-style (Pytest best practices)
+    "SIM", # flake8-simplify (Simplify code)
+    "RUF", # Ruff-specific rules
+    "T20", # flake8-print (Ban print statements in production code)
+    "S",   # flake8-bandit (Security checks)
+    "BLE", # flake8-blind-except (Prevent blind except:)
 ]
 ignore = [
     "D100",  # Missing docstring in public module
@@ -30,6 +39,7 @@ ignore = [
     "D106",  # Missing docstring in public nested class
     "D203",  # 1 blank line required before class docstring
     "D213",  # Multi-line docstring summary should start at the second line
+    "S101",  # Use of assert detected (often used in tests)
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -43,3 +53,31 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
+
+[tool.mypy]
+python_version = "3.11"
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+exclude = [
+    "\\.git",
+    "\\.github",
+    "\\.mypy_cache",
+    "\\.ruff_cache",
+    "\\.venv",
+    "venv",
+    "env",
+    "migrations",
+    "__pycache__",
+    "manage.py",
+    "backups",
+]
+ignore_missing_imports = true
+strict_optional = true
+warn_return_any = false
+warn_unused_ignores = false
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+explicit_package_bases = true
+namespace_packages = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings"
