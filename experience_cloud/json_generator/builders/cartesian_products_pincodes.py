@@ -1,7 +1,13 @@
 import logging
 
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
-from experience_cloud.json_generator.schemas import RegionDataSchema, CartesianProduct, CartesianPayload, AudienceAffinity, Demographics
+from experience_cloud.json_generator.schemas import (
+    AudienceAffinity,
+    CartesianPayload,
+    CartesianProduct,
+    Demographics,
+    RegionDataSchema,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +75,7 @@ def cartesian_products_pincodes_builder(
 
     t_id = getattr(task, 'id', 'unknown')
     logger.info(f"Starting Cartesian Products Pincode JSON build | Task={t_id}")
-    
+
     payload: CartesianPayload = CartesianPayload(
         Sheet1=get_cartesian_products_pincodes_list(products, brand_name, region_data, False),
         audience_affinity=[

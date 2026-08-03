@@ -99,12 +99,12 @@ class UserViewSet(BaseViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        from django.db.models import IntegerField, Func, F, Value
+        from django.db.models import F, Func, IntegerField, Value
         from django.db.models.functions import Coalesce
-        
+
         # Approximate permissions_count for sorting purposes by summing JSON array lengths
         qs = qs.annotate(
-            permissions_count=Coalesce(Func(F('role__permissions'), function='JSON_LENGTH', output_field=IntegerField()), Value(0)) + 
+            permissions_count=Coalesce(Func(F('role__permissions'), function='JSON_LENGTH', output_field=IntegerField()), Value(0)) +
                               Coalesce(Func(F('extra_permissions'), function='JSON_LENGTH', output_field=IntegerField()), Value(0))
         )
         return qs

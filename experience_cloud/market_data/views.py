@@ -431,7 +431,7 @@ class StopDataDumpView(APIView):
 
         loc = Location.objects.get(id=id)
         loc_name = loc.pincode if loc.pincode else loc.address
-        
+
         keyword_id = request.data.get('keyword_id')
         keyword_name = None
         if keyword_id:
@@ -439,7 +439,7 @@ class StopDataDumpView(APIView):
             kw = Keyword.objects.filter(id=keyword_id).first()
             if kw:
                 keyword_name = kw.keyword
-                
+
         filters = {
             'category_id': loc.category_id,
             'platform_id': loc.platform_id,
@@ -490,7 +490,7 @@ class DebugRunDataDumpView(APIView):
 
         if not location_id or not keyword_id:
             return Response(
-                {'error': 'location_id and keyword_id are required'}, 
+                {'error': 'location_id and keyword_id are required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -510,10 +510,10 @@ class DebugRunDataDumpView(APIView):
                 category_obj = Category.objects.filter(id=location.category_id).first()
                 provider_obj = getattr(platform_obj, "api_provider", None) if platform_obj else None
             except Exception as e:
-                return Response({'error': f'Failed to fetch configuration objects: {str(e)}'}, status=404)
+                return Response({'error': f'Failed to fetch configuration objects: {e!s}'}, status=404)
 
             loc_name = location.pincode if location.pincode else location.address
-            
+
             # Construct metadata
             metadata = {
                 'location_name': loc_name,
@@ -525,11 +525,11 @@ class DebugRunDataDumpView(APIView):
             schema = build_data_dump_schema(metadata, platform_obj, category_obj, provider_obj)
 
             start_time = time.time()
-            
+
             # Execute synchronously
             dispatcher = DataDumpDispatcher()
             response = dispatcher.execute(schema)
-            
+
             duration = time.time() - start_time
 
             return Response({

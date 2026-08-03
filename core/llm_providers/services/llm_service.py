@@ -114,7 +114,7 @@ class LLMService(ABC):
     ):
         """Log granular token usage and update the daily aggregated TokenUsageSummary."""
         brand_name = brand_name or ''
-        
+
         self.last_usage = {
             'prompt_tokens': prompt_tokens,
             'completion_tokens': completion_tokens,

@@ -16,10 +16,10 @@ import django  # noqa: E402
 
 django.setup()
 
+import argparse
 from datetime import datetime  # noqa: E402
 
 from django.db import connections  # noqa: E402
-import argparse
 
 
 def escape_val(val):
@@ -42,21 +42,21 @@ def generate_sql_dump(db_name='default'):
     if db_name not in connections:
         logger.error(f"Error: Database '{db_name}' is not configured in settings.DATABASES")
         return
-        
+
     connection = connections[db_name]
-    
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     date_folder = datetime.now().strftime("%Y-%m-%d")
     filename = f"{db_name}_{timestamp}.sql"
-    
+
     # Create the backups directory and the database-specific subdirectory
     backup_dir = os.path.join(PROJECT_ROOT, "backups", db_name, date_folder)
     os.makedirs(backup_dir, exist_ok=True)
-    
+
     output_path = os.path.join(backup_dir, filename)
 
     logger.info(f"Starting native Python SQL dump for database '{db_name}'...")
-    
+
     start_time = time.time()
 
     with connection.cursor() as cursor:
@@ -104,7 +104,7 @@ def generate_sql_dump(db_name='default'):
             f.write("\n")
 
         f.write("SET FOREIGN_KEY_CHECKS=1;\n")
-        
+
     # Calculate elapsed time
     elapsed_time = time.time() - start_time
     mins, secs = divmod(elapsed_time, 60)

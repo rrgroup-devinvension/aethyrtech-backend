@@ -3,7 +3,7 @@ import re
 from collections import defaultdict
 
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
-from experience_cloud.json_generator.schemas import RegionDataSchema, KeywordResult, KeywordCountDetails
+from experience_cloud.json_generator.schemas import KeywordCountDetails, KeywordResult, RegionDataSchema
 from experience_cloud.json_generator.utils import ItemGenerator, match_brand
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ def build_keyword_count(platforms_data: dict, products: ItemGenerator | None, br
             kw_words = re.findall(r'\w+', kw_clean)
             if kw_words:
                 parsed_kws.append((kw_str, kw_clean, kw_words))
-        
+
         if parsed_kws:
             parsed_keywords[platform_name] = parsed_kws
 
@@ -36,23 +36,23 @@ def build_keyword_count(platforms_data: dict, products: ItemGenerator | None, br
     for p in (products or []):
         if not p.platform or not p.title:
             continue
-            
+
         # Only process if product belongs to the requested brand and its platform has tracked keywords
         if not match_brand(brand_name, p.brand):
             continue
-            
+
         platform_kws = parsed_keywords.get(p.platform)
         if not platform_kws:
             continue
 
         product_title = p.title
         result[p.platform][product_title] = []
-        
+
         # FAST PRE-PROCESSING: Pre-compute ranked keywords for this product
         ranked_keywords = {
-            r.get("keyword").strip().lower() 
-            for rank_list in (p.rankings or {}).values() 
-            for r in rank_list 
+            r.get("keyword").strip().lower()
+            for rank_list in (p.rankings or {}).values()
+            for r in rank_list
             if r.get("platform") == p.platform and r.get("keyword")
         }
 

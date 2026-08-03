@@ -1,5 +1,7 @@
-from django.urls import path
 from typing import Any
+
+from django.urls import path
+
 from .views import DashboardDataView
 
 urlpatterns: list[Any] = [

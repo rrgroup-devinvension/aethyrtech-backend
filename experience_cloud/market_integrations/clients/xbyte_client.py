@@ -30,15 +30,15 @@ class XByteClient(BaseApiClient):
                 data = response.json()
                 if not isinstance(data, dict):
                     return False, data, None
-                
+
                 # 1. Check for "msg" key (used in Invalid API Key, Missing API Key)
                 if "msg" in data:
                     return True, data, str(data["msg"])
-                
+
                 # 2. Check for "message" key without "results" (e.g. Location Not Found)
                 if "message" in data and not data.get("results"):
                     return True, data, str(data["message"])
-                
+
                 # 3. Sometimes they might return a statusCode != 200 inside request_log
                 request_log = data.get("request_log", {})
                 if isinstance(request_log, dict):

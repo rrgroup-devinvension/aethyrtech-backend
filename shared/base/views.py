@@ -1,9 +1,10 @@
-from typing import Any, ClassVar, Sequence
+from collections.abc import Sequence
+from typing import Any, ClassVar
 
-from rest_framework import viewsets
-from rest_framework.exceptions import PermissionDenied
 import django_filters
 import rest_framework.filters
+from rest_framework import viewsets
+from rest_framework.exceptions import PermissionDenied
 
 
 class UUIDLookupMixin:

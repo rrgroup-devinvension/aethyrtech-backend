@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    DebugRunDataDumpView,
     HierarchyCategoryListView,
     HierarchyKeywordListView,
     HierarchyLocationListView,
@@ -10,7 +11,6 @@ from .views import (
     ProductsListView,
     RunDataDumpView,
     StopDataDumpView,
-    DebugRunDataDumpView,
 )
 
 urlpatterns = [

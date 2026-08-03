@@ -49,7 +49,7 @@ class JsonTemplateViewSet(BaseViewSet):
             instance.save(update_fields=['is_active'])
             return Response({'status': 'status updated', 'is_active': instance.is_active})
         return Response({'error': 'is_active field is required'}, status=400)
-    
+
     permission_classes = (IsAuthenticated,)
 
 

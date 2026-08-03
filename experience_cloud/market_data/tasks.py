@@ -119,9 +119,9 @@ def process_location_dump(execution_id: int, task_id: int, keyword_name: str, lo
             # API returned a logical error (e.g. Location Not Found)
             # We don't want a python traceback in the DB for this, just the raw server response
             error_msg = response.get("message", "Unknown Service Error")
-            
+
             logger.warning(f"Data Dump Task {task_id} failed with logical error: {error_msg}")
-            
+
             ApiDump.objects.filter(task_id=str(task_id)).update(
                 status='FAILED',
                 error_message=str(error_msg),

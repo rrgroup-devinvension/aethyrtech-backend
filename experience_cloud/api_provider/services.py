@@ -428,7 +428,7 @@ class BaseApiClient:
 
                 # Check for Logical Errors first (this handles both 200 OK errors and parses JSON for 4xx/5xx)
                 is_logical_error, parsed_data, error_message = self.check_logical_error(response)
-                
+
                 if is_logical_error:
                     self._log_usage('FAILED', response_time, request_size, response_size, log_context, error_message=error_message)
                     raise ApiProviderRequestError(

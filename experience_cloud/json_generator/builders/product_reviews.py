@@ -1,7 +1,7 @@
 import logging
 
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
-from experience_cloud.json_generator.schemas import RegionDataSchema, ReviewData, BrandReviewsMatrix
+from experience_cloud.json_generator.schemas import BrandReviewsMatrix, RegionDataSchema, ReviewData
 from experience_cloud.json_generator.utils import ItemGenerator, match_brands
 
 logger = logging.getLogger(__name__)

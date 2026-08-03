@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
-from typing import Any
 from datetime import date
+from typing import Any
 
 from typing_extensions import TypedDict
 

@@ -124,15 +124,15 @@ class XByteDataDumpService(BaseDataDumpService):
         except Exception as e:
             from experience_cloud.api_provider.exceptions import ApiProviderRequestError
             logger.exception(f"XByte execution failed: {e}")
-            
+
             error_msg = str(e)
             if isinstance(e, ApiProviderRequestError) and isinstance(e.extra, dict):
                 error_msg = json.dumps(e.extra, indent=4)
-                
+
                 # Save the error response to media folder
                 logger.info("Saving error JSON response to media folder...")
                 self._save_raw_json_to_media(schema, e.extra)
-                
+
             return DataDumpResponseSchema(status="error", items_count=0, message=error_msg)
 
 
@@ -189,7 +189,7 @@ class XByteDataDumpService(BaseDataDumpService):
 
         with transaction.atomic():
             new_products = []
-                
+
             for item in results:
                 detail = item.get("detail_data", {})
                 product_uid = str(item.get("id", "")).strip()
@@ -226,7 +226,7 @@ class XByteDataDumpService(BaseDataDumpService):
                         shipped_by=detail.get("shipped_by"),
                         description=detail.get("description"),
                         bullets=detail.get("bullets", []),
-                        
+
                         # Media Counts & Booleans
                         image_count=detail.get("images", 0) or 0,
                         video_count=detail.get("videos", 0) or 0,
@@ -244,7 +244,7 @@ class XByteDataDumpService(BaseDataDumpService):
                 update_fields=[
                     'rank', 'title', 'brand', 'category', 'availability', 'mrp',
                     'sell_price', 'rating', 'reviews', 'brand_rating', 'brand_reviews', 'brand_review_text',
-                    'product_url', 'thumbnail', 'main_image', 'images', 
+                    'product_url', 'thumbnail', 'main_image', 'images',
                     'manufacturer', 'manufacturer_part', 'upc_retailer_id',
                     'model', 'sold_by', 'shipped_by',
                     'description', 'bullets', 'image_count', 'video_count', 'document_count', 'product_view_360',

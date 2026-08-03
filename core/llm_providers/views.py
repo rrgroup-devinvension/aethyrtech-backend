@@ -60,7 +60,7 @@ class LLMProviderViewSet(BaseViewSet):
             changed = True
         if 'api_key' in serializer.validated_data and serializer.validated_data['api_key'] != instance.api_key:
             changed = True
-            
+
         if changed:
             serializer.validated_data['health_check_status'] = 'NOT TESTED'
             serializer.validated_data['last_health_check'] = None

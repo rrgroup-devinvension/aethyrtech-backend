@@ -4,11 +4,15 @@ from collections import defaultdict
 
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
 from experience_cloud.json_generator.schemas import (
-    RegionDataSchema, CategoryDataRow, AvailabilityRow, 
-    PlatformHealthDataset, PlatformHealthScores, 
-    TopKeywordRow, TopBrandRow, CategoryViewPayload
+    AvailabilityRow,
+    CategoryDataRow,
+    CategoryViewPayload,
+    PlatformHealthDataset,
+    PlatformHealthScores,
+    RegionDataSchema,
+    TopBrandRow,
+    TopKeywordRow,
 )
-from experience_cloud.json_generator.utils import ItemGenerator, match_brand
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +28,13 @@ class BrandMetrics:
         self.rating_count = 0
         self.total_reviews = 0
         self.total_videos = 0
-        
+
         self.sku_count = 0
         self.live_count = 0
-        
+
         self.health_sum = 0
         self.health_count = 0
-        
+
         # Maps platform -> {"total": score, "count": int}
         self.platform_health = defaultdict(lambda: {"total": 0, "count": 0})
 
@@ -48,7 +52,7 @@ def prepare_topkeywords(keywords: list, inverted_index: dict) -> list[TopKeyword
     for idx, kw in enumerate(keywords):
         if not kw:
             continue
-            
+
         kw_words = set(re.findall(r'\w+', kw.lower()))
         if not kw_words:
             continue
@@ -57,7 +61,7 @@ def prepare_topkeywords(keywords: list, inverted_index: dict) -> list[TopKeyword
         matched_products = set()
         for w in kw_words:
             matched_products.update(inverted_index.get(w, set()))
-            
+
         total = len(matched_products)
         counts.append((kw, total, idx))
 
@@ -109,15 +113,15 @@ def category_view_builder(
         # 2. Track Brand Metrics
         if not p.brand:
             continue
-            
+
         b_key = str(p.brand).lower().strip()
         matched_brand = valid_brands.get(b_key)
-        
+
         if not matched_brand:
             continue
-            
+
         m = brand_metrics[matched_brand]
-        
+
         # Build Brand Stats
         if p.selling_price:
             m.total_price += p.selling_price
@@ -130,18 +134,18 @@ def category_view_builder(
             m.rating_count += 1
         m.total_reviews += p.review_count or 0
         m.total_videos += p.video_count or 0
-        
+
         # Build Availability & Category Data
         m.sku_count += 1
         is_live = (p.availability_status or "").lower() == "available"
         if is_live:
             m.live_count += 1
-            
+
         # Build Health Scores
         score = p.health_score()
         m.health_sum += score
         m.health_count += 1
-        
+
         platform = (p.platform or "").lower()
         if platform in platform_codes:
             m.platform_health[platform]["total"] += score
@@ -160,7 +164,7 @@ def category_view_builder(
 
     for brand in brands:
         m = brand_metrics[brand]
-        
+
         # 1. Platform Health Scores
         scores = []
         for plat in platform_codes:
@@ -170,13 +174,13 @@ def category_view_builder(
             else:
                 scores.append(round(plat_data["total"] / plat_data["count"]))
         datasets.append(PlatformHealthDataset(label=brand, data=scores))
-        
+
         # 2. Top Brands Stats
         if m.sku_count > 0:
             avg_price = round(m.total_price / m.price_count, 2) if m.price_count else 0
             avg_discount = round(m.total_discount / m.discount_count, 2) if m.discount_count else 0
             avg_rating = round(m.total_rating / m.rating_count, 2) if m.rating_count else 0
-            
+
             top_brands.append(TopBrandRow(
                 brand=brand,
                 avg_discount=f"{avg_discount}%",
@@ -185,7 +189,7 @@ def category_view_builder(
                 reviews=m.total_reviews,
                 videos=m.total_videos
             ))
-            
+
         # 3. Availability
         if m.sku_count > 0:
             availability_data.append(AvailabilityRow({
@@ -193,7 +197,7 @@ def category_view_builder(
                 "SKU": str(m.live_count),
                 "Not Available": str(m.sku_count - m.live_count)
             }))
-            
+
         # 4. Category Data Row
         if m.sku_count > 0:
             live_percent = round((m.live_count / m.sku_count) * 100) if m.sku_count else 0
@@ -206,7 +210,7 @@ def category_view_builder(
                 "% Live": f"{live_percent}%",
                 "Avg Health": avg_health
             }))
-            
+
             total_category_skus += m.sku_count
             total_category_live += m.live_count
             total_category_health_sum += m.health_sum
@@ -226,7 +230,7 @@ def category_view_builder(
 
     display_keywords = region_data.get("display_keywords", [])
     top_keywords = prepare_topkeywords(display_keywords, inverted_index)
-    
+
     payload: CategoryViewPayload = CategoryViewPayload({
         "Category Data": category_data,
         "Availability": availability_data,
@@ -237,6 +241,6 @@ def category_view_builder(
         "Top Keywords": top_keywords,
         "Top Brands": top_brands,
     })
-    
+
     logger.info(f"Completed CATEGORY_VIEW JSON build for task {t_id}")
     return False, payload

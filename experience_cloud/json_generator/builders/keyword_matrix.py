@@ -2,7 +2,7 @@ import logging
 from collections import defaultdict
 
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
-from experience_cloud.json_generator.schemas import RegionDataSchema, BrandMatrix
+from experience_cloud.json_generator.schemas import BrandMatrix, RegionDataSchema
 from experience_cloud.json_generator.utils import ItemGenerator
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ def build_keyword_matrix(region_data: RegionDataSchema, products: ItemGenerator 
         brand = str(p.brand).strip()
         title = str(p.title).strip()
         ranking_data = p.rankings or {}
-        
+
         product_pincode = platform_locations_map.get(p.platform, ["000000"])
         if not product_pincode or p.platform_type == "marketplace":
             product_pincode = ["000000"]
@@ -56,17 +56,17 @@ def build_keyword_matrix(region_data: RegionDataSchema, products: ItemGenerator 
 
     # Reconstruct the structured BrandMatrix
     result: BrandMatrix = {}
-    
+
     # Pre-fill structure
-    for (brand, title, pincode, _kw) in aggregate_bucket.keys():
+    for (brand, title, pincode, _kw) in aggregate_bucket:
         result.setdefault(brand, {}).setdefault(title, {})[pincode] = dict.fromkeys(brand_keywords, 0)
-        
+
     # Populate averages
     for (brand, title, pincode, kw), ranks in aggregate_bucket.items():
         if kw in brand_keywords:  # Only track keywords that are in display_keywords
             avg_rank = round(sum(ranks) / len(ranks), 2) if ranks else 0
             result[brand][title][pincode][kw] = avg_rank
-            
+
     return result
 
 def build_rank_averages(keyword_matrix: BrandMatrix, region_name: str) -> dict:
@@ -102,7 +102,7 @@ def build_rank_averages(keyword_matrix: BrandMatrix, region_name: str) -> dict:
         overall_count += brand_count
 
     category_avg = round(overall_sum / overall_count, 2) if overall_count > 0 else 0
-    
+
     # cat_key = f"overall_{region_name.lower().replace(' ', '_')}" if region_name else "overall_average"
 
     return {
@@ -126,7 +126,7 @@ def keyword_matrix_builder(
     logger.info(f"Starting KEYWORD_MATRIX JSON build | Task={t_id}")
 
     keyword_matrix = build_keyword_matrix(region_data, products)
-    
+
     region_name = region_data.get("region_name", "unknown")
     keyword_summary = build_rank_averages(keyword_matrix, region_name)
 
