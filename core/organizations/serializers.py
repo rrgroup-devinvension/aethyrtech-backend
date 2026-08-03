@@ -12,15 +12,20 @@ class OrganizationSerializer(BaseModelSerializer):
     belonging to the organization.
     """
     brands_count = serializers.SerializerMethodField()
+    regions_count = serializers.SerializerMethodField()
 
     class Meta(BaseModelSerializer.Meta):
         model = Organization
-        fields = (*BaseModelSerializer.Meta.fields, 'name', 'description', 'status', 'brands_count')
-        read_only_fields = (*BaseModelSerializer.Meta.read_only_fields, 'brands_count')
+        fields = (*BaseModelSerializer.Meta.fields, 'name', 'description', 'status', 'brands_count', 'regions_count')
+        read_only_fields = (*BaseModelSerializer.Meta.read_only_fields, 'brands_count', 'regions_count')
 
     def get_brands_count(self, obj):
         """Calculate the total number of active (non-deleted) brands under this organization."""
         return obj.brand_set.filter(is_deleted=False).count()
+
+    def get_regions_count(self, obj):
+        """Calculate the total number of active regions under this organization."""
+        return Region.objects.filter(brand__organization=obj, is_deleted=False).count()
 
     def validate_name(self, value):
         """Ensure the organization name is unique across all active organizations."""

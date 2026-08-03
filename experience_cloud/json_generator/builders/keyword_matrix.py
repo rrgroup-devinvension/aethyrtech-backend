@@ -2,12 +2,12 @@ import logging
 from collections import defaultdict
 
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
-from experience_cloud.json_generator.schemas import RegionDataSchema
+from experience_cloud.json_generator.schemas import RegionDataSchema, BrandMatrix
 from experience_cloud.json_generator.utils import ItemGenerator
 
 logger = logging.getLogger(__name__)
 
-def build_keyword_matrix(region_data: RegionDataSchema, products: ItemGenerator | None) -> dict:
+def build_keyword_matrix(region_data: RegionDataSchema, products: ItemGenerator | None) -> BrandMatrix:
     """Construct a multi-dimensional matrix mapping SKU keyword rankings.
 
     Maps rankings across brands, titles, and localized pincodes.
@@ -15,10 +15,9 @@ def build_keyword_matrix(region_data: RegionDataSchema, products: ItemGenerator 
     # Using display_keywords directly from region_data as per the new schema
     brand_keywords = region_data.get("display_keywords", [])
 
-    result: dict = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
-    aggregate_bucket: dict = defaultdict(
-        lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
-    )
+    # Flat tuple cache to avoid slow nested lambda defaultdicts
+    # Key: (brand, title, pincode, keyword), Value: list of ranks
+    aggregate_bucket: dict[tuple[str, str, str, str], list[int]] = defaultdict(list)
 
     # Build a map of specific locations for each platform
     platform_locations_map = {}
@@ -34,11 +33,9 @@ def build_keyword_matrix(region_data: RegionDataSchema, products: ItemGenerator 
         brand = str(p.brand).strip()
         title = str(p.title).strip()
         ranking_data = p.rankings or {}
+        
         product_pincode = platform_locations_map.get(p.platform, ["000000"])
-        if not product_pincode:
-            product_pincode = ["000000"]
-
-        if p.platform_type == "marketplace":
+        if not product_pincode or p.platform_type == "marketplace":
             product_pincode = ["000000"]
 
         for pincode in product_pincode:
@@ -54,18 +51,25 @@ def build_keyword_matrix(region_data: RegionDataSchema, products: ItemGenerator 
                     except (ValueError, TypeError):
                         rank = 0
                 if kw and rank is not None:
-                    aggregate_bucket[brand][title][pincode][kw].append(rank)
+                    # Flat dictionary append
+                    aggregate_bucket[(brand, title, pincode, kw)].append(rank)
 
-    for brand, titles in aggregate_bucket.items():
-        for title, pincodes in titles.items():
-            for pincode, keywords_map in pincodes.items():
-                result[brand][title][pincode] = dict.fromkeys(brand_keywords, 0)
-                for kw, ranks in keywords_map.items():
-                    avg_rank = round(sum(ranks) / len(ranks), 2) if ranks else 0
-                    result[brand][title][pincode][kw] = avg_rank
-    return dict(result)
+    # Reconstruct the structured BrandMatrix
+    result: BrandMatrix = {}
+    
+    # Pre-fill structure
+    for (brand, title, pincode, _kw) in aggregate_bucket.keys():
+        result.setdefault(brand, {}).setdefault(title, {})[pincode] = dict.fromkeys(brand_keywords, 0)
+        
+    # Populate averages
+    for (brand, title, pincode, kw), ranks in aggregate_bucket.items():
+        if kw in brand_keywords:  # Only track keywords that are in display_keywords
+            avg_rank = round(sum(ranks) / len(ranks), 2) if ranks else 0
+            result[brand][title][pincode][kw] = avg_rank
+            
+    return result
 
-def build_rank_averages(keyword_matrix: dict) -> dict:
+def build_rank_averages(keyword_matrix: BrandMatrix, region_name: str) -> dict:
     """Calculate average keyword ranks per product, brand, and category."""
     product_averages = {}
     brand_averages = {}
@@ -98,6 +102,8 @@ def build_rank_averages(keyword_matrix: dict) -> dict:
         overall_count += brand_count
 
     category_avg = round(overall_sum / overall_count, 2) if overall_count > 0 else 0
+    
+    # cat_key = f"overall_{region_name.lower().replace(' ', '_')}" if region_name else "overall_average"
 
     return {
         "product_averages": product_averages,
@@ -120,7 +126,9 @@ def keyword_matrix_builder(
     logger.info(f"Starting KEYWORD_MATRIX JSON build | Task={t_id}")
 
     keyword_matrix = build_keyword_matrix(region_data, products)
-    keyword_summary = build_rank_averages(keyword_matrix)
+    
+    region_name = region_data.get("region_name", "unknown")
+    keyword_summary = build_rank_averages(keyword_matrix, region_name)
 
     payload = {
         "matrix": keyword_matrix,

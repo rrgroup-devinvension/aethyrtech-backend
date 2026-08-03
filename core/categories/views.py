@@ -52,7 +52,9 @@ class CategoryViewSet(BaseViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     search_fields = ('name', 'description')
-    ordering_fields = ('name', 'created_at', 'updated_at')
+    filterset_fields = ('status',)
+    ordering_fields = ('id', 'name', 'created_at', 'updated_at')
+    ordering = ('id',)
 
     def get_serializer_class(self):
         """Dynamically determine the serializer class based on the action.

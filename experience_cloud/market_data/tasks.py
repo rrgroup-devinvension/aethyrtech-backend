@@ -64,8 +64,8 @@ def process_location_dump(execution_id: int, task_id: int, keyword_name: str, lo
     # Mark ApiDump as running
     ApiDump.objects.filter(task_id=str(task_id)).update(status='RUNNING')
 
+    start_time = time.time()
     try:
-        start_time = time.time()
 
         # 1. Fetch metadata and objects for schema building
         try:
@@ -124,18 +124,21 @@ def process_location_dump(execution_id: int, task_id: int, keyword_name: str, lo
             
             ApiDump.objects.filter(task_id=str(task_id)).update(
                 status='FAILED',
-                error_message=str(error_msg)
+                error_message=str(error_msg),
+                response_time=duration
             )
             ExecutionManager.update_task_status(DataDumpTask, task_id, execution_id, 'FAILED', error=str(error_msg))
             return  # Finish gracefully so we don't hit the generic Exception handler
 
     except Exception as e:
+        duration = time.time() - start_time
         full_trace = traceback.format_exc()
         logger.exception(f"Data Dump Task {task_id} failed: {e}")
 
         ApiDump.objects.filter(task_id=str(task_id)).update(
             status='FAILED',
-            error_message=full_trace
+            error_message=full_trace,
+            response_time=duration
         )
 
         ExecutionManager.update_task_status(DataDumpTask, task_id, execution_id, 'FAILED', error=full_trace)

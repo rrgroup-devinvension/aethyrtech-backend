@@ -22,6 +22,7 @@ class SimpleItem(TypedDict):
 
 class LocationItem(TypedDict):
     """Dictionary representation of a location's coordinates and details."""
+    id: int
     pincode: str | None
     location: str | None
     lat: float | None
@@ -54,6 +55,185 @@ class RegionDataSchema(TypedDict):
     display_platforms: list[str]
 
 
+class KeywordCountDetails(TypedDict):
+    """Counts of keyword occurrences in different product sections."""
+    title: int
+    description: int
+    bullets: int
+
+class KeywordResult(TypedDict):
+    """Result of keyword matching for a product."""
+    keyword: str
+    is_ranked: bool
+    counts: KeywordCountDetails
+
+# --- Type Aliases for the Matrix Schema ---
+KeywordRankMap = dict[str, float]
+PincodeMatrix = dict[str, KeywordRankMap]
+ProductMatrix = dict[str, PincodeMatrix]
+BrandMatrix = dict[str, ProductMatrix]
+
+class ReviewData(TypedDict):
+    """Structured format for a single product review."""
+    review_id: str | None
+    rating: float | None
+    title: str | None
+    review_text: str | None
+    reviewer: str | None
+    verified: bool | None
+    review_date: str | None
+    verified_purchase: str | bool | None
+    platform: str | None
+
+# --- Type Aliases for the Reviews Schema ---
+ProductReviewsMatrix = dict[str, list[ReviewData]]
+BrandReviewsMatrix = dict[str, ProductReviewsMatrix]
+
+# --- Type Aliases for the Cartesian Products Schema ---
+Demographics = TypedDict("Demographics", {
+    "20-29 M NCCS A": int,
+    "20-29 F NCCS A": int,
+    "30-39 MF NCCS A": int,
+    "40-49 M NCCS B": int,
+    "20-29 M NCCS B": int,
+    "20-29 F NCCS B": int
+})
+
+class AudienceAffinity(TypedDict):
+    """Audience affinity mapping by demographic levels."""
+    level: str
+    demographics: Demographics
+
+CartesianProduct = TypedDict("CartesianProduct", {
+    "productid": str | None,
+    "pincodeid": int | None,
+    "Company": str | None,
+    "Brand": str | None,
+    "MRP (₹)": float | int,
+    "Current Price (₹)": float | int,
+    "Pincode": str,
+    "Area": str | None,
+    "QCommerce_Priority": str | None,
+    "Rank": float | int | None,
+    "Rating": float | None,
+    "Product": str | None,
+    "Updated At": str | None
+})
+
+class CartesianPayload(TypedDict):
+    """The structured JSON payload for Cartesian Products by Pincodes dashboard."""
+    Sheet1: list[CartesianProduct]
+    audience_affinity: list[AudienceAffinity]
+
+# --- Type Aliases for the Catalog Schema ---
+class CatalogContentSnapshot(TypedDict):
+    title_score: float
+    description_score: float
+    bullets_score: float
+    keywords_score: float
+    images_score: float
+    videos_score: float
+    documents_score: float
+    rating_score: float
+    reviews_score: float
+    product_view_360: str
+    enhanced_content: str
+
+class CatalogDetailData(TypedDict):
+    run_date: date | None
+    upc_retailer_id: str | None
+    model: str | None
+    manufacturer_part: str | None
+    sell_price: str | None
+    sold_by: str | None
+    shipped_by: str | None
+    description: str | None
+    bullets: list[str]
+    keywords: str
+    images: int
+    videos: int
+    documents: str
+    rating: str
+    reviews: str
+    product_view_360: str
+    enhanced_content: str
+
+class CatalogItem(TypedDict):
+    """Structured format for a catalog product output."""
+    id: str | None
+    scraped_date: date | None
+    scraper_id: int | str | None
+    data_source: str | None
+    product_title: str | None
+    sku: str | None
+    status: str
+    brand: str | None
+    main_image: str | None
+    thumbnail_image_url: str | None
+    main_category: str | None
+    sub_category_1: str | None
+    sub_category_2: str | None
+    sub_category_3: str | None
+    sub_category_4: str | None
+    availability: str | None
+    msrp: float
+    detail_page_images: list[str]
+    amazon_url: str | None
+    health_score: float
+    product_title_score: float
+    product_description_score: float
+    product_feature_bullets_score: float
+    gallery_image_score: float
+    all_flags_count: int
+    content_snapshot: CatalogContentSnapshot
+    detail_data: CatalogDetailData
+
+CatalogPayload = dict[str, list[CatalogItem]]
+
+# --- Type Aliases for the Category View Schema ---
+CategoryDataRow = TypedDict("CategoryDataRow", {
+    "Audit Name": str,
+    "Frequency": str,
+    "SKUs": int,
+    "Last Run": str,
+    "% Live": str,
+    "Avg Health": float | int
+})
+
+AvailabilityRow = TypedDict("AvailabilityRow", {
+    "Brand": str,
+    "SKU": str,
+    "Not Available": str
+})
+
+class PlatformHealthDataset(TypedDict):
+    label: str
+    data: list[int]
+
+class PlatformHealthScores(TypedDict):
+    labels: list[str]
+    datasets: list[PlatformHealthDataset]
+
+class TopKeywordRow(TypedDict):
+    keyword: str
+    value: int
+    change: str
+
+class TopBrandRow(TypedDict):
+    brand: str
+    avg_discount: str
+    avg_price: str
+    rating: float | int
+    reviews: int
+    videos: int
+
+CategoryViewPayload = TypedDict("CategoryViewPayload", {
+    "Category Data": list[CategoryDataRow],
+    "Availability": list[AvailabilityRow],
+    "PlatformHealthScores": PlatformHealthScores,
+    "Top Keywords": list[TopKeywordRow],
+    "Top Brands": list[TopBrandRow]
+})
 
 @dataclass
 class ProductSchema:
@@ -438,67 +618,64 @@ class ProductSchema:
             score_value = 100
         return score_value
 
-    def to_catalog_json(self, brand_name: str, is_competitor: bool = False) -> dict[str, Any]:
+    def to_catalog_json(self, brand_name: str, is_competitor: bool = False) -> CatalogItem:
         """Convert the schema to a dictionary for catalog JSON generation."""
-        base: dict[str, Any] = {
-            "id": self.id,
-            "scraped_date": self.scraped_date,
-            "scraper_id": self.scraper_id,
-            "data_source": self.platform,
-            "product_title": self.title,
-            "sku": self.uid,
-            "status": "Live" if self.status == 1 else "Offline",
-            "brand": brand_name if brand_name else self.brand,
-            "main_image": self.thumbnail,
-            "thumbnail_image_url": self.thumbnail,
-            "main_category": self.category,
-            "sub_category_1": self.sub_category_1,
-            "sub_category_2": self.sub_category_2,
-            "sub_category_3": self.sub_category_3,
-            "sub_category_4": self.sub_category_4,
-            "availability": self.availability_status,
-            "msrp": self.market_price or 0.00,
-            "detail_page_images": self.image_urls,
-            "amazon_url": self.product_url,
-            "health_score": self.health_score(),
-            "product_title_score": self.title_score(),
-            "product_description_score": self.description_score(),
-            "product_feature_bullets_score": self.bullets_score(),
-            "gallery_image_score": self.image_score(),
-            "all_flags_count": 0,
-            "content_snapshot": {
-                "title_score": self.title_score(),
-                "description_score": self.description_score(),
-                "bullets_score": self.bullets_score(),
-                "keywords_score": self.title_score(),
-                "images_score": self.image_score(),
-                "videos_score": self.video_score(),
-                "documents_score": 0,
-                "rating_score": self.rating_score(),
-                "reviews_score": self.review_count_score(),
-                "product_view_360": "NO",
-                "enhanced_content": "NO"
-            }
-        }
-
-        base["detail_data"] = {
-            "run_date": self.scraped_date,
-            "upc_retailer_id": self.uid,
-            "model": self.model,
-            "manufacturer_part": self.manufacturer_part,
-            "sell_price": f"{self.selling_price:.2f}" if self.selling_price else None,
-            "sold_by": self.sold_by,
-            "shipped_by": self.shipped_by,
-            "description": self.description,
-            "bullets": self.bullets,
-            "keywords": "",
-            "images": self.image_count,
-            "videos": self.video_count,
-            "documents": "",
-            "rating": f"{self.rating_value or 0}",
-            "reviews": str(self.review_count or 0),
-            "product_view_360": "NO",
-            "enhanced_content": "NO"
-        }
-
-        return base
+        return CatalogItem(
+            id=self.id,
+            scraped_date=self.scraped_date,
+            scraper_id=self.scraper_id,
+            data_source=self.platform,
+            product_title=self.title,
+            sku=self.uid,
+            status="Live" if self.status == 1 else "Offline",
+            brand=brand_name if brand_name else self.brand,
+            main_image=self.thumbnail,
+            thumbnail_image_url=self.thumbnail,
+            main_category=self.category,
+            sub_category_1=self.sub_category_1,
+            sub_category_2=self.sub_category_2,
+            sub_category_3=self.sub_category_3,
+            sub_category_4=self.sub_category_4,
+            availability=self.availability_status,
+            msrp=self.market_price or 0.00,
+            detail_page_images=self.image_urls,
+            amazon_url=self.product_url,
+            health_score=self.health_score(),
+            product_title_score=self.title_score(),
+            product_description_score=self.description_score(),
+            product_feature_bullets_score=self.bullets_score(),
+            gallery_image_score=self.image_score(),
+            all_flags_count=0,
+            content_snapshot=CatalogContentSnapshot(
+                title_score=self.title_score(),
+                description_score=self.description_score(),
+                bullets_score=self.bullets_score(),
+                keywords_score=self.title_score(),
+                images_score=self.image_score(),
+                videos_score=self.video_score(),
+                documents_score=0,
+                rating_score=self.rating_score(),
+                reviews_score=self.review_count_score(),
+                product_view_360="NO",
+                enhanced_content="NO"
+            ),
+            detail_data=CatalogDetailData(
+                run_date=self.scraped_date,
+                upc_retailer_id=self.uid,
+                model=self.model,
+                manufacturer_part=self.manufacturer_part,
+                sell_price=f"{self.selling_price:.2f}" if self.selling_price else None,
+                sold_by=self.sold_by,
+                shipped_by=self.shipped_by,
+                description=self.description,
+                bullets=self.bullets,
+                keywords="",
+                images=self.image_count,
+                videos=self.video_count,
+                documents="",
+                rating=f"{self.rating_value or 0}",
+                reviews=str(self.review_count or 0),
+                product_view_360="NO",
+                enhanced_content="NO"
+            )
+        )

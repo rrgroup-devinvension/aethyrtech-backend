@@ -1,13 +1,12 @@
 import logging
-from collections import defaultdict
 
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
-from experience_cloud.json_generator.schemas import RegionDataSchema
+from experience_cloud.json_generator.schemas import RegionDataSchema, ReviewData, BrandReviewsMatrix
 from experience_cloud.json_generator.utils import ItemGenerator, match_brands
 
 logger = logging.getLogger(__name__)
 
-def build_review_structure(products: ItemGenerator | None, brands: list[str] | None = None) -> dict:
+def build_review_structure(products: ItemGenerator | None, brands: list[str] | None = None) -> BrandReviewsMatrix:
     """Compile and normalize multi-platform product review data into a structured schema.
 
     Groups verified reviews, ratings, and feedback text hierarchically by brand and SKU.
@@ -17,7 +16,7 @@ def build_review_structure(products: ItemGenerator | None, brands: list[str] | N
         brands = []
 
     # Using standard dict for the final payload is safer for JSON serialization
-    result: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
+    result: BrandReviewsMatrix = {}
 
     for p in (products or []):
         product_brand = getattr(p, "brand", None)
@@ -35,18 +34,18 @@ def build_review_structure(products: ItemGenerator | None, brands: list[str] | N
 
         for review in reviews:
             try:
-                review_data = {
-                    "review_id": review.get("review_id"),
-                    "rating": review.get("rating"),
-                    "title": review.get("review_title"),
-                    "review_text": review.get("review_text"),
-                    "reviewer": review.get("reviewer_name"),
-                    "verified": review.get("verified", False),
-                    "review_date": review.get("review_date"),
-                    "verified_purchase": review.get("verified_purchase"),
-                    "platform": review.get("platform"),
-                }
-                result[matched_brand][sku].append(review_data)
+                review_data = ReviewData(
+                    review_id=review.get("review_id"),
+                    rating=review.get("rating"),
+                    title=review.get("review_title"),
+                    review_text=review.get("review_text"),
+                    reviewer=review.get("reviewer_name"),
+                    verified=review.get("verified", False),
+                    review_date=review.get("review_date"),
+                    verified_purchase=review.get("verified_purchase"),
+                    platform=review.get("platform"),
+                )
+                result.setdefault(matched_brand, {}).setdefault(sku, []).append(review_data)
 
             except (KeyError, TypeError, AttributeError, ValueError):
                 logger.exception(
@@ -54,12 +53,7 @@ def build_review_structure(products: ItemGenerator | None, brands: list[str] | N
                 )
                 continue
 
-    # Convert nested defaultdicts back to standard dicts
-    final_dict = {}
-    for brand, skus in result.items():
-        final_dict[brand] = dict(skus)
-
-    return final_dict
+    return result
 
 @handle_builder_exceptions
 def product_reviews_builder(

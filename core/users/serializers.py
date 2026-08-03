@@ -70,6 +70,8 @@ class UserSerializer(BaseModelSerializer):
     brands_details = UserBrandRegionSerializer(source="brands", many=True, read_only=True)
     regions_details = UserRegionSerializer(source="regions", many=True, read_only=True)
 
+    permissions_count = serializers.SerializerMethodField()
+
     class Meta(BaseModelSerializer.Meta):
         model = User
         fields = (
@@ -89,7 +91,11 @@ class UserSerializer(BaseModelSerializer):
             "brands_details",
             "regions",
             "regions_details",
+            "permissions_count",
         )
+
+    def get_permissions_count(self, obj):
+        return len(obj.get_all_permissions())
 
 class UserCreateUpdateSerializer(BaseModelSerializer):
     """Serializer for creating and updating user."""

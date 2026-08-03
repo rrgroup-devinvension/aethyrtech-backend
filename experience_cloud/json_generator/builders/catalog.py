@@ -1,7 +1,7 @@
 import logging
 
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
-from experience_cloud.json_generator.schemas import RegionDataSchema
+from experience_cloud.json_generator.schemas import RegionDataSchema, CatalogPayload
 from experience_cloud.json_generator.utils import match_brand
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ def catalog_builder(
 
     t_id = getattr(task, 'id', 'unknown')
     logger.info(f"Starting CATALOG JSON build | Task={t_id}")
-    payload: dict[str, list] = {b: [] for b in brands}
+    payload: CatalogPayload = {b: [] for b in brands}
 
     for p in (products or []):
         if not p.brand:

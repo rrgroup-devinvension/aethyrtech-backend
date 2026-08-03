@@ -40,10 +40,11 @@ class PlatformViewSet(BaseViewSet):
         'DELETE': AppPermissions.DELETE_PLATFORM
     }
 
-    queryset = Platform.objects.select_related('api_provider').all().order_by('name')
+    queryset = Platform.objects.select_related('api_provider').all().order_by('id')
     serializer_class = PlatformSerializer
-    search_fields = ('name', 'code', 'value')
-    ordering_fields = ('name', 'created_at', 'updated_at', 'status')
+    search_fields = ('name', 'code')
+    ordering_fields = ('id', 'name', 'code', 'platform_type', 'api_provider__name', 'created_at')
+    filterset_fields: ClassVar[tuple] = ('platform_type', 'api_provider', 'status')
 
 
 @extend_schema_view(

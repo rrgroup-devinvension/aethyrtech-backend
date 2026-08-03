@@ -33,8 +33,11 @@ class JsonTemplateViewSet(BaseViewSet):
         'DELETE': AppPermissions.DELETE_JSON_TEMPLATE,
     }
 
-    queryset = JsonTemplate.objects.all().order_by('name')
+    queryset = JsonTemplate.objects.all().order_by('id')
     serializer_class = JsonTemplateSerializer
+    ordering_fields = ('id', 'name', 'template', 'process_type', 'format', 'created_at')
+    filterset_fields: ClassVar[tuple] = ('template', 'process_type', 'format', 'is_active')
+    search_fields = ('name', 'template')
 
     @action(detail=True, methods=['post'], url_path='set-status')
     def set_status(self, request, *args, **kwargs):
@@ -46,8 +49,8 @@ class JsonTemplateViewSet(BaseViewSet):
             instance.save(update_fields=['is_active'])
             return Response({'status': 'status updated', 'is_active': instance.is_active})
         return Response({'error': 'is_active field is required'}, status=400)
+    
     permission_classes = (IsAuthenticated,)
-    search_fields = ('name', 'template')
 
 
 class RegionJsonFileViewSet(BaseViewSet):

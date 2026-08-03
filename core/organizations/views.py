@@ -41,7 +41,9 @@ class OrganizationViewSet(BaseViewSet):
     queryset = Organization.objects.all()
     serializer_class = OrganizationSerializer
     search_fields = ('name', 'description')
-    ordering_fields = ('name', 'status', 'created_at', 'updated_at')
+    filterset_fields = ('status',)
+    ordering_fields = ('id', 'name', 'status', 'created_at', 'updated_at')
+    ordering = ('id',)
 
     def perform_create(self, serializer):
         """Perform create."""

@@ -45,10 +45,11 @@ class SchedulerViewSet(BaseViewSet):
     }
     organization_field = 'organization_id'
 
-    queryset = Scheduler.objects.all().order_by('-created_at')
+    queryset = Scheduler.objects.all().order_by('id')
     serializer_class = SchedulerSerializer
-    search_fields = ('name', 'type', 'status')
-    ordering_fields = ('name', 'created_at', 'updated_at', 'last_run', 'next_run')
+    search_fields = ('name', 'timezone')
+    ordering_fields = ('id', 'name', 'type', 'last_run', 'next_run', 'status')
+    filterset_fields: ClassVar[tuple] = ('type', 'status')
 
     @extend_schema(summary="Manually trigger a scheduler")
     @action(detail=True, methods=['post'])
@@ -112,10 +113,11 @@ class ActiveExecutionViewSet(BaseViewSet):
         'PATCH': AppPermissions.START_EXECUTION,
         'DELETE': AppPermissions.STOP_EXECUTION,
     }
-    queryset = ActiveExecution.objects.all().select_related('scheduler', 'created_by').order_by('-created_at')
+    queryset = ActiveExecution.objects.all().select_related('scheduler', 'created_by').order_by('-started_at')
     serializer_class = ActiveExecutionSerializer
-    search_fields = ('execution_type', 'status', 'scheduler__name')
-    ordering_fields = ('created_at', 'started_at', 'completed_at', 'status')
+    search_fields = ('scope_type', 'scope_name', 'scheduler__name')
+    ordering_fields = ('id', 'execution_type', 'started_at', 'completed_at', 'status')
+    filterset_fields: ClassVar[tuple] = ('execution_type', 'created_by', 'status')
 
     @extend_schema(summary="Stop a running execution")
     @action(detail=True, methods=['post'])
@@ -150,10 +152,11 @@ class ExecutionHistoryViewSet(BaseViewSet):
         'PATCH': AppPermissions.START_EXECUTION,
         'DELETE': AppPermissions.STOP_EXECUTION,
     }
-    queryset = ExecutionHistory.objects.all().select_related('scheduler', 'created_by').order_by('-created_at')
+    queryset = ExecutionHistory.objects.all().select_related('scheduler', 'created_by').order_by('-started_at')
     serializer_class = ExecutionHistorySerializer
-    search_fields = ('execution_type', 'status', 'scheduler__name')
-    ordering_fields = ('created_at', 'started_at', 'completed_at')
+    search_fields = ('scope_type', 'scope_name', 'scheduler__name')
+    ordering_fields = ('id', 'execution_type', 'started_at', 'completed_at', 'status')
+    filterset_fields: ClassVar[tuple] = ('execution_type', 'created_by', 'status')
 
 
 class DataDumpTaskViewSet(BaseViewSet):
@@ -170,8 +173,8 @@ class DataDumpTaskViewSet(BaseViewSet):
     }
     queryset = DataDumpTask.objects.all().select_related('execution').order_by('-created_at')
     serializer_class = DataDumpTaskSerializer
-    search_fields = ('status', 'api_dump_id', 'celery_task_id')
-    ordering_fields = ('created_at', 'started_at', 'completed_at', 'status')
+    search_fields = ('metadata', 'error_message', 'api_dump_id', 'celery_task_id')
+    ordering_fields = ('id', 'started_at', 'completed_at', 'status')
     filterset_fields: ClassVar[list] = ['execution', 'status']
 
     @action(detail=True, methods=['post'])
@@ -217,8 +220,8 @@ class JsonFileTaskViewSet(BaseViewSet):
     }
     queryset = JsonFileTask.objects.all().select_related('execution').order_by('-created_at')
     serializer_class = JsonFileTaskSerializer
-    search_fields = ('status', 'region_json_id', 'celery_task_id')
-    ordering_fields = ('created_at', 'started_at', 'completed_at', 'status')
+    search_fields = ('metadata', 'error_message', 'region_json_id', 'celery_task_id')
+    ordering_fields = ('id', 'started_at', 'completed_at', 'status')
     filterset_fields: ClassVar[list] = ['execution', 'status']
 
     @action(detail=True, methods=['post'])
@@ -263,6 +266,6 @@ class TaskHistoryViewSet(BaseViewSet):
     }
     queryset = TaskHistory.objects.all().select_related('execution').order_by('-created_at')
     serializer_class = TaskHistorySerializer
-    search_fields = ('status', 'task_type', 'resource_id', 'celery_task_id')
-    ordering_fields = ('created_at', 'started_at', 'completed_at', 'status')
+    search_fields = ('resource_metadata', 'error_message', 'resource_id', 'celery_task_id')
+    ordering_fields = ('id', 'started_at', 'completed_at', 'status')
     filterset_fields: ClassVar[list] = ['execution', 'status', 'task_type']

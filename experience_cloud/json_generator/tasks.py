@@ -110,6 +110,7 @@ def get_region_data(region_id: int) -> RegionDataSchema:
             }
 
         loc_item = {
+            "id": loc.id,
             "pincode": loc.pincode,
             "location": loc.address,
             "lat": float(loc.lat) if loc.lat is not None else None,

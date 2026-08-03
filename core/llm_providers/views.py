@@ -45,10 +45,27 @@ class LLMProviderViewSet(BaseViewSet):
         'PATCH': AppPermissions.UPDATE_LLM_PROVIDER,
         'DELETE': AppPermissions.DELETE_LLM_PROVIDER
     }
-    queryset = LLMProvider.objects.all().order_by('name')
+    queryset = LLMProvider.objects.all().order_by('id')
     serializer_class = LLMProviderSerializer
     search_fields = ('name', 'model')
-    ordering_fields = ('name', 'created_at', 'updated_at', 'enabled')
+    ordering_fields = ('id', 'name', 'model', 'created_at', 'updated_at', 'enabled')
+    filterset_fields: ClassVar[tuple] = ('enabled',)
+
+    def perform_update(self, serializer):
+        instance = self.get_object()
+        changed = False
+        if 'model' in serializer.validated_data and serializer.validated_data['model'] != instance.model:
+            changed = True
+        if 'base_url' in serializer.validated_data and serializer.validated_data['base_url'] != instance.base_url:
+            changed = True
+        if 'api_key' in serializer.validated_data and serializer.validated_data['api_key'] != instance.api_key:
+            changed = True
+            
+        if changed:
+            serializer.validated_data['health_check_status'] = 'NOT TESTED'
+            serializer.validated_data['last_health_check'] = None
+
+        super().perform_update(serializer)
 
     @extend_schema(summary="Set LLM Provider Status", request=dict, responses={200: dict})
     @action(detail=True, methods=["post"], url_path="set-status")

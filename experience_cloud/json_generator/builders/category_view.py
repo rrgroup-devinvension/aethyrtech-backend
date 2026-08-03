@@ -1,202 +1,64 @@
 import logging
 import re
+from collections import defaultdict
 
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
-from experience_cloud.json_generator.schemas import RegionDataSchema
+from experience_cloud.json_generator.schemas import (
+    RegionDataSchema, CategoryDataRow, AvailabilityRow, 
+    PlatformHealthDataset, PlatformHealthScores, 
+    TopKeywordRow, TopBrandRow, CategoryViewPayload
+)
 from experience_cloud.json_generator.utils import ItemGenerator, match_brand
 
 logger = logging.getLogger(__name__)
 
+class BrandMetrics:
+    """Aggregates all metrics for a single brand in one pass."""
+    def __init__(self, brand: str):
+        self.brand = brand
+        self.total_price = 0.0
+        self.price_count = 0
+        self.total_discount = 0.0
+        self.discount_count = 0
+        self.total_rating = 0.0
+        self.rating_count = 0
+        self.total_reviews = 0
+        self.total_videos = 0
+        
+        self.sku_count = 0
+        self.live_count = 0
+        
+        self.health_sum = 0
+        self.health_count = 0
+        
+        # Maps platform -> {"total": score, "count": int}
+        self.platform_health = defaultdict(lambda: {"total": 0, "count": 0})
 
-def build_brand_stats(matched_products: list, brand: str) -> dict | None:
-    """Build high level metrics for a brand."""
-    total_price = 0
-    price_count = 0
-    total_discount = 0
-    discount_count = 0
-    total_rating = 0
-    rating_count = 0
-    total_reviews = 0
-    total_videos = 0
-
-    if not matched_products:
-        return None
-
-    for p in matched_products:
-        if p.selling_price:
-            total_price += p.selling_price
-            price_count += 1
-        if p.discount_percentage:
-            total_discount += p.discount_percentage
-            discount_count += 1
-        if p.rating_value:
-            total_rating += p.rating_value
-            rating_count += 1
-        total_reviews += p.review_count or 0
-        total_videos += p.video_count or 0
-
-    avg_price = round(total_price / price_count, 2) if price_count else 0
-    avg_discount = round(total_discount / discount_count, 2) if discount_count else 0
-    avg_rating = round(total_rating / rating_count, 2) if rating_count else 0
-    return {
-        "brand": brand,
-        "avg_discount": f"{avg_discount}%",
-        "avg_price": f"₹{avg_price}",
-        "rating": avg_rating,
-        "reviews": total_reviews,
-        "videos": total_videos
-    }
-
-def platform_health_by_brand(matched_products: list, brand: str, platforms: list) -> list:
-    """Calculate platform health split for a brand."""
-    stats = {
-        p: {"total": 0, "count": 0}
-        for p in platforms
-    }
-    for p in matched_products:
-        platform = (p.platform or "").lower()
-        if platform not in stats:
-            continue
-        score = p.health_score()
-        stats[platform]["total"] += score
-        stats[platform]["count"] += 1
-    scores = []
-    for platform in platforms:
-        entry = stats[platform]
-        if entry["count"] == 0:
-            scores.append(0)
-        else:
-            avg = round(entry["total"] / entry["count"])
-            scores.append(avg)
-    return scores
-
-
-
-def build_availability_by_brand(brand_products_map: dict, brands: list) -> list:
-    """Aggregate availability metrics per brand."""
-    result = []
-    for brand in brands:
-        matched_products = brand_products_map.get(brand, [])
-        if not matched_products:
-            continue
-
-        available_count = 0
-        unavailable_count = 0
-        for p in matched_products:
-            status = (p.availability_status or "").lower()
-            if status == "available":
-                available_count += 1
-            else:
-                unavailable_count += 1
-
-        result.append({
-            "Brand": brand,
-            "SKU": str(available_count),
-            "Not Available": str(unavailable_count)
-        })
-    return result
-
-
-def build_category_data(brand_products_map: dict, brands: list) -> list:
-    """Build the category array structure for the final JSON."""
-    result = []
-    total_skus = 0
-    total_live = 0
-    total_health = 0
-    total_health_count = 0
-
-    for brand in brands:
-        matched_products = brand_products_map.get(brand, [])
-        if not matched_products:
-            continue
-
-        sku_count = 0
-        live_count = 0
-        health_sum = 0
-        health_count = 0
-
-        for p in matched_products:
-            sku_count += 1
-            # Availability
-            if (p.availability_status or "").lower() == "available":
-                live_count += 1
-            # Health Score
-            score = p.health_score()
-            health_sum += score
-            health_count += 1
-
-        live_percent = round((live_count / sku_count) * 100) if sku_count else 0
-        avg_health = round(health_sum / health_count) if health_count else 0
-        result.append({
-            "Audit Name": brand,
-            "Frequency": "One Time",
-            "SKUs": sku_count,
-            "Last Run": "31/01/2026",
-            "% Live": f"{live_percent}%",
-            "Avg Health": avg_health
-        })
-        # ---------- CATEGORY TOTAL ----------
-        total_skus += sku_count
-        total_live += live_count
-        total_health += health_sum
-        total_health_count += health_count
-
-    # ---------- CATEGORY SUMMARY ROW ----------
-    category_live_percent = round((total_live / total_skus) * 100) if total_skus else 0
-    category_avg_health = round(total_health / total_health_count) if total_health_count else 0
-    result.append({
-        "Audit Name": "Category",
-        "Frequency": "One Time",
-        "SKUs": total_skus,
-        "Last Run": "31/01/2026",
-        "% Live": f"{category_live_percent}%",
-        "Avg Health": category_avg_health
-    })
-
-    return result
-
-
-
-
-def prepare_topkeywords(keywords: list, products: ItemGenerator | None) -> list:
-    """Compute top 5 keywords from `keywords` (ordered list).
+def prepare_topkeywords(keywords: list, inverted_index: dict) -> list[TopKeywordRow]:
+    """Compute top 5 keywords from `keywords` (ordered list) using an inverted index.
 
     Ranking metric: total occurrences across product `title`, `description`, and `bullets`.
     Ties are broken by the original order in the `keywords` list (first occurrence wins).
-    Returns a list of dicts: {"keyword": str, "value": int, "change": str}.
+    Returns a list of strictly-typed TopKeywordRow dicts.
     """
     if not keywords:
         return []
 
-    # Pre-parse all products into sets of words (O(P) regex operations instead of O(P * K))
-    product_word_sets = []
-    for p in products or []:
-        try:
-            t = getattr(p, 'title', '') or ''
-            d = getattr(p, 'description', '') or ''
-            b = " ".join(getattr(p, 'bullets', []) or [])
-            combined = f"{t} {d} {b}".lower()
-            product_words = set(re.findall(r'\w+', combined))
-            if product_words:
-                product_word_sets.append(product_words)
-        except (AttributeError, TypeError, ValueError):
+    counts = []
+    for idx, kw in enumerate(keywords):
+        if not kw:
+            continue
+            
+        kw_words = set(re.findall(r'\w+', kw.lower()))
+        if not kw_words:
             continue
 
-    # Pre-parse keywords
-    kw_word_lists = []
-    for kw in keywords:
-        if kw:
-            kw_words = re.findall(r'\w+', kw.lower())
-            if kw_words:
-                kw_word_lists.append((kw, kw_words))
-
-    counts = []
-    for idx, (kw, kw_words) in enumerate(kw_word_lists):
-        # O(1) hash set lookup
-        total = sum(
-            1 for product_words in product_word_sets
-            if any(w in product_words for w in kw_words)
-        )
+        # O(1) hash set union lookup!
+        matched_products = set()
+        for w in kw_words:
+            matched_products.update(inverted_index.get(w, set()))
+            
+        total = len(matched_products)
         counts.append((kw, total, idx))
 
     # sort by total desc, tie-break by original index asc
@@ -204,65 +66,177 @@ def prepare_topkeywords(keywords: list, products: ItemGenerator | None) -> list:
 
     top = []
     for kw, total, _ in counts[:5]:
-        top.append({"keyword": kw, "value": int(total), "change": ""})
+        top.append(TopKeywordRow(keyword=kw, value=total, change=""))
     return top
-
 
 
 @handle_builder_exceptions
 def category_view_builder(
     region_data: RegionDataSchema, task, products=None, template="template-name"
-) -> tuple[bool, dict]:
+) -> tuple[bool, CategoryViewPayload]:
     """Construct the JSON payload for the Category View dashboard.
 
     Aggregates top-level catalog health, keyword frequency, platform-specific availability,
-    and competitor brand metrics into a unified summary payload.
+    and competitor brand metrics into a unified summary payload using a blazing fast O(P) single-pass architecture.
     """
     brands = region_data.get("display_brands", [])
     t_id = getattr(task, 'id', 'unknown')
     logger.info(f"Starting CATEGORY_VIEW JSON build for task {t_id}")
 
-    # Extract platforms directly from region_data schema
     platform_schemas = region_data.get("platforms", {})
-
     platform_codes = list(platform_schemas.keys())
     platform_names = [p.get("platform_name") for p in platform_schemas.values()]
 
-    top_brands = []
-    datasets = []
+    # O(1) lookup dictionary for brand matching
+    valid_brands = {b.lower(): b for b in brands}
+    brand_metrics: dict[str, BrandMetrics] = {b: BrandMetrics(b) for b in brands}
+    inverted_index = defaultdict(set)
 
-    # O(P*B) Grouping exactly once rather than looping in every aggregator
-    brand_products_map: dict[str, list] = {b: [] for b in brands}
-    for p in (products or []):
+    # SINGLE PASS AGGREGATION
+    for p_idx, p in enumerate(products or []):
+        # 1. Track Inverted Index for Keywords
+        try:
+            t = getattr(p, 'title', '') or ''
+            d = getattr(p, 'description', '') or ''
+            b = " ".join(getattr(p, 'bullets', []) or [])
+            combined = f"{t} {d} {b}".lower()
+            if combined.strip():
+                for word in set(re.findall(r'\w+', combined)):
+                    inverted_index[word].add(p_idx)
+        except (AttributeError, TypeError, ValueError):
+            pass
+
+        # 2. Track Brand Metrics
         if not p.brand:
             continue
-        for b in brands:
-            if match_brand(b, p.brand):
-                brand_products_map[b].append(p)
-                break
+            
+        b_key = str(p.brand).lower().strip()
+        matched_brand = valid_brands.get(b_key)
+        
+        if not matched_brand:
+            continue
+            
+        m = brand_metrics[matched_brand]
+        
+        # Build Brand Stats
+        if p.selling_price:
+            m.total_price += p.selling_price
+            m.price_count += 1
+        if p.discount_percentage:
+            m.total_discount += p.discount_percentage
+            m.discount_count += 1
+        if p.rating_value:
+            m.total_rating += p.rating_value
+            m.rating_count += 1
+        m.total_reviews += p.review_count or 0
+        m.total_videos += p.video_count or 0
+        
+        # Build Availability & Category Data
+        m.sku_count += 1
+        is_live = (p.availability_status or "").lower() == "available"
+        if is_live:
+            m.live_count += 1
+            
+        # Build Health Scores
+        score = p.health_score()
+        m.health_sum += score
+        m.health_count += 1
+        
+        platform = (p.platform or "").lower()
+        if platform in platform_codes:
+            m.platform_health[platform]["total"] += score
+            m.platform_health[platform]["count"] += 1
+
+    # RECONSTRUCT PAYLOAD FROM AGGREGATED METRICS
+    datasets: list[PlatformHealthDataset] = []
+    top_brands: list[TopBrandRow] = []
+    availability_data: list[AvailabilityRow] = []
+    category_data: list[CategoryDataRow] = []
+
+    total_category_skus = 0
+    total_category_live = 0
+    total_category_health_sum = 0
+    total_category_health_count = 0
 
     for brand in brands:
-        matched_products = brand_products_map.get(brand, [])
-        health_scores = platform_health_by_brand(matched_products, brand, platform_codes)
-        datasets.append({ "label": brand, "data": health_scores})
+        m = brand_metrics[brand]
+        
+        # 1. Platform Health Scores
+        scores = []
+        for plat in platform_codes:
+            plat_data = m.platform_health[plat]
+            if plat_data["count"] == 0:
+                scores.append(0)
+            else:
+                scores.append(round(plat_data["total"] / plat_data["count"]))
+        datasets.append(PlatformHealthDataset(label=brand, data=scores))
+        
+        # 2. Top Brands Stats
+        if m.sku_count > 0:
+            avg_price = round(m.total_price / m.price_count, 2) if m.price_count else 0
+            avg_discount = round(m.total_discount / m.discount_count, 2) if m.discount_count else 0
+            avg_rating = round(m.total_rating / m.rating_count, 2) if m.rating_count else 0
+            
+            top_brands.append(TopBrandRow(
+                brand=brand,
+                avg_discount=f"{avg_discount}%",
+                avg_price=f"₹{avg_price}",
+                rating=avg_rating,
+                reviews=m.total_reviews,
+                videos=m.total_videos
+            ))
+            
+        # 3. Availability
+        if m.sku_count > 0:
+            availability_data.append(AvailabilityRow({
+                "Brand": brand,
+                "SKU": str(m.live_count),
+                "Not Available": str(m.sku_count - m.live_count)
+            }))
+            
+        # 4. Category Data Row
+        if m.sku_count > 0:
+            live_percent = round((m.live_count / m.sku_count) * 100) if m.sku_count else 0
+            avg_health = round(m.health_sum / m.health_count) if m.health_count else 0
+            category_data.append(CategoryDataRow({
+                "Audit Name": brand,
+                "Frequency": "One Time",
+                "SKUs": m.sku_count,
+                "Last Run": "31/01/2026",
+                "% Live": f"{live_percent}%",
+                "Avg Health": avg_health
+            }))
+            
+            total_category_skus += m.sku_count
+            total_category_live += m.live_count
+            total_category_health_sum += m.health_sum
+            total_category_health_count += m.health_count
 
-    for b in brands:
-        matched_products = brand_products_map.get(b, [])
-        stats = build_brand_stats(matched_products, b)
-        if stats:
-            top_brands.append(stats)
+    # Category Summary Row
+    category_live_percent = round((total_category_live / total_category_skus) * 100) if total_category_skus else 0
+    category_avg_health = round(total_category_health_sum / total_category_health_count) if total_category_health_count else 0
+    category_data.append(CategoryDataRow({
+        "Audit Name": "Category",
+        "Frequency": "One Time",
+        "SKUs": total_category_skus,
+        "Last Run": "31/01/2026",
+        "% Live": f"{category_live_percent}%",
+        "Avg Health": category_avg_health
+    }))
 
     display_keywords = region_data.get("display_keywords", [])
-    top_keywords = prepare_topkeywords(display_keywords, products)
-    payload = {
-        "Category Data": build_category_data(brand_products_map, brands),
-        "Availability": build_availability_by_brand(brand_products_map, brands),
-        "PlatformHealthScores": {
-            "labels": platform_names,
-            "datasets": datasets
-        },
+    top_keywords = prepare_topkeywords(display_keywords, inverted_index)
+    
+    payload: CategoryViewPayload = CategoryViewPayload({
+        "Category Data": category_data,
+        "Availability": availability_data,
+        "PlatformHealthScores": PlatformHealthScores(
+            labels=platform_names,
+            datasets=datasets
+        ),
         "Top Keywords": top_keywords,
         "Top Brands": top_brands,
-    }
+    })
+    
     logger.info(f"Completed CATEGORY_VIEW JSON build for task {t_id}")
     return False, payload

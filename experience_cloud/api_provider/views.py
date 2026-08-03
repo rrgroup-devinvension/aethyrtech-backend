@@ -43,10 +43,11 @@ class ApiProviderViewSet(BaseViewSet):
         'DELETE': AppPermissions.DELETE_API_PROVIDER
     }
 
-    queryset = ApiProvider.objects.all().order_by('name')
+    queryset = ApiProvider.objects.all().order_by('id')
     serializer_class = ApiProviderSerializer
-    search_fields = ('name', 'base_url', 'status')
-    ordering_fields = ('name', 'created_at', 'updated_at', 'status')
+    search_fields = ('name', 'code')
+    ordering_fields = ('id', 'name', 'code', 'auth_type', 'health_check_status', 'status')
+    filterset_fields: ClassVar[tuple] = ('auth_type', 'health_check_status', 'status')
 
     @extend_schema(summary="Set API Provider Status", request=dict, responses={200: dict})
     @action(detail=True, methods=["post"], url_path="set-status")

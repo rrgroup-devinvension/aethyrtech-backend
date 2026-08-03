@@ -1,7 +1,9 @@
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Sequence
 
 from rest_framework import viewsets
 from rest_framework.exceptions import PermissionDenied
+import django_filters
+import rest_framework.filters
 
 
 class UUIDLookupMixin:
@@ -42,6 +44,11 @@ class BaseViewSet(UUIDLookupMixin, viewsets.ModelViewSet):
     action_permission_mapping: ClassVar[dict[str, str]] = {}
     permission_mapping: ClassVar[dict[str, str]] = {}
     organization_field: str | None = None
+    filter_backends: Sequence[Any] = [
+        django_filters.rest_framework.DjangoFilterBackend,
+        rest_framework.filters.SearchFilter,
+        rest_framework.filters.OrderingFilter,
+    ]
 
     def get_permissions(self):
         """Dynamically resolve permissions based on action or method mapping."""

@@ -4,8 +4,10 @@ from drf_spectacular.utils import extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.organizations.models import Brand, Organization
+from core.organizations.models import Brand, Organization, Region
 from core.users.models import User
+from core.llm_providers.models import LLMProvider
+from experience_cloud.api_provider.models import ApiProvider
 from experience_cloud.executions.models import ActiveExecution
 
 logger = logging.getLogger(__name__)
@@ -29,6 +31,14 @@ class DashboardDataView(APIView):
         users_count = User.objects.count()
         brands_count = Brand.objects.count()
         orgs_count = Organization.objects.count()
+        regions_count = Region.objects.count()
+        api_providers_count = ApiProvider.objects.count()
+        llm_providers_count = LLMProvider.objects.count()
+
+        # Execution stats
+        exec_running = ActiveExecution.objects.filter(status='RUNNING').count()
+        exec_pending = ActiveExecution.objects.filter(status='PENDING').count()
+        exec_failed = ActiveExecution.objects.filter(status='FAILED').count()
 
         # Recent running executions as a stand-in for "scraping logs"
         recent_executions = ActiveExecution.objects.order_by('-started_at')[:20]
@@ -46,5 +56,12 @@ class DashboardDataView(APIView):
             "users_count": users_count,
             "brands_count": brands_count,
             "organizations_count": orgs_count,
+            "regions_count": regions_count,
+            "providers_count": api_providers_count + llm_providers_count,
+            "execution_stats": {
+                "running": exec_running,
+                "pending": exec_pending,
+                "failed": exec_failed
+            },
             "recent_executions": executions_data
         }, status=200)

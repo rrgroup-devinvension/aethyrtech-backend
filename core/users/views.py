@@ -40,11 +40,12 @@ class RoleViewSet(BaseViewSet):
         'PATCH': AppPermissions.UPDATE_ROLE,
         'DELETE': AppPermissions.DELETE_ROLE
     }
-    queryset = Role.objects.all()
+    queryset = Role.objects.all().order_by('id')
     permission_classes = (IsAuthenticated,)
     serializer_class = RoleSerializer
     search_fields = ("name", "code")
-    ordering_fields = ("name", "code")
+    ordering_fields = ("id", "name", "code", "role_type")
+    filterset_fields: ClassVar[tuple] = ("role_type", "is_active")
     http_method_names = ('get', 'post', 'put', 'patch', 'delete')
 
     @extend_schema(summary="Get Permission Registry", responses={200: list})
@@ -90,10 +91,23 @@ class UserViewSet(BaseViewSet):
         'PATCH': AppPermissions.UPDATE_USER,
         'DELETE': AppPermissions.DELETE_USER
     }
-    queryset = User.objects.all()
+    queryset = User.objects.all().order_by('id')
     permission_classes = (IsAuthenticated,)
-    search_fields = ("name", "email", "role")
-    ordering_fields = ("name", "email", "role", "created_at")
+    search_fields = ("name", "email", "phone_number")
+    ordering_fields = ("id", "name", "role", "permissions_count")
+    filterset_fields: ClassVar[tuple] = ('role', 'is_active')
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        from django.db.models import IntegerField, Func, F, Value
+        from django.db.models.functions import Coalesce
+        
+        # Approximate permissions_count for sorting purposes by summing JSON array lengths
+        qs = qs.annotate(
+            permissions_count=Coalesce(Func(F('role__permissions'), function='JSON_LENGTH', output_field=IntegerField()), Value(0)) + 
+                              Coalesce(Func(F('extra_permissions'), function='JSON_LENGTH', output_field=IntegerField()), Value(0))
+        )
+        return qs
 
     def get_permissions(self):
         """Determine custom permissions based on the requested action."""
