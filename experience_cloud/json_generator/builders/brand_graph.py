@@ -1,14 +1,15 @@
+from experience_cloud.json_generator.models import TemplateCodes
 import re
 
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
 from experience_cloud.json_generator.schemas import RegionDataSchema
-from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template_json
+from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template
 
 
 @handle_builder_exceptions
 def brand_graph_builder(
     region_data: RegionDataSchema, task, products=None, template="template-name"
-) -> tuple[bool, dict]:
+) -> tuple[bool, list]:
     """Process raw catalog data and keyword metrics to construct the Brand Graph JSON payload.
 
     Executes complex scoring formulas across health, incentive, and anxiety metrics for each brand,
@@ -22,12 +23,12 @@ def brand_graph_builder(
     # ===============================
     # 1. LOAD DATA
     # ===============================
-    catalog_data = serve_region_template_json(
-        region_id, "catalog-data-complete"
+    catalog_data = serve_region_template(
+        region_id, TemplateCodes.CATALOG.value
     )
 
-    keyword_matrix = serve_region_template_json(
-        region_id, "keyword-matrix"
+    keyword_matrix = serve_region_template(
+        region_id, TemplateCodes.KEYWORD_MATRIX.value
     )
 
     if not catalog_data or not keyword_matrix:
@@ -92,8 +93,17 @@ def brand_graph_builder(
                 product.get("detail_data", {}).get("reviews", 0) or 0
             )
 
-            # EXACT FORMULA
-            product_anxiety = (0.4 * rating + 0.6 * reviews) / 2
+            import math
+            
+            # Rating Anxiety: Scale 0-5 inverted to 0-100 (rating 5 = 0 anxiety)
+            rating_anxiety = ((5 - min(5, max(0, rating))) / 5) * 100
+            
+            # Review Anxiety: Logarithmic scale up to 1000 reviews for 0-100 index
+            log_reviews = math.log10(reviews + 1)
+            review_anxiety = (max(0, 3 - log_reviews) / 3) * 100
+
+            # A = 40% Rating Anxiety + 60% Review Anxiety
+            product_anxiety = (0.4 * rating_anxiety) + (0.6 * review_anxiety)
             total_anxiety += product_anxiety
 
         # ===============================
@@ -133,9 +143,4 @@ def brand_graph_builder(
         task
     )
 
-    return True, {
-        "file_name": file_name,
-        "file_path": file_path,
-        "success": True,
-        "message": "Brand Graph successfully generated and saved."
-    }
+    return False, brand_graph_results

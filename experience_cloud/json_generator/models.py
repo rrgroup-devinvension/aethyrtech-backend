@@ -5,15 +5,57 @@ from django.db import models
 from shared.base.models import BaseModel
 
 
+class TemplateCodes(models.TextChoices):
+    BRAND_AUDIT = 'brand_audit', 'Brand Audit'
+    CATALOG = 'catalog', 'Catalog'
+    CATEGORY_VIEW = 'category_view', 'Category View'
+    KEYWORD_MATRIX = 'keyword_matrix', 'Keyword Matrix'
+    KEYWORD_COUNTS = 'keyword_counts', 'Keyword Counts'
+    PRODUCT_REVIEWS = 'product_reviews', 'Product Reviews'
+    CARTESIAN_PRODUCTS_PINCODES = 'cartesian_products_pincodes', 'Cartesian Products Pincodes'
+    INSIGHTS = 'insights', 'Insights'
+    BRAND_GRAPH = 'brand_graph', 'Brand Graph'
+    POSITIVE_DATA = 'positive_data', 'Positive Data'
+    RISK_DATA = 'risk_data', 'Risk Data'
+    REVIEWS_INSIGHTS = 'reviews_insights', 'Reviews Insights'
+    PLP_INSIGHTS = 'plp_insights', 'Plp Insights'
+    PDP_INSIGHTS = 'pdp_insights', 'Pdp Insights'
+    INCENTIVE_INSIGHTS = 'incentive_insights', 'Incentive Insights'
+    ACTION_PLANS = 'action_plans', 'Action Plans'
+    PLP_KEYWORD_OPPORTUNITIES = 'plp_keyword_opportunities', 'Plp Keyword Opportunities'
+    PDP_CONTENT_AUDIT = 'pdp_content_audit', 'Pdp Content Audit'
+    DISCOUNT_OPPORTUNITIES = 'discount_opportunities', 'Discount Opportunities'
+    ALERTS_REVIEWS_REPORT = 'alerts_reviews_report', 'Alerts Reviews Report'
+    TACTICAL_ACTION_PLAN_REPORT = 'tactical_action_plan_report', 'Tactical Action Plan Report'
+    PRODUCT_DEEPDIVE_DATA = 'product_deepdive_data', 'Product Deepdive Data'
+    TOPIC_NEGATIVE_REVIEWS = 'topic_negative_reviews', 'Topic Negative Reviews'
+    COMPILE_MEDIA_DASHBOARD = 'compile_media_dashboard', 'Compile Media Dashboard'
+
+class ProcessTypeCodes(models.TextChoices):
+    AUTOMATIC = 'automatic', 'Automatic'
+    MANUAL = 'manual', 'Manual'
+
+class FormatCodes(models.TextChoices):
+    CSV = 'csv', 'CSV'
+    JSON = 'json', 'JSON'
+    HTML = 'html', 'HTML'
+
+class ParentFolderCodes(models.TextChoices):
+    EXPERIENCE_CLOUD = 'experience-cloud', 'Experience Cloud'
+    MEDIA_CLOUD = 'media-cloud', 'Media Cloud'
+    IDENTITY_CLOUD = 'identity-cloud', 'Identity Cloud'
+
+
 class JsonTemplate(BaseModel):
     """Model representing a configuration template for generating JSON or CSV payload files."""
-    PROCESS_CHOICES: ClassVar[tuple] = (('automatic', 'Automatic'), ('manual', 'Manual'))
-    FORMAT_CHOICES: ClassVar[tuple] = (('csv', 'CSV'), ('json', 'JSON'))
-
+    
     name = models.CharField(max_length=255)
     template = models.CharField(max_length=255, unique=True)
-    process_type = models.CharField(max_length=50, choices=PROCESS_CHOICES, blank=True, default='')
-    format = models.CharField(max_length=50, choices=FORMAT_CHOICES, blank=True, default='')
+    file_name = models.CharField(max_length=255, blank=True, default='')
+    parent_folder = models.CharField(max_length=255, choices=ParentFolderCodes.choices, blank=True, default='')
+    parent_template = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='child_templates')
+    process_type = models.CharField(max_length=50, choices=ProcessTypeCodes.choices, blank=True, default='')
+    file_format = models.CharField(max_length=50, blank=True, default='')
     is_active = models.BooleanField(default=True)
 
     class Meta:

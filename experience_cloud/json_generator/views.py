@@ -35,9 +35,21 @@ class JsonTemplateViewSet(BaseViewSet):
 
     queryset = JsonTemplate.objects.all().order_by('id')
     serializer_class = JsonTemplateSerializer
-    ordering_fields = ('id', 'name', 'template', 'process_type', 'format', 'created_at')
-    filterset_fields: ClassVar[tuple] = ('template', 'process_type', 'format', 'is_active')
+    ordering_fields = ('id', 'name', 'template', 'process_type', 'file_format', 'created_at')
+    filterset_fields: ClassVar[tuple] = ('template', 'process_type', 'file_format', 'is_active')
     search_fields = ('name', 'template')
+
+    @action(detail=False, methods=['get'], url_path='form-options')
+    def form_options(self, request, *args, **kwargs):
+        """Return all valid enums for the frontend form in a single request."""
+        from .models import TemplateCodes, ParentFolderCodes, ProcessTypeCodes, FormatCodes
+        
+        return Response({
+            "templateCodes": [{"id": k, "name": v} for k, v in TemplateCodes.choices],
+            "parentFolders": [{"id": k, "name": v} for k, v in ParentFolderCodes.choices],
+            "processTypes": [{"id": k, "name": v} for k, v in ProcessTypeCodes.choices],
+            "formats": [{"id": k, "name": v} for k, v in FormatCodes.choices]
+        })
 
     @action(detail=True, methods=['post'], url_path='set-status')
     def set_status(self, request, *args, **kwargs):
@@ -106,6 +118,7 @@ class RegionJsonFileViewSet(BaseViewSet):
         """
         scope_type = request.data.get('scope_type')
         scope_id = request.data.get('scope_id')
+        target = request.data.get('target', 'all')
 
         if not scope_type or not scope_id:
             return Response({'error': 'scope_type and scope_id are required'}, status=status.HTTP_400_BAD_REQUEST)
@@ -142,7 +155,8 @@ class RegionJsonFileViewSet(BaseViewSet):
             region_groups[reg_id].append({
                 'template': f.template.template,
                 'resource_name': f.template.name,
-                'file_id': f.id
+                'file_id': f.id,
+                'target': target
             })
 
         if not region_groups:
@@ -243,7 +257,7 @@ class DebugRunJsonBuildView(APIView):
             from experience_cloud.json_generator.builders import get_builder_for_template
             from experience_cloud.json_generator.collectors import get_all_products
             from experience_cloud.json_generator.tasks import get_region_data
-            from experience_cloud.json_generator.utils import save_json_to_file
+            from experience_cloud.json_generator.utils import save_region_template
 
             # 1. Load region memory data
             region_data = get_region_data(region_id)
@@ -269,7 +283,7 @@ class DebugRunJsonBuildView(APIView):
 
             # 5. Save the file if not already saved by builder
             if not is_file_saved:
-                file_name, file_path = save_json_to_file(json_payload, brand_name, template_name, region_name)
+                file_name, file_path = save_region_template(json_payload, brand_name, template_name, region_name)
             else:
                 file_name = json_payload.get("file_name") if isinstance(json_payload, dict) else None
                 file_path = json_payload.get("file_path") if isinstance(json_payload, dict) else None

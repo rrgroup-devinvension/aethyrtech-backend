@@ -1,10 +1,11 @@
+from experience_cloud.json_generator.models import TemplateCodes
 import json
 from datetime import datetime
 
 from core.llm_providers.services.llm_service import LLMService
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
 from experience_cloud.json_generator.schemas import RegionDataSchema
-from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template_json
+from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template
 
 
 @handle_builder_exceptions
@@ -29,8 +30,8 @@ def pdp_insights_builder(
     # ===============================
     # LOAD CATALOG DATA
     # ===============================
-    catalog_data_raw = serve_region_template_json(
-        region_id, "catalog-data-complete"
+    catalog_data_raw = serve_region_template(
+        region_id, TemplateCodes.CATALOG.value
     )
 
     if not catalog_data_raw:
@@ -179,6 +180,22 @@ def pdp_insights_builder(
             }
 
     # ===============================
+    # CSV PREP: PDP Content Audit
+    # ===============================
+    from typing import Any
+    csv_rows: list[list[Any]] = []
+    csv_rows.append(['Brand', 'SKU', 'Product Title', 'Overall Health Score', 'Deficiencies / Missing Content'])
+    
+    for issue in pdps_needing_improvement:
+        csv_rows.append([
+            current_brand, 
+            issue.get("sku", ""), 
+            issue.get("name", ""), 
+            issue.get("health_score", 0), 
+            issue.get("deficiencies", "")
+        ])
+
+    # ===============================
     # LLM VALIDATION + CALL
     # ===============================
     if not getattr(LLMService, "enabled", True):
@@ -242,13 +259,8 @@ Do NOT include markdown formatting. Return purely the JSON object.
 
     content = str(response)
 
-    start = content.find("{")
-    end = content.rfind("}")
-
-    if start == -1 or end == -1:
-        raise ValueError("Invalid JSON response from LLM")
-
-    llm_data = json.loads(content[start:end + 1])
+    from experience_cloud.json_generator.utils import safe_parse_llm_json
+    llm_data = safe_parse_llm_json(content)
 
     if not llm_data or "pdp_analysis_text" not in llm_data:
         raise ValueError("LLM JSON parsing failed")
@@ -284,9 +296,17 @@ Do NOT include markdown formatting. Return purely the JSON object.
         task
     )
 
+    save_or_update_region_json(
+        region_id,
+        TemplateCodes.PDP_CONTENT_AUDIT.value,
+        csv_rows,
+        current_brand,
+        task=None
+    )
+
     return True, {
         "file_name": file_name,
         "file_path": file_path,
         "success": True,
-        "message": "PDP Insights successfully generated."
+        "message": "PDP Insights and CSV content audit successfully generated."
     }

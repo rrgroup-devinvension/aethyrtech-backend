@@ -1,3 +1,4 @@
+from experience_cloud.json_generator.models import TemplateCodes
 import json
 import random
 import re
@@ -7,7 +8,7 @@ from datetime import datetime, timedelta
 from core.llm_providers.services.llm_service import LLMService
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
 from experience_cloud.json_generator.schemas import RegionDataSchema
-from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template_json
+from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template
 
 
 @handle_builder_exceptions
@@ -44,13 +45,13 @@ def reviews_insights_builder(
     # ===============================
     # LOAD DATA
     # ===============================
-    data = serve_region_template_json(
-    region_id, "product-reviews-ratings")
+    data = serve_region_template(
+    region_id, TemplateCodes.PRODUCT_REVIEWS.value)
     if not data:
         raise ValueError("Reviews JSON not found.")
 
-    catalog_data = serve_region_template_json(
-    region_id, "catalog-data-complete") or {}
+    catalog_data = serve_region_template(
+    region_id, TemplateCodes.CATALOG.value) or {}
 
     # ===============================
     # SKU → PRODUCT NAME
@@ -183,8 +184,10 @@ def reviews_insights_builder(
                     product_sentiments[pid]["negative"] += 1
                     platform_stats[platform]["negative"] += 1
 
+                    is_long_reviewer = bool(review.get("reviewer") and len(review.get("reviewer")) > 20)
+                    reviewer_name = "Anonymous" if is_long_reviewer else review.get("reviewer", "Anonymous")
                     title = str(review.get("title") or "")
-                    text = str(review.get("review_text") or "")
+                    text = str(review.get("review_text") or (review.get("reviewer") if is_long_reviewer else ""))
                     full_text = f"{title} {text}"
 
                     if len(negative_reviews_text) < 100:
@@ -193,25 +196,23 @@ def reviews_insights_builder(
                     if is_verified:
                         negative_verified_reviews.append({
                             "date": review_date or "1970-01-01",
-                            "reviewer": review.get("reviewer", "Anonymous"),
-                            "title": review.get("title", ""),
-                            "text": review.get("review_text", "")
+                            "reviewer": reviewer_name,
+                            "title": title,
+                            "text": text
                         })
 
                     all_negative_reviews_full.append({
                         "product": product_titles.get(pid, pid),
                         "date": review_date or "",
                         "rating": rating,
-                        "title": review.get("title", ""),
-                        "text": review.get("review_text", ""),
-                        "reviewer": review.get("reviewer", "Anonymous"),
+                        "title": title,
+                        "text": text,
+                        "reviewer": reviewer_name,
                         "platform": platform.capitalize(),
                         "verified": "Yes" if is_verified else "No"
                     })
 
                     if review_date >= four_weeks_ago and len(last_4_weeks_neg_reviews) < 60:
-                        title = str(review.get("title") or "")
-                        text = str(review.get("review_text") or "")
                         last_4_weeks_neg_reviews.append(f"{title}: {text[:200]}")
 
                 # Trends and Word Freq
@@ -252,8 +253,9 @@ def reviews_insights_builder(
                         product_monthly_trend[pid][month]["negative"] += 1
 
                 # Word Freq
+                is_long_reviewer = bool(review.get("reviewer") and len(review.get("reviewer")) > 20)
                 title = str(review.get("title") or "")
-                text = str(review.get("review_text") or "")
+                text = str(review.get("review_text") or (review.get("reviewer") if is_long_reviewer else ""))
                 words = re.split(r'[\s\W]+', (title + " " + text).lower())
                 for w in words:
                     if len(w) < 3 or w.isnumeric() or w in stop_words:
@@ -261,8 +263,25 @@ def reviews_insights_builder(
                     word_freq[w] = word_freq.get(w, 0) + 1
 
     # ===============================
-    # FORMAT TRENDS
+    # LLM & WORD CLOUD FALLBACK
     # ===============================
+    if len(word_freq) < 10:
+        cat_data = serve_region_template(region_id, TemplateCodes.CATEGORY_VIEW.value) or {}
+        top_kws = cat_data.get("Top Keywords", [])
+        for kw_item in top_kws:
+            kw_text = str(kw_item.get("keyword") or "").lower()
+            val = int(kw_item.get("value") or 10)
+            for w in re.split(r'[\s\W]+', kw_text):
+                if len(w) < 3 or w.isnumeric() or w in stop_words:
+                    continue
+                word_freq[w] = word_freq.get(w, 0) + val
+                
+        for title in product_titles.values():
+            for w in re.split(r'[\s\W]+', str(title).lower()):
+                if len(w) < 3 or w.isnumeric() or w in stop_words:
+                    continue
+                word_freq[w] = word_freq.get(w, 0) + 50
+
     def format_trend(d):
         return [{"label": k, **v} for k, v in sorted(d.items())]
 
@@ -277,36 +296,68 @@ def reviews_insights_builder(
     top_3_latest_neg = negative_verified_reviews[:3]
     latest_neg_json = json.dumps(top_3_latest_neg, indent=2)
 
-    prompt = f"""
-You are an AI data analyst expert. Analyze Brand '{current_brand}' Sentiments:
-Positive: {brand_sentiments['positive']}, Neutral: {brand_sentiments['neutral']}, \
-Negative: {brand_sentiments['negative']}.
+    last_4w_sample = "\n- ".join(last_4_weeks_neg_reviews[:30])
+    
+    prompt = f"""You are an AI data analyst expert. Analyze the following data for the brand {current_brand}.
+    Overall Sentiment counts: Positive: {brand_sentiments['positive']}, Neutral: {brand_sentiments['neutral']}, Negative: {brand_sentiments['negative']}.
+    Sample negative reviews:
+    - {sample_negative}
 
-Sample negative reviews:
-- {sample_negative}
+    Latest 3 Verified Negative Reviews:
+    {latest_neg_json}
 
-Latest 3 Verified Negative Reviews:
-{latest_neg_json}
+    Recent negative reviews from the last 4 weeks:
+    - {last_4w_sample}
 
-Recent negative reviews (last 4 weeks):
-- {chr(10).join(['- ' + r for r in last_4_weeks_neg_reviews[:30]])}
-
-Return purely JSON (no markdown) with:
-- sentiment_analysis_text (3-4 sentences summary)
-- top_10_negative_topics (Exactly 10 items, keys: topic, score, description)
-- trending_issues_4_weeks (5-8 items, keys: issue, severity, description, count_mentions)
-- alerts_this_week (3-5 items, keys: issue, pct, severity)
-- latest_responses (3 items - recommended_responses for the specific negative reviews provided, keys: \
-reviewer, date, original_review, recommended_response)
-- tactical_action_plan (immediate short term actions for one_month; keys: action, owner, impact, priority)
-"""
+    Provide insights in the exact following JSON format:
+    {{
+        "sentiment_analysis_text": "A 3-4 sentence analytical summary of the overall sentiment. Highlight main positives and core grievances.",
+        "top_10_negative_topics": [
+            {{ "topic": "Topic Name e.g. Print Quality", "score": 85, "description": "One sentence summary of this issue" }},
+            {{ "topic": "Topic Name", "score": 72, "description": "..." }}
+        ],
+        "trending_issues_4_weeks": [
+            {{ "issue": "Issue title", "severity": "high", "description": "Short description of the trending issue", "count_mentions": 15 }},
+            {{ "issue": "Issue title", "severity": "medium", "description": "...", "count_mentions": 8 }}
+        ],
+        "alerts_this_week": [
+            {{ "issue": "Issue title", "pct": 35, "severity": "critical" }},
+            {{ "issue": "Issue title", "pct": 28, "severity": "high" }},
+            {{ "issue": "Issue title", "pct": 20, "severity": "medium" }}
+        ],
+        "latest_responses": [
+            {{ "reviewer": "Reviewer Name", "date": "YYYY-MM-DD", "original_review": "Title - Text", "recommended_response": "Professional, empathetic response..." }}
+        ],
+        "tactical_action_plan": {{
+            "immediate": [
+                {{ "action": "Specific action to take right now", "owner": "Team/Department responsible", "impact": "Expected outcome/metric improvement", "priority": "critical" }},
+                {{ "action": "Second immediate action", "owner": "Team", "impact": "Expected outcome", "priority": "high" }}
+            ],
+            "one_week": [
+                {{ "action": "Action to complete within 7 days", "owner": "Team", "impact": "Expected outcome", "priority": "high" }},
+                {{ "action": "Second weekly action", "owner": "Team", "impact": "Expected outcome", "priority": "medium" }}
+            ],
+            "one_month": [
+                {{ "action": "Strategic action for 30-day execution", "owner": "Team", "impact": "Expected outcome", "priority": "medium" }},
+                {{ "action": "Second monthly action", "owner": "Team", "impact": "Expected outcome", "priority": "medium" }}
+            ]
+        }}
+    }}
+    IMPORTANT:
+    - top_10_negative_topics MUST have exactly 10 items. 'score' = percentage of negative reviews mentioning this topic (0-100).
+    - trending_issues_4_weeks should have 5-8 items based on the last 4 weeks of negative reviews. 'severity' = critical/high/medium/low.
+    - alerts_this_week should have 3-5 items representing top issues from the most recent week. 'pct' = percentage share among negative reviews that week.
+    - latest_responses should have 3 items matching the 3 latest verified negative reviews provided.
+    - tactical_action_plan MUST have exactly 2 items in each of 'immediate', 'one_week', and 'one_month'. Actions must be specific, measurable, and directly derived from the review data and sentiment analysis. 'owner' should be a realistic business team (e.g., Customer Support, Product Engineering, Quality Assurance, Marketing, Supply Chain). 'impact' should describe a tangible expected improvement. 'priority' = critical/high/medium.
+    Do NOT include markdown formatting (like ```json). Return purely the JSON object so it can be parsed."""
 
     response = LLMService.get_service().generate_content(
         [{'role': 'user', 'content': prompt}], action="reviews_insights",
         brand_id=brand_id, brand_name=current_brand
     )
     content = str(response)
-    llm_data = json.loads(content[content.find("{"): content.rfind("}") + 1])
+    from experience_cloud.json_generator.utils import safe_parse_llm_json
+    llm_data = safe_parse_llm_json(content)
 
     # ===============================
     # CSV PREP (Matching PHP logic)
@@ -540,11 +591,40 @@ reviewer, date, original_review, recommended_response)
         task
     )
 
+    save_or_update_region_json(
+        region_id,
+        TemplateCodes.TOPIC_NEGATIVE_REVIEWS.value,
+        topic_csv_rows,
+        current_brand,
+        task=None
+    )
+    save_or_update_region_json(
+        region_id,
+        TemplateCodes.PRODUCT_DEEPDIVE_DATA.value,
+        deep_dive_rows,
+        current_brand,
+        task=None
+    )
+    save_or_update_region_json(
+        region_id,
+        TemplateCodes.ALERTS_REVIEWS_REPORT.value,
+        _alerts_html,
+        current_brand,
+        task=None
+    )
+    save_or_update_region_json(
+        region_id,
+        TemplateCodes.TACTICAL_ACTION_PLAN_REPORT.value,
+        _tactical_html,
+        current_brand,
+        task=None
+    )
+
     return True, {
         "file_name": file_name,
         "file_path": file_path,
         "success": True,
-        "message": "Reviews Insights successfully generated."
+        "message": "Reviews Insights successfully generated with all HTML and CSV reports."
     }
 
 

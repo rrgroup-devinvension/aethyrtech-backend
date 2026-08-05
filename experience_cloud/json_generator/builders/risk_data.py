@@ -1,9 +1,10 @@
+from experience_cloud.json_generator.models import TemplateCodes
 import random
 from typing import Any
 
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
 from experience_cloud.json_generator.schemas import RegionDataSchema
-from experience_cloud.json_generator.utils import save_or_update_region_json, serve_region_template_json
+from experience_cloud.json_generator.utils import save_or_update_region_json, serve_region_template
 
 
 @handle_builder_exceptions
@@ -29,22 +30,22 @@ def risk_data_builder(
     # 1. LOAD DATA (same as PHP)
     # ===============================
     try:
-        pincode_data = serve_region_template_json(
-            region_id, "cartesian-products-pincodes"
+        pincode_data = serve_region_template(
+            region_id, TemplateCodes.CARTESIAN_PRODUCTS_PINCODES.value
         )
     except Exception as e:
         raise ValueError("Failed to load pincode data") from e
 
     try:
-        catalog_data = serve_region_template_json(
-            region_id, "catalog-data-complete"
+        catalog_data = serve_region_template(
+            region_id, TemplateCodes.CATALOG.value
         )
     except Exception as e:
         raise ValueError("Failed to load catalog data") from e
 
     try:
-        keyword_data: dict[str, Any] = serve_region_template_json(
-            region_id, "keyword-counts"
+        keyword_data: dict[str, Any] = serve_region_template(
+            region_id, TemplateCodes.KEYWORD_COUNTS.value
         )
     except (OSError, ValueError):
         keyword_data = {}
@@ -231,8 +232,10 @@ def risk_data_builder(
 
     output = {
         "brands": ranked_stats,
-        "benchmark": benchmark
+        "benchmark": benchmark,
+        "last_updated": __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
+
 
     # ===============================
     # 5. SAVE (your system)

@@ -75,6 +75,12 @@ class BaseViewSet(UUIDLookupMixin, viewsets.ModelViewSet):
 
         return perms
 
+    def paginate_queryset(self, queryset):
+        """Allow clients to optionally disable pagination by passing ?no_page=true."""
+        if self.request.query_params.get('no_page') == 'true':
+            return None
+        return super().paginate_queryset(queryset)
+
     def get_queryset(self):
         """Filter the queryset to only return records belonging to the user's organization."""
         qs = super().get_queryset()

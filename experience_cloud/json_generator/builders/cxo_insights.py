@@ -1,9 +1,10 @@
+from experience_cloud.json_generator.models import TemplateCodes
 import json
 
 from core.llm_providers.services.llm_service import LLMService
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
 from experience_cloud.json_generator.schemas import RegionDataSchema
-from experience_cloud.json_generator.utils import save_or_update_region_json, serve_region_template_json
+from experience_cloud.json_generator.utils import save_or_update_region_json, serve_region_template
 
 
 @handle_builder_exceptions
@@ -26,58 +27,16 @@ def cxo_insights_builder(
     # ===============================
     # LOAD REQUIRED DATA
     # ===============================
-    brand_graph = serve_region_template_json(
-        region_id, "brand_graph"
+    brand_graph = serve_region_template(
+        region_id, TemplateCodes.BRAND_GRAPH.value
     )
 
-    content_insights = {
-        "audit_summary": {
-            "section_title": "Audit Summary",
-            "cards": [
-            { "label": "Sites Audited", "value": 5 },
-            { "label": "Pages Audited", "value": 0 },
-            { "label": "Product Availability", "value": "0%" },
-            { "label": "Live Audited", "value": "100%" },
-            { "label": "Missing Pages", "value": "0%" },
-            { "label": "Audit Errors", "value": "0%" },
-            { "label": "Master vs Live", "value": "0%" },
-            { "label": "Previous vs Live", "value": "0%" },
-            { "label": "Flagged Issues", "value": 0 }
-            ]
-        },
-        "summary_box": {
-            "content": "Content audit data pending. Please run comprehensive content analysis to populate this section."
-        },
-        "overall_health_chart": {
-            "section_title": "Overall Health Score",
-            "your_score": 0,
-            "scale": [
-            { "min": 0, "max": 19, "label": "None" },
-            { "min": 20, "max": 39, "label": "Poor" },
-            { "min": 40, "max": 59, "label": "Needs Improvement" },
-            { "min": 60, "max": 79, "label": "Average" },
-            { "min": 80, "max": 99, "label": "Very Good" },
-            { "min": 100, "max": 100, "label": "Best in Class" }
-            ]
-        },
-        "recommended_actions": {
-            "section_title": "Recommended Actions",
-            "note": "Content audit pending - comprehensive insights will be available "
-                    "after content analysis is completed."
-        },
-        "core_content_analysis": {
-            "section_title": "Core Content Analysis",
-            "note": "Detailed analysis pending. Please run comprehensive content audit."
-        }
-        }
-
-
-    keyword_counts = serve_region_template_json(
-        region_id, "keyword-counts"
+    keyword_counts = serve_region_template(
+        region_id, TemplateCodes.KEYWORD_COUNTS.value
     )
 
-    pincode_data = serve_region_template_json(
-        region_id, "cartesian-products-pincodes"
+    pincode_data = serve_region_template(
+        region_id, TemplateCodes.CARTESIAN_PRODUCTS_PINCODES.value
     )
 
     # ===============================
@@ -86,13 +45,10 @@ def cxo_insights_builder(
     missing = []
 
     if not brand_graph:
-        missing.append("brand_graph")
-
-    if not content_insights:
-        missing.append("content_insights_data")
+        missing.append(TemplateCodes.BRAND_GRAPH.value)
 
     if not keyword_counts:
-        missing.append("keyword-counts")
+        missing.append(TemplateCodes.KEYWORD_COUNTS.value)
 
     if not pincode_data:
         missing.append("pincodes")
@@ -141,8 +97,6 @@ def cxo_insights_builder(
     # PREP DATA STRINGS
     # ===============================
     brand_graph_str = json.dumps(brand_graph)
-    content_insights_str = json.dumps(content_insights)
-
     keywords_str = json.dumps(keyword_counts)[:1000]
 
     # ===============================
@@ -150,22 +104,17 @@ def cxo_insights_builder(
     # ===============================
     prompt = f"""
 You are a Senior Data Scientist and Strategic Brand Consultant for {current_brand}.
-Your task is to analyze the provided raw data and generate high-impact strategic insights for \
-the CMO (Marketing) and CCO (Commerce/Operations).
+Your task is to analyze the provided raw data and generate EXACTLY 16 high-impact strategic insights for the CMO (Marketing) and CCO (Commerce/Operations).
 
 ### DATA CONTEXT:
 1. BRAND PERFORMANCE (brand_graph.json):
 {brand_graph_str}
 
-2. CONTENT AUDIT (content_insights_data.json):
-(Summarized focus on {current_brand} gaps vs Competitors)
-{content_insights_str}
-
-3. LOGISTICS, COVERAGE & PRICING (pincodes):
+2. LOGISTICS, COVERAGE & PRICING (pincodes):
 (Summary and sample for {current_brand})
 {brand_pincode_summary}
 
-4. SEO COVERAGE (keyword-counts.json):
+3. SEO COVERAGE (keyword-counts.json):
 (Summarized focus on {current_brand} keyword presence in title/desc/bullets)
 {keywords_str}...
 
@@ -185,7 +134,7 @@ Schema:
             "title": "Title",
             "metric": "Metric",
             "bench": "Bench",
-            "type": "positive",
+            "type": "positive\" OR \"negative",
             "impact": "High",
             "owner": "CMO",
             "description": "Brief desc.",
@@ -199,7 +148,10 @@ Schema:
     # CALL LLM
     # ===============================
     response = LLMService.get_service().generate_content(
-        [{'role': 'user', 'content': prompt}], action="cxo_insights",
+        [
+            {'role': 'system', 'content': 'Extract high-level executive insights from raw e-commerce data.'},
+            {'role': 'user', 'content': prompt}
+        ], action="cxo_insights",
         brand_id=brand_id, brand_name=current_brand
     )
     start = response.find("{")
@@ -223,8 +175,4 @@ Schema:
         task
     )
 
-    return True, {
-        "file_name": file_name,
-        "file_path": file_path,
-        "message": "Insights successfully generated"
-    }
+    return False, llm_data

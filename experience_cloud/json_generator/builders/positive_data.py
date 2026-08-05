@@ -1,9 +1,10 @@
+from experience_cloud.json_generator.models import TemplateCodes
 import random
 from datetime import datetime
 
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
 from experience_cloud.json_generator.schemas import RegionDataSchema
-from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template_json
+from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template
 
 
 @handle_builder_exceptions
@@ -30,22 +31,22 @@ def positive_data_builder(
     # 1. LOAD DATA (WITH FALLBACK)
     # ===============================
     try:
-        pincode_data = serve_region_template_json(
-            region_id, "cartesian-products-pincodes"
+        pincode_data = serve_region_template(
+            region_id, TemplateCodes.CARTESIAN_PRODUCTS_PINCODES.value
         )
     except (OSError, ValueError, TypeError, AttributeError, KeyError):
         pincode_data = {"Sheet1": []}
 
     try:
-        catalog_data = serve_region_template_json(
-            region_id, "catalog-data-complete"
+        catalog_data = serve_region_template(
+            region_id, TemplateCodes.CATALOG.value
         )
     except (OSError, ValueError, TypeError, AttributeError, KeyError):
         catalog_data = {}
 
     try:
-        keyword_data = serve_region_template_json(
-            region_id, "keyword-counts"
+        keyword_data = serve_region_template(
+            region_id, TemplateCodes.KEYWORD_COUNTS.value
         )
     except (OSError, ValueError, TypeError, AttributeError, KeyError):
         keyword_data = {}

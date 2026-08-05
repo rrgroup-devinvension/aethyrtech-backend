@@ -54,33 +54,72 @@ def archive_old_json_file(old_relative_path, brand_name, region_name):
     except OSError as e:
         logger.error(f"Failed to archive old JSON file {old_relative_path}: {e}")
 
-def save_json_to_file(json_data, brand_name, template, region_name="unknown", existing_path=None):
-    """Serialize and save a JSON dictionary to the filesystem, archiving any previously existing file."""
-    ctx = f"[JSON Gen | Brand: {brand_name} | Template: {template}]"
-    logger.info(f"{ctx} Attempting to save JSON file...")
+def save_region_template(data, brand_name, template, region_name="unknown", existing_path=None, file_name_override=None, parent_folder_override=None, file_format=None):
+    """Serialize and save data to the filesystem, using JsonTemplate configurations."""
+    ctx = f"[Data Gen | Brand: {brand_name} | Template: {template}]"
+    logger.info(f"{ctx} Attempting to save file...")
 
     try:
         if existing_path:
             archive_old_json_file(existing_path, brand_name, region_name)
 
+        from experience_cloud.json_generator.models import JsonTemplate
+        template_obj = JsonTemplate.objects.filter(template=template).first()
+
+        if not file_name_override and template_obj and template_obj.file_name:
+            file_name_override = template_obj.file_name
+        if not parent_folder_override and template_obj and template_obj.parent_folder:
+            parent_folder_override = template_obj.parent_folder
+        if not file_format:
+            file_format = template_obj.file_format if template_obj and template_obj.file_format else 'json'
+
         brand_slug = slugify(brand_name)
         region_slug = slugify(region_name)
-        template_slug = slugify(template)
 
-        folder = os.path.join(settings.MEDIA_ROOT, 'brands', brand_slug, region_slug)
+        if file_name_override:
+            filename = file_name_override
+            if not filename.endswith(f'.{file_format}'):
+                filename = f"{filename}.{file_format}"
+        else:
+            template_slug = slugify(template)
+            filename = f"{template_slug}.{file_format}"
+
+        folder_parts = ['brands', brand_slug, region_slug]
+        if parent_folder_override:
+            folder_parts.append(parent_folder_override)
+
+        folder = os.path.join(settings.MEDIA_ROOT, *folder_parts)
         os.makedirs(folder, exist_ok=True)
-        filename = f"{template_slug}.json"
         filepath = os.path.join(folder, filename)
-        relative_path = f"brands/{brand_slug}/{region_slug}/{filename}"
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(json_data, f, ensure_ascii=False, indent=4, cls=DjangoJSONEncoder)
+        relative_path = "/".join(folder_parts + [filename])
+        
+        encoding_format = 'utf-8-sig' if file_format == 'csv' else 'utf-8'
+        with open(filepath, 'w', encoding=encoding_format, newline='') as f:
+            if file_format == 'csv':
+                import csv
+                if isinstance(data, list) and len(data) > 0:
+                    if isinstance(data[0], dict):
+                        writer = csv.DictWriter(f, fieldnames=data[0].keys())
+                        writer.writeheader()
+                        writer.writerows(data)
+                    elif isinstance(data[0], (list, tuple)):
+                        writer = csv.writer(f)
+                        writer.writerows(data)
+                    else:
+                        f.write(str(data))
+                else:
+                    f.write(str(data))
+            elif file_format in ['html', 'txt', 'xml']:
+                f.write(data if isinstance(data, str) else str(data))
+            else:
+                json.dump(data, f, ensure_ascii=False, indent=4, cls=DjangoJSONEncoder)
 
-        logger.info(f"{ctx} Saved JSON file -> {filepath}")
+        logger.info(f"{ctx} Saved file -> {filepath}")
         return filename, relative_path
     except Exception as exc:
-        logger.exception(f"{ctx} JSON file save failed")
+        logger.exception(f"{ctx} File save failed")
         raise FileWriteException(
-            message="JSON file save failed",
+            message="File save failed",
             extra=str(exc)
         ) from exc
 
@@ -357,7 +396,7 @@ def load_json_response(file_path):
     except json.JSONDecodeError as e:
         raise APIException(detail=f"JSON error: {e!s}") from e
 
-def serve_region_template_json(region_id: int, template_name: str):
+def serve_region_template(region_id: int, template_name: str):
     """Query RegionJsonFile records and securely serve the underlying raw JSON payload file from the filesystem."""
     try:
         rj = RegionJsonFile.objects.filter(
@@ -390,7 +429,7 @@ def save_or_update_region_json(
     Often consumed natively by advanced template builders orchestrating multi-file generation cycles.
     """
     from core.organizations.models import Region
-    from experience_cloud.json_generator.models import RegionJsonFile
+    from experience_cloud.json_generator.models import RegionJsonFile, JsonTemplate
     region_name = "unknown"
     if region_id:
         region = Region.objects.filter(id=region_id).first()
@@ -402,7 +441,11 @@ def save_or_update_region_json(
         if existing_file and existing_file.file_path:
             archive_old_json_file(existing_file.file_path, brand_name, region_name)
 
-    file_name, file_path = save_json_to_file(json_data, brand_name, template_name, region_name)
+    template_obj = JsonTemplate.objects.filter(template=template_name).first()
+    file_name_override = template_obj.file_name if template_obj and template_obj.file_name else None
+    parent_folder_override = template_obj.parent_folder if template_obj and template_obj.parent_folder else None
+
+    file_name, file_path = save_region_template(json_data, brand_name, template_name, region_name, file_name_override=file_name_override, parent_folder_override=parent_folder_override)
 
     import os
 
@@ -431,3 +474,26 @@ def save_or_update_region_json(
         ).update(**update_kwargs)
 
     return file_name, file_path
+
+
+def safe_parse_llm_json(content: str) -> dict:
+    """Attempt to parse LLM JSON output robustly."""
+    import json
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        start = content.find("{")
+        end = content.rfind("}")
+        if start != -1 and end != -1:
+            json_str = content[start:end + 1]
+        else:
+            json_str = content
+            
+        try:
+            import json_repair
+            return json_repair.loads(json_str)
+        except ImportError:
+            return json.loads(json_str)
+    except Exception as e:
+        logger.error(f"Failed to parse LLM JSON: {e}\nContent: {content}")
+        return {}

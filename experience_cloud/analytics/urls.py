@@ -8,7 +8,6 @@ from .views import (
     CategoryDataView,
     ContentInsightsDataView,
     CROBarriersDataView,
-    DashboardDataView,
     DashboardPositiveDataView,
     GenerateContentView,
     IncentiveInsightsDataView,
@@ -23,9 +22,6 @@ from .views import (
 )
 
 urlpatterns = [
-    # Global dashboard
-    path("dashboard/", DashboardDataView.as_view(), name="dashboard_data_view"),
-
     # Region-specific JSON data APIs
     path("region-dashboard/<int:region_id>/", RegionDashboardDataView.as_view(), name="region_dashboard_data_view"),
     path("insights/<int:region_id>/", InsightsDataView.as_view(), name="insights_data_view"),

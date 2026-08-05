@@ -1,3 +1,4 @@
+from experience_cloud.json_generator.models import TemplateCodes
 import json
 import logging
 import re
@@ -9,7 +10,7 @@ from rest_framework.exceptions import NotFound
 from core.llm_providers.services.llm_service import LLMService
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
 from experience_cloud.json_generator.schemas import RegionDataSchema
-from experience_cloud.json_generator.utils import save_or_update_region_json, serve_region_template_json
+from experience_cloud.json_generator.utils import save_or_update_region_json, serve_region_template
 
 logger = logging.getLogger(__name__)
 
@@ -225,15 +226,15 @@ def action_plans_builder(
     assert region_id is not None
     assert current_brand is not None
     brand_id = region_data.get("brand_id")
-    target = region_data.get("target", "all")
+    target = task.metadata.get("target", "all") if task and task.metadata else "all"
 
     queue = []
 
     # 1. Experience Cloud Insights
     if target in ('all', 'experience'):
         try:
-            insights_data = serve_region_template_json(
-        region_id, "insights")
+            insights_data = serve_region_template(
+        region_id, TemplateCodes.INSIGHTS.value)
             experience_insights = insights_data.get('cxo_insights', [])
             for i in experience_insights:
                 queue.append({
@@ -271,8 +272,8 @@ def action_plans_builder(
     # Load dashboard context
     dashboard_context = ""
     try:
-        dash_data = serve_region_template_json(
-        region_id, "risk_data")
+        dash_data = serve_region_template(
+        region_id, TemplateCodes.RISK_DATA.value)
         dashboard_context = json.dumps(dash_data, indent=2)
     except NotFound:
         logger.info("RISK_DATA template not found for brand %s. Using empty dashboard context.", current_brand)
@@ -280,8 +281,8 @@ def action_plans_builder(
     # Load existing plans to preserve task statuses
     existing_plans: dict[str, Any] = {'plans': {}, 'last_modified': datetime.now().isoformat()}
     try:
-        loaded = serve_region_template_json(
-        region_id, "action_plans")
+        loaded = serve_region_template(
+        region_id, TemplateCodes.ACTION_PLANS.value)
         if loaded and 'plans' in loaded:
             existing_plans = loaded
     except NotFound:
@@ -349,7 +350,7 @@ Schema:
 
         try:
             response = LLMService.get_service().generate_content(
-        [{'role': 'user', 'content': prompt}], action="action_plans",
+        [{'role': 'user', 'content': prompt}], action=TemplateCodes.ACTION_PLANS.value,
         brand_id=brand_id, brand_name=current_brand
     )
             if not response:
@@ -357,14 +358,8 @@ Schema:
                 continue
 
             content = str(response)
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            if start == -1 or end == -1:
-                errors.append(f"Insight #{insight_id}: Invalid JSON response")
-                continue
-
-            clean_json = content[start:end]
-            decoded = json.loads(clean_json)
+            from experience_cloud.json_generator.utils import safe_parse_llm_json
+            decoded = safe_parse_llm_json(content)
 
             if not decoded or 'tasks' not in decoded:
                 errors.append(f"Insight #{insight_id}: Failed to parse AI response schema")
@@ -372,9 +367,9 @@ Schema:
 
             # Enrich tasks
             tasks = []
-            for idx, task in enumerate(decoded['tasks']):
-                target_val = str(task.get('target_value', 'TBD'))
-                baseline_val = str(task.get('baseline_value', insight.get('bench', '')))
+            for idx, ai_task in enumerate(decoded['tasks']):
+                target_val = str(ai_task.get('target_value', 'TBD'))
+                baseline_val = str(ai_task.get('baseline_value', insight.get('bench', '')))
 
                 target_is_percent = '%' in target_val
                 baseline_is_percent = '%' in baseline_val
@@ -412,14 +407,14 @@ Schema:
 
                 tasks.append({
                     'task_id': f"t_{insight_id}_{str(idx + 1).zfill(3)}",
-                    'title': task.get('title', 'Untitled Task'),
-                    'description': task.get('description', ''),
-                    'category': task.get('category', 'General'),
-                    'priority': task.get('priority', 'medium'),
-                    'kpi': task.get('kpi', insight.get('metric')),
+                    'title': ai_task.get('title', 'Untitled Task'),
+                    'description': ai_task.get('description', ''),
+                    TemplateCodes.CATEGORY_VIEW.value: ai_task.get('category', 'General'),
+                    'priority': ai_task.get('priority', 'medium'),
+                    'kpi': ai_task.get('kpi', insight.get('metric')),
                     'target_value': target_val,
                     'baseline_value': baseline_val,
-                    'timeline_days': task.get('timeline_days', 14),
+                    'timeline_days': ai_task.get('timeline_days', 14),
                     'assigned_to': None,
                     'assigned_at': None,
                     'status': 'pending',
@@ -448,6 +443,9 @@ Schema:
 
     existing_plans['last_modified'] = datetime.now().isoformat()
 
+    # Deduplicate and link similar tasks across insights
+    _deduplicate_and_link_tasks(existing_plans)
+
     # Save back
     file_name, file_path = save_or_update_region_json(
         region_id,
@@ -472,3 +470,34 @@ Schema:
         "skipped": skipped,
         "errors": errors
     }
+
+def _deduplicate_and_link_tasks(existing_plans: dict) -> None:
+    """Deduplicate tasks across all insights to avoid flooding the team with identical actions."""
+    if 'plans' not in existing_plans:
+        return
+
+    seen_signatures = set()
+    
+    for plan_key, plan_data in existing_plans['plans'].items():
+        if 'tasks' not in plan_data:
+            continue
+            
+        unique_tasks = []
+        for task in plan_data['tasks']:
+            # Create a unique signature based on title and KPI
+            title = str(task.get('title', '')).strip().lower()
+            kpi = str(task.get('kpi', '')).strip().lower()
+            sig = f"{title}_{kpi}"
+            
+            # If this is a pending, unassigned task that is identical to another one, skip it
+            status = task.get('status')
+            assigned = task.get('assigned_to')
+            
+            if status == 'pending' and not assigned:
+                if sig in seen_signatures:
+                    continue  # Deduplicate
+            
+            seen_signatures.add(sig)
+            unique_tasks.append(task)
+            
+        plan_data['tasks'] = unique_tasks

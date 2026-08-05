@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 from core.llm_providers.services.llm_service import LLMService
 from core.organizations.models import Brand, Region
 from core.users.models import User
-from experience_cloud.json_generator.models import RegionJsonFile
+from experience_cloud.json_generator.models import RegionJsonFile, TemplateCodes
 
 logger = logging.getLogger(__name__)
 
@@ -49,24 +49,6 @@ class RegionBaseDataView(APIView):
             raise APIException(detail=f"JSON error: {e!s}") from e
 
 
-class DashboardDataView(APIView):
-    """API view for retrieving high-level global dashboard metrics."""
-    from shared.serializers import EmptySerializer
-    serializer_class = EmptySerializer
-
-    @extend_schema(summary="Get Global Dashboard Data", tags=["Global Analytics"])
-    def get(self, request):
-        """Retrieve aggregated global platform statistics like total users and brands."""
-        users_count = User.objects.count()
-        brands_count = Brand.objects.count()
-
-        return Response({
-            "brands_count": brands_count,
-            "users_count": users_count,
-            "scraping_logs": [] # Left blank until scraping logs logic is defined in experience_cloud
-        })
-
-
 class RegionDashboardDataView(RegionBaseDataView):
     """API view for retrieving top-level analytics tailored to a specific region's dashboard."""
     @extend_schema(summary="Get Region Dashboard Data", tags=["Region Analytics"])
@@ -75,7 +57,7 @@ class RegionDashboardDataView(RegionBaseDataView):
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
-        return Response(self.fetch_analytics_data(region, "risk_data"), status=200)
+        return Response(self.fetch_analytics_data(region, TemplateCodes.RISK_DATA), status=200)
 
 
 class InsightsDataView(RegionBaseDataView):
@@ -88,8 +70,8 @@ class InsightsDataView(RegionBaseDataView):
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
         return Response({
             "brand_name": region.brand.name,
-            "dashboard": self.fetch_analytics_data(region, "risk_data"),
-            "insights": self.fetch_analytics_data(region, "insights")
+            "dashboard": self.fetch_analytics_data(region, TemplateCodes.RISK_DATA),
+            "insights": self.fetch_analytics_data(region, TemplateCodes.INSIGHTS)
         }, status=200)
 
 
@@ -101,7 +83,7 @@ class DashboardPositiveDataView(RegionBaseDataView):
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
-        return Response(self.fetch_analytics_data(region, "positive_data"), status=200)
+        return Response(self.fetch_analytics_data(region, TemplateCodes.POSITIVE_DATA), status=200)
 
 
 class CROBarriersDataView(RegionBaseDataView):
@@ -112,7 +94,7 @@ class CROBarriersDataView(RegionBaseDataView):
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
-        return Response(self.fetch_analytics_data(region, "brand_graph"), status=200)
+        return Response(self.fetch_analytics_data(region, TemplateCodes.BRAND_GRAPH), status=200)
 
 
 class PlpInsightsDataView(RegionBaseDataView):
@@ -123,7 +105,7 @@ class PlpInsightsDataView(RegionBaseDataView):
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
-        return Response(self.fetch_analytics_data(region, "plp_insights"), status=200)
+        return Response(self.fetch_analytics_data(region, TemplateCodes.PLP_INSIGHTS), status=200)
 
 
 class IncentiveInsightsDataView(RegionBaseDataView):
@@ -134,7 +116,7 @@ class IncentiveInsightsDataView(RegionBaseDataView):
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
-        return Response(self.fetch_analytics_data(region, "incentive_insights"), status=200)
+        return Response(self.fetch_analytics_data(region, TemplateCodes.INCENTIVE_INSIGHTS), status=200)
 
 
 class PdpInsightsDataView(RegionBaseDataView):
@@ -145,7 +127,7 @@ class PdpInsightsDataView(RegionBaseDataView):
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
-        return Response(self.fetch_analytics_data(region, "pdp_insights"), status=200)
+        return Response(self.fetch_analytics_data(region, TemplateCodes.PDP_INSIGHTS), status=200)
 
 
 class ReviewsInsightsDataView(RegionBaseDataView):
@@ -156,7 +138,7 @@ class ReviewsInsightsDataView(RegionBaseDataView):
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
-        return Response(self.fetch_analytics_data(region, "reviews_insights"), status=200)
+        return Response(self.fetch_analytics_data(region, TemplateCodes.REVIEWS_INSIGHTS), status=200)
 
 
 class CategoryDataView(RegionBaseDataView):
@@ -167,7 +149,7 @@ class CategoryDataView(RegionBaseDataView):
         region = self.get_region_or_404(region_id)
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
-        return Response(self.fetch_analytics_data(region, "category_view"), status=200)
+        return Response(self.fetch_analytics_data(region, TemplateCodes.CATEGORY_VIEW), status=200)
 
 
 class BrandAuditDataView(RegionBaseDataView):
@@ -179,8 +161,8 @@ class BrandAuditDataView(RegionBaseDataView):
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
         return Response({
-            "category": self.fetch_analytics_data(region, "category_view"),
-            "dashboard": self.fetch_analytics_data(region, "insights")
+            "category": self.fetch_analytics_data(region, TemplateCodes.CATEGORY_VIEW),
+            "dashboard": self.fetch_analytics_data(region, TemplateCodes.INSIGHTS)
         }, status=200)
 
 
@@ -205,7 +187,7 @@ class ProductCatalogDataView(RegionBaseDataView):
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
 
         sub_type = (request.query_params.get("id") or "")
-        catalog_data = self.fetch_analytics_data(region, "catalog")
+        catalog_data = self.fetch_analytics_data(region, TemplateCodes.CATALOG)
 
         if not sub_type:
             raise NotFound(detail="Catalog filter 'id' not provided")
@@ -223,7 +205,7 @@ class CatalogDetailView(RegionBaseDataView):
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
 
-        products_data = self.fetch_analytics_data(region, "catalog")
+        products_data = self.fetch_analytics_data(region, TemplateCodes.CATALOG)
 
         # Legacy assumed brand name as the top-level key. Verify this matches the new structure.
         brand_name = region.brand.name
@@ -235,7 +217,7 @@ class CatalogDetailView(RegionBaseDataView):
         if not product_response:
             raise NotFound(detail=f"Product with id {product_id} not found in region {region_id} catalog")
 
-        keywords_data = self.fetch_analytics_data(region, "keyword_counts")
+        keywords_data = self.fetch_analytics_data(region, TemplateCodes.KEYWORD_COUNTS)
         product_title = product_response.get("product_title")
         filtered_keywords = {}
 
@@ -260,7 +242,7 @@ class ReportsDataView(RegionBaseDataView):
 
         # Keep backward compatibility for pincodes
         return Response({
-            "reports": self.fetch_analytics_data(region, "cartesian_products_pincodes"),
+            "reports": self.fetch_analytics_data(region, TemplateCodes.CARTESIAN_PRODUCTS_PINCODES),
             "pincodes": [
                 { "lat": 28.6517, "lng": 77.1906, "area": "Karol Bagh", "pincode": "110005" },
                 { "lat": 28.4089, "lng": 77.3178, "area": "Faridabad Sector 6", "pincode": "121006" },
@@ -286,7 +268,7 @@ class GenerateContentView(RegionBaseDataView):
         if not region:
             raise NotFound("Region not found")
 
-        catalog = self.fetch_analytics_data(region, "catalog")
+        catalog = self.fetch_analytics_data(region, TemplateCodes.CATALOG)
         brand_name = region.brand.name
         brand_data = catalog.get(brand_name, [])
 
@@ -371,7 +353,7 @@ class UpdateProductContentView(RegionBaseDataView):
         if not region:
             raise NotFound("Region not found")
 
-        catalog = self.fetch_analytics_data(region, "catalog")
+        catalog = self.fetch_analytics_data(region, TemplateCodes.CATALOG)
         brand_name = region.brand.name
         brand_data = catalog.get(brand_name, [])
 
@@ -385,7 +367,7 @@ class UpdateProductContentView(RegionBaseDataView):
             product.setdefault("detail_data", {})["description"] = content
 
         try:
-            rjf = RegionJsonFile.objects.filter(region=region, template__template="catalog").latest("created_at")
+            rjf = RegionJsonFile.objects.filter(region=region, template__template=TemplateCodes.CATALOG).latest("created_at")
             full_path = os.path.join(str(settings.MEDIA_ROOT), str(rjf.file_path))
             with open(full_path, "w", encoding="utf-8") as f:
                 json.dump(catalog, f, indent=4)

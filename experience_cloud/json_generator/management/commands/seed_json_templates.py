@@ -1,7 +1,5 @@
 from django.core.management.base import BaseCommand
-
-from experience_cloud.json_generator.models import JsonTemplate
-
+from experience_cloud.json_generator.models import JsonTemplate, TemplateCodes, ProcessTypeCodes, FormatCodes, ParentFolderCodes
 
 class Command(BaseCommand):
     """Django management command to programmatically seed core JSON templates.
@@ -13,52 +11,68 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         """Execute the deterministic JSON template seeding transaction."""
-        # Static definitions of templates based on the BUILDER_REGISTRY keys
-        templates = [
-            # Automatic templates
-            {"slug": "brand_audit", "process_type": "automatic"},
-            {"slug": "catalog", "process_type": "automatic"},
-            {"slug": "category_view", "process_type": "automatic"},
-            {"slug": "keyword_matrix", "process_type": "automatic"},
-            {"slug": "keyword_counts", "process_type": "automatic"},
-            {"slug": "product_reviews", "process_type": "automatic"},
-            {"slug": "cartesian_products_pincodes", "process_type": "automatic"},
+        
+        # We can map the specific attributes per template code
+        template_configs = {
+            TemplateCodes.BRAND_AUDIT: {'process': ProcessTypeCodes.AUTOMATIC, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.CATALOG: {'process': ProcessTypeCodes.AUTOMATIC, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.CATEGORY_VIEW: {'process': ProcessTypeCodes.AUTOMATIC, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.KEYWORD_MATRIX: {'process': ProcessTypeCodes.AUTOMATIC, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.KEYWORD_COUNTS: {'process': ProcessTypeCodes.AUTOMATIC, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.PRODUCT_REVIEWS: {'process': ProcessTypeCodes.AUTOMATIC, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.CARTESIAN_PRODUCTS_PINCODES: {'process': ProcessTypeCodes.AUTOMATIC, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            
+            TemplateCodes.INSIGHTS: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.BRAND_GRAPH: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.POSITIVE_DATA: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.RISK_DATA: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.REVIEWS_INSIGHTS: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.PLP_INSIGHTS: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.PDP_INSIGHTS: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.INCENTIVE_INSIGHTS: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.ACTION_PLANS: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.COMPILE_MEDIA_DASHBOARD: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.JSON, 'parent': None, 'folder': ParentFolderCodes.MEDIA_CLOUD},
 
-            # Manual templates
-            {"slug": "insights", "process_type": "manual"},
-            {"slug": "brand_graph", "process_type": "manual"},
-            {"slug": "positive_data", "process_type": "manual"},
-            {"slug": "risk_data", "process_type": "manual"},
-            {"slug": "reviews_insights", "process_type": "manual"},
-            {"slug": "plp_insights", "process_type": "manual"},
-            {"slug": "pdp_insights", "process_type": "manual"},
-            {"slug": "incentive_insights", "process_type": "manual"},
-            {"slug": "action_plans", "process_type": "manual"},
-        ]
+            # Child Templates
+            TemplateCodes.PLP_KEYWORD_OPPORTUNITIES: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.CSV, 'parent': TemplateCodes.PLP_INSIGHTS, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.PDP_CONTENT_AUDIT: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.CSV, 'parent': TemplateCodes.PDP_INSIGHTS, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.DISCOUNT_OPPORTUNITIES: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.CSV, 'parent': TemplateCodes.INCENTIVE_INSIGHTS, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.TOPIC_NEGATIVE_REVIEWS: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.CSV, 'parent': TemplateCodes.REVIEWS_INSIGHTS, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.PRODUCT_DEEPDIVE_DATA: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.CSV, 'parent': TemplateCodes.REVIEWS_INSIGHTS, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.ALERTS_REVIEWS_REPORT: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.HTML, 'parent': TemplateCodes.ACTION_PLANS, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+            TemplateCodes.TACTICAL_ACTION_PLAN_REPORT: {'process': ProcessTypeCodes.MANUAL, 'format': FormatCodes.HTML, 'parent': TemplateCodes.ACTION_PLANS, 'folder': ParentFolderCodes.EXPERIENCE_CLOUD},
+        }
 
         created_count = 0
         updated_count = 0
-
-        for item in templates:
-            slug = item["slug"]
-            process_type = item["process_type"]
-
-            # Create a pretty name from the slug (e.g., 'brand_audit' -> 'Brand Audit')
-            name = slug.replace("_", " ").title()
-
+        
+        # First pass: Create all templates without setting parents
+        for code, name in TemplateCodes.choices:
+            config = template_configs.get(code)
+            if not config:
+                continue
+                
             _, created = JsonTemplate.objects.update_or_create(
-                template=slug,
+                template=code,
                 defaults={
                     "name": name,
-                    "process_type": process_type,
-                    "format": "json"  # Default format
+                    "process_type": config['process'],
+                    "file_format": config['format'],
+                    "parent_folder": config['folder']
                 }
             )
-
             if created:
                 created_count += 1
             else:
                 updated_count += 1
+                
+        # Second pass: Set parents
+        for code, name in TemplateCodes.choices:
+            config = template_configs.get(code)
+            if config and config['parent']:
+                parent_template = JsonTemplate.objects.filter(template=config['parent']).first()
+                if parent_template:
+                    JsonTemplate.objects.filter(template=code).update(parent_template=parent_template)
 
         success_style = getattr(self.style, "SUCCESS", lambda x: x)
         self.stdout.write(

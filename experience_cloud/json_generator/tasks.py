@@ -159,9 +159,19 @@ def process_region_batch(execution_id: int, region_id: int, file_task_ids: list)
             f"[JSON Gen | Exec: {execution_id} | Region: {region_data.get('region_name', region_id)} "
             f"| Brand: {region_data.get('brand_name', 'Unknown')}]"
         )
-        logger.info(f"{ctx} Region data loaded. Fetching all products...")
-
-        product_generator: ItemGenerator = get_all_products(region_data)
+        from experience_cloud.json_generator.models import ProcessTypeCodes
+        
+        has_automatic = RegionJsonFile.objects.filter(
+            task_id__in=[str(t) for t in file_task_ids],
+            template__process_type=ProcessTypeCodes.AUTOMATIC.value
+        ).exists()
+        
+        if has_automatic:
+            logger.info(f"{ctx} Region data loaded. Fetching all products for automatic templates...")
+            product_generator: ItemGenerator | None = get_all_products(region_data)
+        else:
+            logger.info(f"{ctx} All templates are manual. Skipping product fetch.")
+            product_generator = None
 
         for task_id in file_task_ids:
             region_file = RegionJsonFile.objects.select_related('template').filter(task_id=str(task_id)).first()
@@ -197,8 +207,8 @@ def process_region_batch(execution_id: int, region_id: int, file_task_ids: list)
 
                 if not is_file_saved:
                     # Orchestrator saves the file
-                    from experience_cloud.json_generator.utils import save_json_to_file
-                    file_name, file_path = save_json_to_file(
+                    from experience_cloud.json_generator.utils import save_region_template
+                    file_name, file_path = save_region_template(
                         json_payload, brand_name, template_name, region_name, existing_path=existing_path
                     )
                 else:
