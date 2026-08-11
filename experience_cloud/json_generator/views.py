@@ -216,7 +216,7 @@ class RegionJsonFileViewSet(BaseViewSet):
 
         file.status = 'STOPPED'
         file.error_message = 'Manually stopped by user'
-        file.save(update_fields=['status', 'error_message'])
+        file.save(update_fields=['status', 'error_message', 'updated_at'])
 
         if task:
             task.status = 'STOPPED'

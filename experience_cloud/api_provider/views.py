@@ -49,6 +49,15 @@ class ApiProviderViewSet(BaseViewSet):
     ordering_fields = ('id', 'name', 'code', 'auth_type', 'health_check_status', 'status')
     filterset_fields: ClassVar[tuple] = ('auth_type', 'health_check_status', 'status')
 
+    @action(detail=False, methods=['get'], url_path='form-options')
+    def form_options(self, request, *args, **kwargs):
+        """Return all valid enums for the frontend form in a single request."""
+        from .models import ApiProviderCodes
+        
+        return Response({
+            "providerCodes": [{"id": k, "name": v} for k, v in ApiProviderCodes.choices],
+        })
+
     @extend_schema(summary="Set API Provider Status", request=dict, responses={200: dict})
     @action(detail=True, methods=["post"], url_path="set-status")
     def set_status(self, request, id=None):

@@ -32,14 +32,7 @@ class LLMService(ABC):
         """
         if not provider:
             if provider_code:
-                import contextlib
-                with contextlib.suppress(Exception):
-                    # In case provider_code field doesn't exist yet in the DB model
-                    provider = LLMProvider.objects.filter(provider_code=provider_code, enabled=True).first()
-
-                # Fallback to provider_code as name if provider_code field isn't in DB yet
-                if not provider:
-                    provider = LLMProvider.objects.filter(name__icontains=provider_code, enabled=True).first()
+                provider = LLMProvider.objects.filter(code=provider_code, enabled=True).first()
             else:
                 provider = LLMProvider.objects.filter(is_default=True, enabled=True).first()
                 if not provider:
@@ -48,20 +41,21 @@ class LLMService(ABC):
         if not provider:
             raise Exception(f"No active LLM provider found for code: {provider_code or 'default'}")
 
-        # Map provider name to correct subclass
-        name_lower = provider.name.lower() if provider.name else ""
+        from core.llm_providers.models import LLMProviderCodes
+        
+        provider_code_val = provider.code
 
         # Use decrypted API key
         api_key = provider.get_decrypted_api_key() if hasattr(provider, 'get_decrypted_api_key') else provider.api_key
 
-        if 'gemini' in name_lower:
+        if provider_code_val == LLMProviderCodes.GEMINI.value:
             return GeminiService(api_key, provider.model, provider)
-        elif 'openai' in name_lower:
+        elif provider_code_val == LLMProviderCodes.OPENAI.value:
             return OpenAIService(api_key, provider.model, provider)
-        elif 'anthropic' in name_lower:
+        elif provider_code_val == LLMProviderCodes.ANTHROPIC.value:
             return AnthropicService(api_key, provider.model, provider)
         else:
-            raise Exception(f"Unsupported LLM Provider: {provider.name}")
+            raise Exception(f"Unsupported LLM Provider code: {provider_code_val} (name: {provider.name})")
 
     def test_connection(self) -> str:
         """Tests the connection by sending a basic Ping prompt.
@@ -78,7 +72,8 @@ class LLMService(ABC):
         messages: list[dict[str, str]],
         action: str | None = None,
         brand_id: int | None = None,
-        brand_name: str | None = None
+        brand_name: str | None = None,
+        response_type: str | None = None
     ) -> LLMResponse:
         """Send a conversation history to the LLM and return the generated response.
 
@@ -165,6 +160,60 @@ class LLMService(ABC):
 
         summary.save()
 
+    def _save_llm_conversation(
+        self,
+        messages: list[dict[str, str]],
+        response_text: str,
+        action: str | None,
+        brand_name: str | None,
+        finish_reason: str | None = None
+    ):
+        """Save the prompt and response to a local JSON file in MEDIA_ROOT."""
+        try:
+            import os
+            import json
+            from django.conf import settings
+            from django.utils.text import get_valid_filename
+            from datetime import datetime
+
+            date_folder = datetime.now().strftime("%Y-%m-%d")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            provider = get_valid_filename(self.get_provider_name().replace(" ", "_").lower())
+            b_name = get_valid_filename(brand_name) if brand_name else "unknown"
+            act = get_valid_filename(action) if action else "unknown"
+
+            base_dir = os.path.join(
+                settings.MEDIA_ROOT,
+                "llm",
+                provider,
+                date_folder,
+                b_name,
+                act
+            )
+            os.makedirs(base_dir, exist_ok=True)
+            
+            filename = f"{act}_{timestamp}.json"
+            filepath = os.path.join(base_dir, filename)
+
+            payload = {
+                "timestamp": datetime.now().isoformat(),
+                "provider": self.get_provider_name(),
+                "action": action,
+                "brand_name": brand_name,
+                "model": self.model_name,
+                "finish_reason": finish_reason,
+                "messages": messages,
+                "response": response_text
+            }
+
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(payload, f, ensure_ascii=False, indent=4)
+                
+            logger.info(f"Saved LLM conversation to {filepath}")
+        except Exception as e:
+            logger.error(f"Failed to save LLM conversation: {e}")
+
 class GeminiService(LLMService):
     """Gemini Service."""
     # Gemini 1.5 Flash USD Pricing per 1M tokens
@@ -186,7 +235,8 @@ class GeminiService(LLMService):
         messages: list[dict[str, str]],
         action: str | None = None,
         brand_id: int | None = None,
-        brand_name: str | None = None
+        brand_name: str | None = None,
+        response_type: str | None = None
     ) -> LLMResponse:
         """Send a conversation payload to the Google Gemini API.
 
@@ -222,6 +272,9 @@ class GeminiService(LLMService):
                 'maxOutputTokens': 8192,
             }
         }
+        
+        if response_type == 'json':
+            data['generationConfig']['responseMimeType'] = 'application/json'
 
         if system_parts:
             data['system_instruction'] = {
@@ -269,10 +322,15 @@ class GeminiService(LLMService):
                 'parts' in decoded['candidates'][0]['content']
             ):
                 text_content = decoded['candidates'][0]['content']['parts'][0]['text']
+                finish_reason = decoded['candidates'][0].get('finishReason', 'UNKNOWN')
+                
                 self.log_usage(
                     prompt_tokens, completion_tokens, total_tokens,
                     success=True, action=action, brand_id=brand_id, brand_name=brand_name
                 )
+                
+                self._save_llm_conversation(messages, text_content, action, brand_name, finish_reason)
+                
                 return LLMResponse(
                     text_content, prompt_tokens, completion_tokens,
                     total_tokens, self.get_provider_name()
@@ -304,7 +362,8 @@ class OpenAIService(LLMService):
         messages: list[dict[str, str]],
         action: str | None = None,
         brand_id: int | None = None,
-        brand_name: str | None = None
+        brand_name: str | None = None,
+        response_type: str | None = None
     ) -> LLMResponse:
         """Generate content from OpenAI API."""
         raise NotImplementedError("OpenAI integration is pending.")
@@ -320,7 +379,8 @@ class AnthropicService(LLMService):
         messages: list[dict[str, str]],
         action: str | None = None,
         brand_id: int | None = None,
-        brand_name: str | None = None
+        brand_name: str | None = None,
+        response_type: str | None = None
     ) -> LLMResponse:
         """Generate content from Anthropic API."""
         raise NotImplementedError("Anthropic integration is pending.")

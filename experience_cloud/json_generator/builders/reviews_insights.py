@@ -353,11 +353,15 @@ def reviews_insights_builder(
 
     response = LLMService.get_service().generate_content(
         [{'role': 'user', 'content': prompt}], action="reviews_insights",
-        brand_id=brand_id, brand_name=current_brand
+        brand_id=brand_id, brand_name=current_brand,
+        response_type='json'
     )
-    content = str(response)
+    content = str(response).strip()
     from experience_cloud.json_generator.utils import safe_parse_llm_json
     llm_data = safe_parse_llm_json(content)
+
+    if not llm_data or "top_10_negative_topics" not in llm_data:
+        raise ValueError("JSON Parsing Failed. The response might have been truncated or malformed.")
 
     # ===============================
     # CSV PREP (Matching PHP logic)
@@ -377,10 +381,10 @@ def reviews_insights_builder(
     if len(last_week_neg) < 5:
         last_week_neg, week_start = get_period_reviews(30)
 
-    topic_csv_rows = [ [
-        f"--- Period: {week_start} to {latest_date} | Brand: {current_brand} | "
-        f"Total Negative Reviews: {len(last_week_neg)} ---"
-    ] ]
+    topic_csv_rows = [
+        ['Matched Topic', 'Topic Score (%)', 'Review Date', 'Reviewer', 'Platform', 'Product', 'Rating', 'Verified', 'Review Title', 'Review Text'],
+        [f"--- Period: {week_start} to {latest_date} | Brand: {current_brand} | Total Negative Reviews: {len(last_week_neg)} ---"]
+    ]
     for topic in llm_data.get("top_10_negative_topics", []):
         name = topic.get("topic", "")
         score = topic.get("score", 0)
@@ -655,12 +659,12 @@ def build_alerts_html(brand, all_negative_reviews, llm_data):
             "pct": a.get("pct", 0)
         })
 
-    html_content = f"""
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Alerts & Issues — {html.escape(brand)}</title>
+    now = datetime.now()
+    alerts_date = f"{now.strftime('%B')} {now.day}, {now.year}"
+    total_count = len(all_negative_reviews)
+
+    html_content = f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>Alerts &amp; Issues - Reviews | {html.escape(brand).upper()}</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 
@@ -680,11 +684,13 @@ body{{font-family:Inter,sans-serif;background:#f8fafc;color:#1e293b;padding:32px
     background:linear-gradient(135deg,#6366f1,#4f46e5);
     color:#fff;border:none;padding:10px 28px;border-radius:12px;
     font-weight:700;font-size:14px;cursor:pointer;
+    box-shadow:0 2px 8px rgba(99,102,241,.3);
 }}
 
 .ts{{
     background:#fff;border-radius:16px;padding:24px;margin-bottom:24px;
-    border:1px solid #e2e8f0;page-break-inside:avoid
+    border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,.04);
+    page-break-inside:avoid;
 }}
 
 .th{{
@@ -697,11 +703,11 @@ body{{font-family:Inter,sans-serif;background:#f8fafc;color:#1e293b;padding:32px
     text-transform:uppercase
 }}
 
-.bt{{background:#fef2f2;color:#dc2626}}
-.ba{{background:#fffbeb;color:#d97706}}
+.bt{{background:#fef2f2;color:#dc2626;border:1px solid #fecaca;}}
+.ba{{background:#fffbeb;color:#d97706;border:1px solid #fde68a;}}
 
 .tn{{font-size:16px;font-weight:700}}
-.tm{{font-size:12px;color:#94a3b8;margin-left:auto}}
+.tm{{font-size:12px;color:#94a3b8;margin-left:auto;font-weight:600;}}
 
 .rc{{
     background:#f8fafc;border-radius:12px;padding:16px;margin-bottom:12px;
@@ -710,8 +716,9 @@ body{{font-family:Inter,sans-serif;background:#f8fafc;color:#1e293b;padding:32px
 
 .rm{{
     display:flex;flex-wrap:wrap;gap:12px;font-size:11px;color:#64748b;
-    margin-bottom:8px
+    margin-bottom:8px;font-weight:600;
 }}
+.rm span{{display:inline-flex;align-items:center;gap:4px}}
 
 .rt{{font-weight:700;font-size:13px;margin-bottom:4px}}
 .rx{{font-size:12px;color:#475569;line-height:1.6}}
@@ -722,6 +729,8 @@ body{{font-family:Inter,sans-serif;background:#f8fafc;color:#1e293b;padding:32px
 
 @media print {{
     .dl-bar{{display:none}}
+    body{{padding:16px}}
+    .ts{{box-shadow:none}}
 }}
 </style>
 </head>
@@ -729,50 +738,56 @@ body{{font-family:Inter,sans-serif;background:#f8fafc;color:#1e293b;padding:32px
 <body>
 
 <div class="dl-bar">
-<button onclick="genPDF()">📥 Download as PDF</button>
+<button onclick="genPDF()">Download as PDF</button>
 </div>
 
-<div id="pdfContent">
-
-<div class="header">
-<h1>🔔 Alerts & Issue Topics — Underlying Reviews</h1>
-<p>{html.escape(brand)} · {datetime.now().strftime("%Y-%m-%d")} · {len(all_negative_reviews)} negative reviews</p>
+<div id="pdfContent"><div class="header"><h1>Alerts &amp; Issue Topics - Underlying Reviews</h1>
+<p>{html.escape(brand).upper()} | {alerts_date} | {total_count} total negative reviews analyzed</p>
 </div>
 """
 
     # ===============================
     # LOOP TOPICS
     # ===============================
-    for topic in all_topics:
-        name = topic["name"]
+    if not all_topics:
+        html_content += """
+<div class="ts">
+<div class="empty" style="text-align: center; padding: 40px; font-size: 14px;">
+    No significant negative topics or alerts were detected by the AI for this period.
+</div>
+</div>
+"""
+    else:
+        for topic in all_topics:
+            name = topic["name"]
 
-        # Keyword extraction (same as PHP)
-        keywords = [w for w in re.sub(r'[^a-zA-Z0-9\s]', '', name).lower().split() if len(w) >= 3]
+            # Keyword extraction (same as PHP)
+            keywords = [w for w in re.sub(r'[^a-zA-Z0-9\s]', '', name).lower().split() if len(w) >= 3]
 
-        matched = []
-        for rev in all_negative_reviews:
-            title = str(rev.get("title") or "")
-            text = str(rev.get("text") or "")
-            hay = (title + " " + text).lower()
+            matched = []
+            for rev in all_negative_reviews:
+                title = str(rev.get("title") or "")
+                text = str(rev.get("text") or "")
+                hay = (title + " " + text).lower()
 
-            for kw in keywords:
-                if kw in hay:
-                    matched.append(rev)
+                for kw in keywords:
+                    if kw in hay:
+                        matched.append(rev)
+                        break
+
+                if len(matched) >= 10:
                     break
 
-            if len(matched) >= 10:
-                break
+            badge_class = "ba" if topic["type"] == "Alert" else "bt"
 
-        badge_class = "ba" if topic["type"] == "Alert" else "bt"
-
-        # Meta info
-        if topic["type"] == "Topic":
-            meta = f"Score: {topic.get('score',0)}% · {html.escape(topic.get('desc',''))}"
-        else:
-            meta = f"{topic.get('severity','').capitalize()} · {topic.get('pct',0)}% of negative reviews"
+            # Meta info
+            if topic["type"] == "Topic":
+                meta = f"Score: {topic.get('score',0)}% · {html.escape(topic.get('desc',''))}"
+            else:
+                meta = f"{topic.get('severity','').capitalize()} · {topic.get('pct',0)}% of negative reviews"
 
 
-        html_content += f"""
+            html_content += f"""
 <div class="ts">
 <div class="th">
 <span class="badge {badge_class}">{topic["type"]}</span>
@@ -781,21 +796,23 @@ body{{font-family:Inter,sans-serif;background:#f8fafc;color:#1e293b;padding:32px
 </div>
 """
 
-        if matched:
-            for r in matched:
-                rating = int(r.get("rating") or 0)
-                stars = "★" * rating + "☆" * (5 - rating)
-                title = str(r.get("title") or "")
-                text = str(r.get("text") or "")
-                html_content += f"""
+            if matched:
+                for r in matched:
+                    rating = int(float(r.get("rating") or 0))
+                    stars = "★" * rating + "☆" * (5 - rating)
+                    
+                    title = str(r.get("title") or "")
+                    text = str(r.get("text") or "")
+                    
+                    html_content += f"""
 <div class="rc">
 <div class="rm">
-<span>👤 {html.escape(str(r.get('reviewer') or "--"))}</span>
-<span>📅 {r['date']}</span>
+<span>User: {html.escape(str(r.get('reviewer') or "--"))}</span>
+<span>Date: {r['date']}</span>
 <span class="star">{stars}</span>
-<span>🏪 {html.escape(r['platform'])}</span>
-<span>📦 {html.escape(r['product'][:40])}</span>
-<span>✅ Verified: {r['verified']}</span>
+<span>Platform: {html.escape(r['platform'])}</span>
+<span>Product: {html.escape(r['product'][:40])}</span>
+<span>Verified: {r['verified']}</span>
 </div>
 
 <div class="rt">{html.escape(title)}</div>
@@ -804,10 +821,10 @@ body{{font-family:Inter,sans-serif;background:#f8fafc;color:#1e293b;padding:32px
 </div>
 </div>
 """
-        else:
-            html_content += "<div class='empty'>No matching reviews found.</div>"
+            else:
+                html_content += '<div class="empty">No matching reviews found for this topic.</div>'
 
-        html_content += "</div>"
+            html_content += "</div>"
 
     # ===============================
     # PDF SCRIPT (FULL PAGINATION)
@@ -823,17 +840,17 @@ window.addEventListener('load', () => {
 async function genPDF(){
     const btn = document.querySelector(".dl-bar button");
     if (btn) {
-        btn.textContent = "⏳ Generating...";
+        btn.textContent = "Generating...";
         btn.disabled = true;
     }
 
     try{
         const content = document.getElementById("pdfContent");
         const canvas = await html2canvas(content, {
-            scale: 1.5,
+            scale: 1.2,
             useCORS: true,
-            allowTaint: true,
-            logging: false
+            backgroundColor: "#f8fafc",
+            windowWidth: 1000
         });
 
         const { jsPDF } = window.jspdf;
@@ -880,7 +897,7 @@ async function genPDF(){
     }
 
     if (btn) {
-        btn.textContent = "📥 Download as PDF";
+        btn.textContent = "Download as PDF";
         btn.disabled = false;
     }
 }
@@ -899,100 +916,131 @@ def build_tactical_html(brand, llm_data):
     Structures immediate, short-term, and mid-term operational directives into
     an actionable dashboard complete with PDF export capabilities.
     """
+    import html
+    from datetime import datetime
+
     tap = llm_data.get("tactical_action_plan", {})
-    def render_sec(t, items):
-        h = f"<h3>{t}</h3>"
-        for i, act in enumerate(items):
-            h += f"""
-            <div class="action-card">
-                <span class="action-title">{i+1}. {act.get('action')}</span>
-                <div class="action-meta">
-                    <b>Owner:</b> {act.get('owner')} | <b>Impact:</b> {act.get('impact')} | \
-<b>Priority:</b> {act.get('priority')}
-                </div>
-            </div>"""
-        return h
-    html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Tactical Action Plan — {brand}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <style>
-        body {{ font-family: 'Inter', sans-serif; background: #0f172a; color: white; padding: 40px; }}
-        .dl-bar {{ text-align: right; margin-bottom: 20px; }}
-        .dl-bar button {{
-            background: linear-gradient(135deg, #6366f1, #4f46e5);
-            color: white; border: none; padding: 10px 20px; border-radius: 8px;
-            font-weight: 700; cursor: pointer;
-        }}
-        h2 {{ margin-top: 0; color: #1e293b; margin-bottom: 16px; text-transform: uppercase; \
-font-size: 14px; letter-spacing: 0.1em; }}
-        h3 {{ color: #94a3b8; margin-top: 32px; margin-bottom: 16px; text-transform: uppercase; \
-font-size: 14px; letter-spacing: 0.1em; }}
-        .action-card {{
-            margin-bottom: 16px; padding: 20px; background: #1e293b;
-            border: 1px solid #334155; border-radius: 12px;
-        }}
-        .action-title {{ font-size: 18px; font-weight: 600; color: #f8fafc; margin-bottom: 8px; display: block; }}
-        .action-meta {{ font-size: 13px; color: #94a3b8; }}
-        .action-meta b {{ color: #cbd5e1; }}
-        @media print {{ .dl-bar {{ display: none; }} }}
-    </style>
-</head>
-<body>
-    <div class="dl-bar">
-        <button onclick="genPDF()">📥 Download as PDF</button>
-    </div>
-    <div id="pdfContent">
-        <h2>Tactical Action Plan — {brand}</h2>
+    
+    now = datetime.now()
+    formatted_date = f"{now.strftime('%B')} {now.day}, {now.year} at {now.hour % 12 or 12}:{now.strftime('%M %p')}"
+
+    html_content = f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>Tactical Action Plan | {html.escape(brand).upper()}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}body{{font-family:Inter,sans-serif;background:#0f172a;color:#e2e8f0;padding:40px;min-height:100vh}}
+.dl-bar{{text-align:center;margin-bottom:32px}}.dl-bar button{{background:linear-gradient(135deg,#6366f1,#06b6d4);color:#fff;border:none;padding:12px 32px;border-radius:14px;font-weight:800;font-size:14px;cursor:pointer;box-shadow:0 4px 20px rgba(99,102,241,.35);letter-spacing:.5px}}
+.header{{text-align:center;margin-bottom:40px}}.header h1{{font-size:28px;font-weight:900;background:linear-gradient(135deg,#818cf8,#22d3ee);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}}.header p{{color:#64748b;font-size:13px;font-weight:600}}
+.grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;max-width:1200px;margin:0 auto}}
+.col-head{{display:flex;align-items:center;gap:10px;margin-bottom:20px;padding-bottom:14px;border-bottom:2px solid rgba(255,255,255,.06)}}
+.col-icon{{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px}}
+.col-title{{font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:2px}}.col-sub{{font-size:10px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:1px}}
+.card{{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px;margin-bottom:16px}}
+.card-num{{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#fff;margin-right:10px;flex-shrink:0}}
+.card-top{{display:flex;align-items:flex-start;gap:2px;margin-bottom:12px}}
+.action-text{{font-size:13px;font-weight:700;line-height:1.5}}
+.meta{{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}}
+.tag{{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;padding:3px 10px;border-radius:6px}}
+.t-owner{{background:rgba(100,116,139,.3);color:#94a3b8;border:1px solid rgba(100,116,139,.2)}}
+.t-critical{{background:rgba(239,68,68,.2);color:#fca5a5;border:1px solid rgba(239,68,68,.25)}}.t-high{{background:rgba(245,158,11,.2);color:#fcd34d;border:1px solid rgba(245,158,11,.25)}}.t-medium{{background:rgba(59,130,246,.2);color:#93c5fd;border:1px solid rgba(59,130,246,.25)}}
+.impact{{font-size:11px;color:#5eead4;line-height:1.5;padding-left:8px;border-left:2px solid rgba(94,234,212,.3)}}
+@media print{{.dl-bar{{display:none}}body{{padding:20px;background:#1e293b}}}}@media(max-width:900px){{.grid{{grid-template-columns:1fr}}}}
+</style></head><body>
+<div class="dl-bar"><button onclick="genPDF()">Download as PDF</button></div>
+<div id="pdfContent">
+<div class="header"><h1>Tactical Action Plan</h1>
+<p>{html.escape(brand).upper()} | Generated {formatted_date} | AI-Derived from Sentiment Analysis</p>
+</div>
 """
-    html += render_sec("Immediate", tap.get("immediate", []))
-    html += render_sec("One Week", tap.get("one_week", []))
-    html += render_sec("One Month", tap.get("one_month", []))
 
-    html += """
-    </div>
-    <script>
-    window.addEventListener('load', () => {
-        setTimeout(genPDF, 1500);
-    });
-
-    async function genPDF(){
-        const btn = document.querySelector(".dl-bar button");
-        if(btn) btn.disabled = true;
-
-        try {
-            const content = document.getElementById("pdfContent");
-            const canvas = await html2canvas(content, {
-                scale: 1.5,
-                backgroundColor: '#0f172a',
-                useCORS: true,
-                allowTaint: true,
-                logging: false
-            });
-            const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF("p", "mm", "a4");
-
-            const pageWidth = pdf.internal.pageSize.getWidth();
-            const pageHeight = pdf.internal.pageSize.getHeight();
-            const imgWidth = pageWidth;
-            const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-            pdf.addImage(canvas.toDataURL("image/png"), 'PNG', 0, 0, imgWidth, imgHeight);
-            pdf.save("Tactical_Action_Plan.pdf");
-        } catch (e) {
-            console.error(e);
-            alert("PDF generation failed");
+    if not tap:
+        html_content += """
+<div style="text-align: center; padding: 40px; color: #94a3b8; font-size: 14px; background: rgba(255,255,255,0.04); border-radius: 14px; max-width: 600px; margin: 0 auto;">
+    No tactical actions were generated by the AI for this period.
+</div>
+"""
+    else:
+        html_content += '<div class="grid">'
+        
+        columns = {
+            'immediate': {'label': 'Execute Now', 'sub': 'Immediate Actions', 'color': '#ef4444', 'bg': 'rgba(239,68,68,.15)', 'icon': 'Immediate:'},
+            'one_week':  {'label': 'This Week',   'sub': '7-Day Execution',   'color': '#f59e0b', 'bg': 'rgba(245,158,11,.15)', 'icon': 'Week:'},
+            'one_month': {'label': 'This Month',  'sub': '30-Day Strategy',   'color': '#3b82f6', 'bg': 'rgba(59,130,246,.15)', 'icon': 'Month:'}
         }
-        if(btn) btn.disabled = false;
-    }
-    </script>
-</body>
-</html>
+        
+        for key, col in columns.items():
+            html_content += f"""
+<div>
+<div class="col-head">
+<div class="col-icon" style="background:{col['bg']};border:1px solid {col['color']}33;font-size:10px">{col['icon']}</div>
+<div><div class="col-title" style="color:{col['color']}">{col['label']}</div><div class="col-sub">{col['sub']}</div></div>
+</div>
 """
-    return html
+            actions = tap.get(key, [])
+            for idx, act in enumerate(actions):
+                priority = str(act.get('priority', 'medium')).lower()
+                p_class = f"t-{priority}"
+                html_content += f"""
+<div class="card">
+<div class="card-top">
+<span class="card-num" style="background:{col['color']}">{idx + 1}</span>
+<span class="action-text">{html.escape(str(act.get('action', '')))}</span>
+</div>
+<div class="meta">
+<span class="tag t-owner">Owner: {html.escape(str(act.get('owner', '')))}</span>
+<span class="tag {p_class}">{priority.upper()}</span>
+</div>
+<div class="impact">Impact: {html.escape(str(act.get('impact', '')))}</div>
+</div>
+"""
+            html_content += "</div>"
+            
+        html_content += "</div>"
 
+    html_content += f"""
+</div>
+<script>
+window.addEventListener('load', () => {{
+    setTimeout(genPDF, 1500);
+}});
+
+async function genPDF(){{
+    const b=document.querySelector(".dl-bar button");
+    if(b) b.textContent="Generating...";
+    if(b) b.disabled=true;
+    try{{
+        const c=document.getElementById("pdfContent");
+        const cv=await html2canvas(c,{{scale:1.5,useCORS:true,backgroundColor:"#0f172a",windowWidth:1200}});
+        const{{jsPDF:J}}=window.jspdf;
+        const p=new J("l","mm","a4");
+        const pw=p.internal.pageSize.getWidth()-20;
+        const ph2=(cv.height*pw)/cv.width;
+        const pg=p.internal.pageSize.getHeight()-20;
+        let pos=0,page=0;
+        while(pos<ph2){{
+            if(page>0)p.addPage();
+            const sy=(pos/ph2)*cv.height;
+            const sh=Math.min(pg,ph2-pos);
+            const ssh=(sh/ph2)*cv.height;
+            const sc=document.createElement("canvas");
+            sc.width=cv.width;
+            sc.height=ssh;
+            sc.getContext("2d").drawImage(cv,0,sy,cv.width,ssh,0,0,cv.width,ssh);
+            p.addImage(sc.toDataURL("image/jpeg",.9),"JPEG",10,10,pw,sh);
+            pos+=pg;
+            page++;
+        }}
+        p.save("Tactical_Action_Plan_{html.escape(brand).upper().replace(' ', '_')}.pdf")
+    }}catch(e){{
+        console.error(e);
+        alert("PDF generation failed")
+    }}
+    if(b) b.textContent="Download as PDF";
+    if(b) b.disabled=false
+}}
+</script>
+</body></html>
+"""
+    return html_content

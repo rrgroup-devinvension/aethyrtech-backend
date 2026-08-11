@@ -482,6 +482,8 @@ def safe_parse_llm_json(content: str) -> dict:
     import logging
     logger = logging.getLogger(__name__)
     try:
+        if content.startswith("```json"):
+            content = content.strip("`").replace("json\n", "", 1)
         start = content.find("{")
         end = content.rfind("}")
         if start != -1 and end != -1:

@@ -63,7 +63,7 @@ def plp_insights_builder(
         if rank <= 0:
             continue
 
-        if bname.upper() == current_brand:
+        if bname.upper() == current_brand.upper():
             brand_total_rank_sum += rank
             brand_total_rank_count += 1
 
@@ -119,7 +119,7 @@ def plp_insights_builder(
     total_keywords_tracked = 0
 
     actual_brand_key = next(
-        (k for k in keyword_matrix if k.upper() == current_brand),
+        (k for k in keyword_matrix if k.upper() == current_brand.upper()),
         None
     )
 

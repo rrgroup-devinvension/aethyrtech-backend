@@ -47,8 +47,17 @@ class LLMProviderViewSet(BaseViewSet):
     }
     queryset = LLMProvider.objects.all().order_by('id')
     serializer_class = LLMProviderSerializer
-    search_fields = ('name', 'model')
-    ordering_fields = ('id', 'name', 'model', 'created_at', 'updated_at', 'enabled')
+    search_fields = ('name', 'code', 'model')
+
+    @action(detail=False, methods=['get'], url_path='form-options')
+    def form_options(self, request, *args, **kwargs):
+        """Return all valid enums for the frontend form in a single request."""
+        from .models import LLMProviderCodes
+        
+        return Response({
+            "providerCodes": [{"id": k, "name": v} for k, v in LLMProviderCodes.choices],
+        })
+    ordering_fields = ('id', 'name', 'code', 'model', 'created_at', 'updated_at', 'enabled')
     filterset_fields: ClassVar[tuple] = ('enabled',)
 
     def perform_update(self, serializer):
@@ -148,14 +157,15 @@ class LLMProviderViewSet(BaseViewSet):
         logger.info("Testing new connection for LLM Provider")
 
         api_key = request.data.get('api_key')
-        name = request.data.get('name')
+        name = request.data.get('name', 'Test Provider')
         model = request.data.get('model')
+        code = request.data.get('code')
 
         if not api_key:
             return Response({"detail": "API Key is required to test connection"}, status=status.HTTP_400_BAD_REQUEST)
-        if not name:
+        if not code:
             return Response(
-                {"error": "Failed to import required service class to test connection (e.g. Gemini, OpenAI)"},
+                {"error": "Code is required to test connection (e.g. gemini, openai)"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -169,7 +179,7 @@ class LLMProviderViewSet(BaseViewSet):
             api_key = decrypt_string(api_key)
 
         # Create a mock provider for testing
-        mock_provider = LLMProvider(name=name, api_key=api_key, model=model)
+        mock_provider = LLMProvider(name=name, code=code, api_key=api_key, model=model)
 
         try:
             service = LLMService.get_service(provider=mock_provider)

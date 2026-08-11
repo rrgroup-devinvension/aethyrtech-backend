@@ -7,11 +7,17 @@ from drf_spectacular.utils import extend_schema
 from rest_framework.exceptions import APIException, NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.viewsets import ViewSet
+from rest_framework.decorators import action
+from django.http import FileResponse
 
 from core.llm_providers.services.llm_service import LLMService
 from core.organizations.models import Brand, Region
 from core.users.models import User
+from experience_cloud.catalog.models import Location
 from experience_cloud.json_generator.models import RegionJsonFile, TemplateCodes
+from shared.permissions import HasPermission
+from core.authentication.permissions import AppPermissions
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +25,43 @@ class RegionBaseDataView(APIView):
     """Base API view providing utility methods to fetch region-specific JSON analytics files from the disk."""
     from shared.serializers import EmptySerializer
     serializer_class = EmptySerializer
+    permission_mapping = {}
+
+    def get_permissions(self):
+        """Dynamically resolve permissions based on HTTP method mapping."""
+        perms = list(super().get_permissions())
+        
+        method = getattr(self.request, 'method', None)
+        if method:
+            required_perm = self.permission_mapping.get(str(method))
+            if required_perm:
+                from shared.permissions import HasPermission
+                perms.append(HasPermission(required_perm)())
+                
+        return perms
+
     def get_region_or_404(self, region_id):
-        """Retrieve a Region object by its primary key, or return None if it does not exist."""
+        """Retrieve a Region object by its primary key, ensuring tenant isolation."""
+        from rest_framework.exceptions import PermissionDenied
         try:
-            return Region.objects.get(id=region_id)
+            region = Region.objects.get(id=region_id)
+            user = self.request.user
+            if not user or not user.is_authenticated:
+                raise PermissionDenied("Authentication required.")
+                
+            if getattr(user, 'is_staff', False) or getattr(getattr(user, 'role', None), 'role_type', None) == 'INTERNAL':
+                return region
+                
+            # Tenant isolation
+            if getattr(user, 'organization_id', None) == region.brand.organization_id:
+                return region
+                
+            # Fallback for brand-level assigned users
+            has_brands = getattr(user, 'brands', None)
+            if has_brands and has_brands.filter(id=region.brand.id).exists():
+                return region
+                
+            raise PermissionDenied("You do not have permission to access data for this region.")
         except Region.DoesNotExist:
             return None
 
@@ -48,9 +87,27 @@ class RegionBaseDataView(APIView):
         except json.JSONDecodeError as e:
             raise APIException(detail=f"JSON error: {e!s}") from e
 
+    def save_analytics_data(self, region, template_slug, data):
+        """Save updated JSON data back to the corresponding region's payload file."""
+        try:
+            rjf = RegionJsonFile.objects.filter(region=region, template__template=template_slug).latest("created_at")
+            if not rjf.file_path:
+                raise APIException(f"File path missing for region {region.id} and template {template_slug}")
+            
+            full_path = os.path.join(str(settings.MEDIA_ROOT), str(rjf.file_path))
+            
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            with open(full_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+                
+            return True
+        except Exception as e:
+            raise APIException(f"Failed to save JSON: {e!s}") from e
+
 
 class RegionDashboardDataView(RegionBaseDataView):
     """API view for retrieving top-level analytics tailored to a specific region's dashboard."""
+    permission_mapping = {'GET': AppPermissions.READ_EXPERIANCE_DASHBOARD}
     @extend_schema(summary="Get Region Dashboard Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
         """Handle GET request."""
@@ -62,6 +119,7 @@ class RegionDashboardDataView(RegionBaseDataView):
 
 class InsightsDataView(RegionBaseDataView):
     """API view for retrieving actionable insights and risk data for a specific region."""
+    permission_mapping = {'GET': AppPermissions.READ_EXPERIANCE_DASHBOARD}
     @extend_schema(summary="Get Insights Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
         """Handle GET request."""
@@ -77,6 +135,7 @@ class InsightsDataView(RegionBaseDataView):
 
 class DashboardPositiveDataView(RegionBaseDataView):
     """API view for retrieving positive performance indicators for a specific region."""
+    permission_mapping = {'GET': AppPermissions.READ_GROWTH_LEVER}
     @extend_schema(summary="Get Positive Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
         """Handle GET request."""
@@ -88,6 +147,7 @@ class DashboardPositiveDataView(RegionBaseDataView):
 
 class CROBarriersDataView(RegionBaseDataView):
     """API view for retrieving Conversion Rate Optimization (CRO) barriers graph data."""
+    permission_mapping = {'GET': AppPermissions.READ_CRO_BARRIERS}
     @extend_schema(summary="Get CRO Barriers Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
         """Handle GET request."""
@@ -99,6 +159,7 @@ class CROBarriersDataView(RegionBaseDataView):
 
 class PlpInsightsDataView(RegionBaseDataView):
     """API view for retrieving Product Listing Page (PLP) insights."""
+    permission_mapping = {'GET': AppPermissions.READ_PLP_INSIGHTS}
     @extend_schema(summary="Get PLP Insights Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
         """Handle GET request."""
@@ -110,6 +171,7 @@ class PlpInsightsDataView(RegionBaseDataView):
 
 class IncentiveInsightsDataView(RegionBaseDataView):
     """API view for retrieving pricing and promotional incentive insights."""
+    permission_mapping = {'GET': AppPermissions.READ_INCENTIVE_INSIGHTS}
     @extend_schema(summary="Get Incentive Insights Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
         """Handle GET request."""
@@ -121,6 +183,7 @@ class IncentiveInsightsDataView(RegionBaseDataView):
 
 class PdpInsightsDataView(RegionBaseDataView):
     """API view for retrieving Product Detail Page (PDP) insights."""
+    permission_mapping = {'GET': AppPermissions.READ_PDP_INSIGHTS}
     @extend_schema(summary="Get PDP Insights Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
         """Handle GET request."""
@@ -132,6 +195,7 @@ class PdpInsightsDataView(RegionBaseDataView):
 
 class ReviewsInsightsDataView(RegionBaseDataView):
     """API view for retrieving customer review insights and sentiment analysis."""
+    permission_mapping = {'GET': AppPermissions.READ_REVIEWS_INSIGHTS}
     @extend_schema(summary="Get Reviews Insights Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
         """Handle GET request."""
@@ -143,6 +207,7 @@ class ReviewsInsightsDataView(RegionBaseDataView):
 
 class CategoryDataView(RegionBaseDataView):
     """API view for retrieving category-level performance views."""
+    permission_mapping = {'GET': AppPermissions.READ_GAP_LANDSCAPES}
     @extend_schema(summary="Get Category Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
         """Handle GET request."""
@@ -154,6 +219,7 @@ class CategoryDataView(RegionBaseDataView):
 
 class BrandAuditDataView(RegionBaseDataView):
     """API view for retrieving comprehensive brand audit metrics across categories."""
+    permission_mapping = {'GET': AppPermissions.READ_PLATFORM_AUDIT}
     @extend_schema(summary="Get Brand Audit Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
         """Handle GET request."""
@@ -162,12 +228,14 @@ class BrandAuditDataView(RegionBaseDataView):
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
         return Response({
             "category": self.fetch_analytics_data(region, TemplateCodes.CATEGORY_VIEW),
-            "dashboard": self.fetch_analytics_data(region, TemplateCodes.INSIGHTS)
+            "dashboard": self.fetch_analytics_data(region, TemplateCodes.INSIGHTS),
+            "brands_list": [region.brand.name] + list(region.competitors.filter(is_active=True).values_list('name', flat=True))
         }, status=200)
 
 
 class ContentInsightsDataView(RegionBaseDataView):
     """API view for retrieving insights on content effectiveness and completeness."""
+    permission_mapping = {'GET': AppPermissions.READ_PRODUCT_CATALOG}
     @extend_schema(summary="Get Content Insights Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
         """Handle GET request."""
@@ -179,6 +247,7 @@ class ContentInsightsDataView(RegionBaseDataView):
 
 class ProductCatalogDataView(RegionBaseDataView):
     """API view for retrieving the raw product catalog data for a specific region."""
+    permission_mapping = {'GET': AppPermissions.READ_PRODUCT_CATALOG}
     @extend_schema(summary="Get Product Catalog Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
         """Handle GET request."""
@@ -198,6 +267,7 @@ class ProductCatalogDataView(RegionBaseDataView):
 
 class CatalogDetailView(RegionBaseDataView):
     """API view for retrieving highly detailed information and keywords for a specific product."""
+    permission_mapping = {'GET': AppPermissions.READ_PRODUCT_CATALOG}
     @extend_schema(summary="Get Catalog Detail Data", tags=["Region Analytics"])
     def get(self, request, region_id: int, product_id: str):
         """Handle GET request."""
@@ -233,6 +303,7 @@ class CatalogDetailView(RegionBaseDataView):
 
 class ReportsDataView(RegionBaseDataView):
     """API view for retrieving geographical reports and pincode availability data."""
+    permission_mapping = {'GET': AppPermissions.READ_AUDIENCE_AUDIT}
     @extend_schema(summary="Get Reports Data", tags=["Region Analytics"])
     def get(self, request, region_id: int):
         """Handle GET request."""
@@ -240,20 +311,26 @@ class ReportsDataView(RegionBaseDataView):
         if not region:
             return Response({"error": f"Region with id {region_id} not found"}, status=404)
 
-        # Keep backward compatibility for pincodes
+        locations = Location.objects.filter(region=region, is_active=True)
+        pincodes = []
+        for loc in locations:
+            if loc.lat and loc.lng and loc.pincode:
+                pincodes.append({
+                    "lat": float(loc.lat),
+                    "lng": float(loc.lng),
+                    "area": loc.address or "Unknown",
+                    "pincode": loc.pincode
+                })
+
         return Response({
             "reports": self.fetch_analytics_data(region, TemplateCodes.CARTESIAN_PRODUCTS_PINCODES),
-            "pincodes": [
-                { "lat": 28.6517, "lng": 77.1906, "area": "Karol Bagh", "pincode": "110005" },
-                { "lat": 28.4089, "lng": 77.3178, "area": "Faridabad Sector 6", "pincode": "121006" },
-                { "lat": 28.6503, "lng": 77.1194, "area": "Rajouri Garden", "pincode": "110027" },
-                # Truncated for brevity, normally this would be a full list or loaded from DB
-            ]
+            "pincodes": pincodes
         }, status=200)
 
 
 class GenerateContentView(RegionBaseDataView):
     """API view to trigger the LLM service for generating SEO-optimized product content."""
+    permission_mapping = {'POST': AppPermissions.GENERATE_CONTENT}
     @extend_schema(summary="Generate Content for Product", tags=["Region Analytics"])
     def post(self, request):
         """Handle POST request."""
@@ -341,6 +418,7 @@ Rules:
 
 class UpdateProductContentView(RegionBaseDataView):
     """API view to save updated product content directly back into the region's JSON catalog file."""
+    permission_mapping = {'POST': AppPermissions.UPDATE_PRODUCTS}
     @extend_schema(summary="Update Product Content JSON", tags=["Region Analytics"])
     def post(self, request):
         """Handle POST request."""
@@ -375,4 +453,75 @@ class UpdateProductContentView(RegionBaseDataView):
             raise APIException(f"Failed to save JSON: {e!s}") from e
 
         return Response({"success": True})
+
+
+class AnalyticsDownloadViewSet(ViewSet, RegionBaseDataView):
+    """ViewSet to handle distinct file downloads for different templates."""
+    
+    # Optionally, restrict access base on permissions
+    
+    def _download_file(self, region_id, template_code):
+        region = self.get_region_or_404(region_id)
+        if not region:
+            raise NotFound("Region not found or permission denied.")
+            
+        try:
+            rjf = RegionJsonFile.objects.filter(region=region, template__template=template_code).latest("created_at")
+        except RegionJsonFile.DoesNotExist as e:
+            raise NotFound(detail=f"Data not available for region {region.id} and template {template_code}") from e
+
+        if not rjf.file_path:
+            raise NotFound(detail=f"File path missing for region {region.id} and template {template_code}")
+
+        full_path = os.path.join(str(settings.MEDIA_ROOT), str(rjf.file_path))
+        if not os.path.exists(full_path):
+            raise NotFound(detail=f"File not found on disk.")
+
+        # Determine content type based on extension
+        ext = os.path.splitext(full_path)[1].lower()
+        content_type = 'application/json'
+        if ext == '.csv':
+            content_type = 'text/csv'
+        elif ext == '.pdf':
+            content_type = 'application/pdf'
+        elif ext == '.html':
+            content_type = 'text/html'
+            
+        return FileResponse(open(full_path, 'rb'), content_type=content_type, as_attachment=True, filename=os.path.basename(full_path))
+
+    @extend_schema(summary="Download PLP Keyword Opportunities", tags=["Region Analytics Downloads"])
+    @action(detail=False, methods=['get'], url_path='download/plp-keyword-opportunities')
+    def download_plp_keyword_opportunities(self, request):
+        region_id = request.query_params.get("region_id")
+        return self._download_file(region_id, TemplateCodes.PLP_KEYWORD_OPPORTUNITIES)
+
+    @extend_schema(summary="Download PDP Content Audit", tags=["Region Analytics Downloads"])
+    @action(detail=False, methods=['get'], url_path='download/pdp-content-audit')
+    def download_pdp_content_audit(self, request):
+        region_id = request.query_params.get("region_id")
+        return self._download_file(region_id, TemplateCodes.PDP_CONTENT_AUDIT)
+
+    @extend_schema(summary="Download Discount Opportunities", tags=["Region Analytics Downloads"])
+    @action(detail=False, methods=['get'], url_path='download/discount-opportunities')
+    def download_discount_opportunities(self, request):
+        region_id = request.query_params.get("region_id")
+        return self._download_file(region_id, TemplateCodes.DISCOUNT_OPPORTUNITIES)
+
+    @extend_schema(summary="Download Alerts Reviews Report", tags=["Region Analytics Downloads"])
+    @action(detail=False, methods=['get'], url_path='download/alerts-reviews-report')
+    def download_alerts_reviews_report(self, request):
+        region_id = request.query_params.get("region_id")
+        return self._download_file(region_id, TemplateCodes.ALERTS_REVIEWS_REPORT)
+
+    @extend_schema(summary="Download Topic Negative Reviews", tags=["Region Analytics Downloads"])
+    @action(detail=False, methods=['get'], url_path='download/topic-negative-reviews')
+    def download_topic_negative_reviews(self, request):
+        region_id = request.query_params.get("region_id")
+        return self._download_file(region_id, TemplateCodes.TOPIC_NEGATIVE_REVIEWS)
+
+    @extend_schema(summary="Download Product Deepdive Data", tags=["Region Analytics Downloads"])
+    @action(detail=False, methods=['get'], url_path='download/product-deepdive-data')
+    def download_product_deepdive_data(self, request):
+        region_id = request.query_params.get("region_id")
+        return self._download_file(region_id, TemplateCodes.PRODUCT_DEEPDIVE_DATA)
 

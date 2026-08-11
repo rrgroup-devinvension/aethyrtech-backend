@@ -22,6 +22,7 @@ class TemplateCodes(models.TextChoices):
     PDP_INSIGHTS = 'pdp_insights', 'Pdp Insights'
     INCENTIVE_INSIGHTS = 'incentive_insights', 'Incentive Insights'
     ACTION_PLANS = 'action_plans', 'Action Plans'
+    METRIC_SNAPSHOTS = 'metric_snapshots', 'Metric Snapshots'
     PLP_KEYWORD_OPPORTUNITIES = 'plp_keyword_opportunities', 'Plp Keyword Opportunities'
     PDP_CONTENT_AUDIT = 'pdp_content_audit', 'Pdp Content Audit'
     DISCOUNT_OPPORTUNITIES = 'discount_opportunities', 'Discount Opportunities'

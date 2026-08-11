@@ -61,13 +61,25 @@ class AuthenticationService:
         otp_instance = PasswordResetOTP.create_otp(user)
         logger.info(f"Generated password reset OTP for user {user.email}")
 
+        from django.template.loader import render_to_string
+        from django.utils.html import strip_tags
+        
+        context = {
+            'user_email': user.email,
+            'otp': otp_instance.otp
+        }
+        
+        html_message = render_to_string('emails/password_reset.html', context)
+        plain_message = strip_tags(html_message)
+
         # Send email with OTP
         try:
             send_mail(
                 subject='Password Reset OTP - AethyrTech',
-                message='You requested a password reset. Here is your One-Time Password (OTP):\n\n' + otp_instance.otp + '\n\nThis OTP will expire in 10 minutes.\n\nIf you did not request this, please ignore this email.',  # noqa: E501
+                message=plain_message,
                 from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[user.email],
+                html_message=html_message,
                 fail_silently=False,
             )
             logger.info(f"Sent password reset OTP email to {user.email}")

@@ -70,7 +70,7 @@ class ExecutionManager:
             task_ids = JsonFileTask.objects.filter(execution=execution).values_list('id', flat=True)
             RegionJsonFile.objects.filter(
                 task_id__in=[str(tid) for tid in task_ids], status__in=['PENDING', 'RUNNING']
-            ).update(status='STOPPED', error_message='Execution manually stopped')
+            ).update(status='STOPPED', error_message='Execution manually stopped', updated_at=timezone.now())
             task_model = JsonFileTask
 
         # Ruthlessly kill tasks in celery broker
@@ -176,7 +176,8 @@ class ExecutionManager:
                     RegionJsonFile.objects.filter(id=file_data['file_id']).update(
                         task_id=str(task.id),
                         status='RUNNING',
-                        error_message=''
+                        error_message='',
+                        updated_at=timezone.now()
                     )
 
             # The Magic Dispatch. No imports from json_generate needed.

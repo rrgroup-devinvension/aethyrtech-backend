@@ -3,6 +3,8 @@ import logging
 from experience_cloud.market_data.schemas import DataDumpResponseSchema, DataDumpSchema
 from experience_cloud.market_data.services.xbyte_service import XByteDataDumpService
 
+from experience_cloud.api_provider.models import ApiProviderCodes
+
 # Import your provider services here as you build them
 
 logger = logging.getLogger(__name__)
@@ -14,7 +16,7 @@ class DataDumpDispatcher:
         """Initialize the dispatcher and its service registry."""
         # The Registry Map: Links a provider_code from the DB to the Python class that handles it.
         self._services = {
-            "XBYTES": XByteDataDumpService(),
+            ApiProviderCodes.XBYTES.value.upper(): XByteDataDumpService(),
         }
 
     def execute(self, schema: DataDumpSchema) -> DataDumpResponseSchema:

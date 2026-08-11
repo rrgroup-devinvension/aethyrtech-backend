@@ -249,3 +249,9 @@ class ChangePasswordSerializer(serializers.Serializer):
             raise serializers.ValidationError({"new_password": "New password must be different from current password"})
         return data
 
+
+class ContactUsSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=150)
+    email = serializers.EmailField()
+    mobile = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    message = serializers.CharField()

@@ -229,7 +229,8 @@ def process_region_batch(execution_id: int, region_id: int, file_task_ids: list)
                         "generation_duration": duration,
                         "products_processed": getattr(product_generator, 'total_count', 0),
                         "status": 'SUCCESS',
-                        "last_generated_at": timezone.now()
+                        "last_generated_at": timezone.now(),
+                        "updated_at": timezone.now()
                     }
 
                     if not is_file_saved and file_name and file_path:
@@ -254,7 +255,8 @@ def process_region_batch(execution_id: int, region_id: int, file_task_ids: list)
                 if task.metadata and 'file_id' in task.metadata:
                     RegionJsonFile.objects.filter(id=task.metadata['file_id']).update(
                         status='FAILED',
-                        error_message=str(e)
+                        error_message=str(e),
+                        updated_at=timezone.now()
                     )
 
     except Exception as e:
@@ -269,7 +271,8 @@ def process_region_batch(execution_id: int, region_id: int, file_task_ids: list)
             if task_obj and task_obj.metadata and 'file_id' in task_obj.metadata:
                 RegionJsonFile.objects.filter(id=task_obj.metadata['file_id']).update(
                     status='FAILED',
-                    error_message=f"Batch initialization failed: {e}"
+                    error_message=f"Batch initialization failed: {e}",
+                    updated_at=timezone.now()
                 )
     finally:
         if 'product_generator' in locals() and hasattr(product_generator, 'cleanup'):

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+<div style="max-width:600px;margin:24px auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.06);">
+
+<!-- Header -->
+<div style="background:linear-gradient(135deg,#0f172a,#1e293b);padding:28px 32px;">
+    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;color:#94a3b8;margin-bottom:6px;">AETHYRTECH &middot; {{ safe_brand }}</div>
+    <div style="font-size:20px;font-weight:900;color:#ffffff;line-height:1.3;">New Task Assigned to You</div>
+</div>
+
+<!-- Body -->
+<div style="padding:28px 32px;">
+    <p style="font-size:14px;color:#334155;line-height:1.6;margin:0 0 20px;">
+        Hi <strong>{{ member_name }}</strong>,<br><br>
+        A new action task has been assigned to you for the <strong>{{ safe_brand }}</strong> brand. Please review the details below and take the required action within the specified timeline.
+    </p>
+
+    <!-- Insight Context -->
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.12em;color:#64748b;margin-bottom:6px;">RELATED INSIGHT</div>
+        <div style="font-size:15px;font-weight:700;color:#0f172a;">{{ safe_insight }}</div>
+    </div>
+
+    <!-- Task Details -->
+    <div style="background:#f0f4ff;border:1px solid #e0e7ff;border-radius:12px;padding:20px;margin-bottom:16px;">
+        <div style="font-size:17px;font-weight:800;color:#1e293b;margin-bottom:8px;">{{ task_title }}</div>
+        <p style="font-size:13px;color:#475569;line-height:1.55;margin:0 0 16px;">{{ task_desc }}</p>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <tr>
+                <td style="padding:6px 0;color:#64748b;font-weight:700;width:100px;">Category</td>
+                <td style="padding:6px 0;color:#1e293b;font-weight:600;">{{ task_cat }}</td>
+            </tr>
+            <tr>
+                <td style="padding:6px 0;color:#64748b;font-weight:700;">Priority</td>
+                <td style="padding:6px 0;color:#1e293b;font-weight:600;">{{ task_pri }}</td>
+            </tr>
+            <tr>
+                <td style="padding:6px 0;color:#64748b;font-weight:700;">Timeline</td>
+                <td style="padding:6px 0;color:#1e293b;font-weight:600;">{{ task_days }} days (Due: {{ due_date }})</td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- KPI Box -->
+    <table style="width:100%;border:1px solid #e2e8f0;border-radius:12px;border-collapse:separate;overflow:hidden;margin-bottom:20px;">
+        <tr>
+            <td style="padding:14px;text-align:center;background:#f8fafc;border-right:1px solid #e2e8f0;width:33%;">
+                <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;color:#6366f1;margin-bottom:4px;">KPI</div>
+                <div style="font-size:13px;font-weight:800;color:#0f172a;">{{ task_kpi }}</div>
+            </td>
+            <td style="padding:14px;text-align:center;background:#f0fdf4;border-right:1px solid #e2e8f0;width:33%;">
+                <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;color:#16a34a;margin-bottom:4px;">TARGET</div>
+                <div style="font-size:13px;font-weight:800;color:#0f172a;">{{ task_target }}</div>
+            </td>
+            <td style="padding:14px;text-align:center;background:#fefce8;width:33%;">
+                <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;color:#d97706;margin-bottom:4px;">BASELINE</div>
+                <div style="font-size:13px;font-weight:800;color:#0f172a;">{{ task_base }}</div>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Expected Action -->
+    <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:16px;margin-bottom:20px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.12em;color:#059669;margin-bottom:8px;">&#9989; EXPECTED ACTION FROM YOU</div>
+        <ol style="font-size:13px;color:#1e293b;line-height:1.7;margin:0;padding-left:18px;">
+            <li>Review the task details and KPI targets above.</li>
+            <li>Begin execution within the next <strong>2 business days</strong>.</li>
+            <li>Track progress against the baseline ({{ task_base }}) toward the target ({{ task_target }}).</li>
+            <li>Update the task status on the platform once you start and upon completion.</li>
+            <li>Flag any blockers or resource needs to your manager immediately.</li>
+        </ol>
+    </div>
+
+    <p style="font-size:12px;color:#94a3b8;line-height:1.5;margin:0;">
+        This is an automated notification from the Aethyrtech Brand Intelligence Platform. Please do not reply to this email. For questions, contact your brand manager.
+    </p>
+</div>
+
+<!-- Footer -->
+<div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 32px;text-align:center;">
+    <div style="font-size:11px;font-weight:700;color:#94a3b8;">Aethyrtech &middot; Brand Intelligence Platform</div>
+</div>
+</div>
+</body>
+</html>

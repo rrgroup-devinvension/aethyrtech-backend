@@ -59,6 +59,7 @@ class AppPermissions:
     UPDATE_JSON_TEMPLATE = "UPDATE_JSON_TEMPLATE"
     DELETE_JSON_TEMPLATE = "DELETE_JSON_TEMPLATE"
     READ_JSON_GENERATION = "READ_JSON_GENERATION"
+    READ_GEN_INSIGHTS = "READ_GEN_INSIGHTS"
     READ_MARKET_DATA_DUMP = "READ_MARKET_DATA_DUMP"
     READ_SCHEDULERS = "READ_SCHEDULERS"
     CREATE_SCHEDULER = "CREATE_SCHEDULER"
@@ -66,15 +67,37 @@ class AppPermissions:
     DELETE_SCHEDULER = "DELETE_SCHEDULER"
 
 
-    READ_GEN_INSIGHTS = "READ_GEN_INSIGHTS"
     READ_EXPERIANCE_DASHBOARD = "READ_EXPERIANCE_DASHBOARD"
+    READ_ACTION_DASHBOARD = "READ_ACTION_DASHBOARD"
+    READ_CAMPAIGN_SETUP = "READ_CAMPAIGN_SETUP"
+    READ_CAMPAIGN = "READ_CAMPAIGN"
+    READ_MEDIA_ACTION_CENTER = "READ_MEDIA_ACTION_CENTER"
+
     READ_RISK_CENTER = "READ_RISK_CENTER"
     READ_GROWTH_LEVER = "READ_GROWTH_LEVER"
-    READ_CRO_BARRIERS = "READ_CRO_BARRIERS"
-    READ_GAP_LANDSCAPES = "READ_GAP_LANDSCAPES"
-    READ_PLATFORM_AUDIT = "READ_PLATFORM_AUDIT"
-    READ_AUDIENCE_AUDIT = "READ_AUDIENCE_AUDIT"
 
+    READ_CRO_BARRIERS = "READ_CRO_BARRIERS"
+    READ_PDP_INSIGHTS = "READ_PDP_INSIGHTS"
+    READ_PLP_INSIGHTS = "READ_PLP_INSIGHTS"
+    READ_REVIEWS_INSIGHTS = "READ_REVIEWS_INSIGHTS"
+    READ_INCENTIVE_INSIGHTS = "READ_INCENTIVE_INSIGHTS"
+
+    READ_GAP_LANDSCAPES = "READ_GAP_LANDSCAPES"
+
+    READ_PLATFORM_AUDIT = "READ_PLATFORM_AUDIT"
+    READ_PRODUCT_CATALOG = "READ_PRODUCT_CATALOG"
+
+    READ_AUDIENCE_AUDIT = "READ_AUDIENCE_AUDIT"
+    GENERATE_CONTENT = "GENERATE_CONTENT"
+
+
+    # Team & Action Management
+    READ_TEAM_MEMBER = "READ_TEAM_MEMBER"
+    CREATE_TEAM_MEMBER = "CREATE_TEAM_MEMBER"
+    UPDATE_TEAM_MEMBER = "UPDATE_TEAM_MEMBER"
+    DELETE_TEAM_MEMBER = "DELETE_TEAM_MEMBER"
+    MANAGE_ACTION_PLANS = "MANAGE_ACTION_PLANS"
+    MANAGE_METRIC_SNAPSHOTS = "MANAGE_METRIC_SNAPSHOTS"
 
 
 PERMISSION_REGISTRY = [
@@ -459,9 +482,17 @@ PERMISSION_REGISTRY = [
     {
         "id": AppPermissions.READ_JSON_GENERATION,
         "name": "Read JSON Generation",
-        "group": "Insights",
+        "group": "JSON Generation",
         "scopes": ["INTERNAL"],
-        "description": "View JSON generation features.",
+        "description": "View JSON generation workflows and logs.",
+        "implies": [],
+    },
+    {
+        "id": AppPermissions.READ_GEN_INSIGHTS,
+        "name": "Read Gen Insights",
+        "group": "Experiance Cloud",
+        "scopes": ["INTERNAL"],
+        "description": "Access AI-generated market insights.",
         "implies": [],
     },
     {
@@ -513,27 +544,48 @@ PERMISSION_REGISTRY = [
         "implies": [],
     },
     {
-        "id": AppPermissions.READ_AUDIENCE_AUDIT,
-        "name": "Read Audience Audit",
-        "group": "Experiance Cloud",
-        "scopes": ["ORGANIZATION"],
-        "description": "View audience demographic audits.",
-        "implies": [],
-    },
-    {
-        "id": AppPermissions.READ_GEN_INSIGHTS,
-        "name": "Read Gen Insights",
-        "group": "Experiance Cloud",
-        "scopes": [ "ORGANIZATION"],
-        "description": "Access AI-generated market insights.",
-        "implies": [],
-    },
-    {
         "id": AppPermissions.READ_EXPERIANCE_DASHBOARD,
         "name": "Read Experience Dashboard",
         "group": "Experiance Cloud",
         "scopes": ["ORGANIZATION"],
         "description": "View digital experience metrics.",
+        "implies": [
+            AppPermissions.READ_ACTION_DASHBOARD,
+            AppPermissions.READ_CAMPAIGN_SETUP,
+            AppPermissions.READ_CAMPAIGN,
+            AppPermissions.READ_MEDIA_ACTION_CENTER,
+        ],
+    },
+    {
+        "id": AppPermissions.READ_ACTION_DASHBOARD,
+        "name": "Read Action Dashboard",
+        "group": "Experiance Cloud",
+        "scopes": ["ORGANIZATION"],
+        "description": "View action dashboard.",
+        "implies": [],
+    },
+    {
+        "id": AppPermissions.READ_CAMPAIGN_SETUP,
+        "name": "Read Campaign Setup",
+        "group": "Experiance Cloud",
+        "scopes": ["ORGANIZATION"],
+        "description": "View campaign setup.",
+        "implies": [],
+    },
+    {
+        "id": AppPermissions.READ_CAMPAIGN,
+        "name": "Read Campaign",
+        "group": "Experiance Cloud",
+        "scopes": ["ORGANIZATION"],
+        "description": "View campaign.",
+        "implies": [],
+    },
+    {
+        "id": AppPermissions.READ_MEDIA_ACTION_CENTER,
+        "name": "Read Media Action Center",
+        "group": "Experiance Cloud",
+        "scopes": ["ORGANIZATION"],
+        "description": "View media action center.",
         "implies": [],
     },
     {
@@ -558,6 +610,43 @@ PERMISSION_REGISTRY = [
         "group": "Experiance Cloud",
         "scopes": ["ORGANIZATION"],
         "description": "View conversion rate optimization data.",
+        "implies": [
+            AppPermissions.READ_PDP_INSIGHTS,
+            AppPermissions.READ_PLP_INSIGHTS,
+            AppPermissions.READ_REVIEWS_INSIGHTS,
+            AppPermissions.READ_INCENTIVE_INSIGHTS,
+        ],
+    },
+    {
+        "id": AppPermissions.READ_PDP_INSIGHTS,
+        "name": "Read PDP Insights",
+        "group": "Experiance Cloud",
+        "scopes": ["ORGANIZATION"],
+        "description": "View PDP Insights.",
+        "implies": [],
+    },
+    {
+        "id": AppPermissions.READ_PLP_INSIGHTS,
+        "name": "Read PLP Insights",
+        "group": "Experiance Cloud",
+        "scopes": ["ORGANIZATION"],
+        "description": "View PLP Insights.",
+        "implies": [],
+    },
+    {
+        "id": AppPermissions.READ_REVIEWS_INSIGHTS,
+        "name": "Read Reviews Insights",
+        "group": "Experiance Cloud",
+        "scopes": ["ORGANIZATION"],
+        "description": "View Reviews Insights.",
+        "implies": [],
+    },
+    {
+        "id": AppPermissions.READ_INCENTIVE_INSIGHTS,
+        "name": "Read Incentive Insights",
+        "group": "Experiance Cloud",
+        "scopes": ["ORGANIZATION"],
+        "description": "View Incentive Insights.",
         "implies": [],
     },
     {
@@ -574,7 +663,74 @@ PERMISSION_REGISTRY = [
         "group": "Experiance Cloud",
         "scopes": ["ORGANIZATION"],
         "description": "View technical platform audits.",
+        "implies": [
+            AppPermissions.READ_PRODUCT_CATALOG,
+        ],
+    },
+    {
+        "id": AppPermissions.READ_PRODUCT_CATALOG,
+        "name": "Read Product Catalog",
+        "group": "Experiance Cloud",
+        "scopes": ["ORGANIZATION"],
+        "description": "View Product Catalog.",
         "implies": [],
+    },
+    {
+        "id": AppPermissions.MANAGE_ACTION_PLANS,
+        "name": "Manage Action Plans",
+        "group": "Experiance Cloud",
+        "scopes": ["ORGANIZATION"],
+        "description": "Manage action plans.",
+        "implies": [AppPermissions.READ_ACTION_DASHBOARD],
+    },
+    {
+        "id": AppPermissions.GENERATE_CONTENT,
+        "name": "Generate Content",
+        "group": "Experiance Cloud",
+        "scopes": ["ORGANIZATION", "BRAND"],
+        "description": "Generate SEO-optimized content via LLM.",
+        "implies": [],
+    },
+    # Team Management
+    {
+        "id": AppPermissions.READ_TEAM_MEMBER,
+        "name": "Read Team Members",
+        "group": "Team Management",
+        "scopes": ["ORGANIZATION"],
+        "description": "View team members.",
+        "implies": [],
+    },
+    {
+        "id": AppPermissions.CREATE_TEAM_MEMBER,
+        "name": "Create Team Members",
+        "group": "Team Management",
+        "scopes": ["ORGANIZATION"],
+        "description": "Create team members.",
+        "implies": [AppPermissions.READ_TEAM_MEMBER],
+    },
+    {
+        "id": AppPermissions.UPDATE_TEAM_MEMBER,
+        "name": "Update Team Members",
+        "group": "Team Management",
+        "scopes": ["ORGANIZATION"],
+        "description": "Update team members.",
+        "implies": [AppPermissions.READ_TEAM_MEMBER],
+    },
+    {
+        "id": AppPermissions.DELETE_TEAM_MEMBER,
+        "name": "Delete Team Members",
+        "group": "Team Management",
+        "scopes": ["ORGANIZATION"],
+        "description": "Delete team members.",
+        "implies": [AppPermissions.READ_TEAM_MEMBER],
+    },
+    {
+        "id": AppPermissions.MANAGE_METRIC_SNAPSHOTS,
+        "name": "Manage Metric Snapshots",
+        "group": "Team Management",
+        "scopes": ["ORGANIZATION"],
+        "description": "Manage metric snapshots.",
+        "implies": [AppPermissions.READ_ACTION_DASHBOARD],
     },
 
 ]

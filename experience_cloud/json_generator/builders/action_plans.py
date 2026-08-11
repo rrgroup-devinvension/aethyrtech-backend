@@ -351,7 +351,8 @@ Schema:
         try:
             response = LLMService.get_service().generate_content(
         [{'role': 'user', 'content': prompt}], action=TemplateCodes.ACTION_PLANS.value,
-        brand_id=brand_id, brand_name=current_brand
+        brand_id=brand_id, brand_name=current_brand,
+        response_type='json'
     )
             if not response:
                 errors.append(f"Insight #{insight_id}: Empty LLM response")
@@ -409,7 +410,7 @@ Schema:
                     'task_id': f"t_{insight_id}_{str(idx + 1).zfill(3)}",
                     'title': ai_task.get('title', 'Untitled Task'),
                     'description': ai_task.get('description', ''),
-                    TemplateCodes.CATEGORY_VIEW.value: ai_task.get('category', 'General'),
+                    'category': ai_task.get('category', 'General'),
                     'priority': ai_task.get('priority', 'medium'),
                     'kpi': ai_task.get('kpi', insight.get('metric')),
                     'target_value': target_val,
@@ -421,11 +422,15 @@ Schema:
                     'notes': '',
                     'due_date': None,
                     'completed_at': None,
-                    'created_at': datetime.now().isoformat()
+                    'created_at': datetime.now().isoformat(),
+                    'linked_task_group': None,
+                    'impacted_insights': []
                 })
 
+            parsed_insight_id = int(insight_id) if isinstance(insight_id, str) and insight_id.isdigit() else insight_id
+
             existing_plans['plans'][key] = {
-                'insight_id': insight_id,
+                'insight_id': parsed_insight_id,
                 'insight_title': insight['title'],
                 'insight_type': insight['type'],
                 'insight_owner': insight['owner'],
@@ -472,32 +477,131 @@ Schema:
     }
 
 def _deduplicate_and_link_tasks(existing_plans: dict) -> None:
-    """Deduplicate tasks across all insights to avoid flooding the team with identical actions."""
+    """Deduplicate and link tasks across all insights using Jaccard Similarity and Union-Find."""
     if 'plans' not in existing_plans:
         return
 
-    seen_signatures = set()
-    
-    for plan_key, plan_data in existing_plans['plans'].items():
-        if 'tasks' not in plan_data:
+    stop_words = {
+        'a','an','the','and','or','in','on','of','for','to','with','by','is','are',
+        'this','that','from','it','its','be','was','were','been','has','have','had',
+        'do','does','did','will','would','could','should','can','may','might','shall',
+        'not','no','but','if','at','as','so','than','then','also','into','over','under',
+        'after','before','about','between','through','during','without','within','along',
+        'across','against','upon','toward','via','per','all','each','every','both','few',
+        'more','most','other','some','such','only','just','very','too','much','many',
+        'any','own','same','how','what','which','who','whom','whose','when','where','why',
+        'up','down','out','off','above','below'
+    }
+
+    flat_tasks = []
+
+    for plan_key, plan in existing_plans['plans'].items():
+        parent_insight_id = plan.get('insight_id', plan_key)
+        parent_insight_title = plan.get('insight_title', '')
+        parent_insight_type = plan.get('insight_type', 'positive')
+        parent_insight_owner = plan.get('insight_owner', 'CMO')
+
+        # Derive impact from the plan — try insight-level keys first
+        parent_impact = plan.get('impact', plan.get('insight_impact', 'Medium'))
+
+        for task_idx, task in enumerate(plan.get('tasks', [])):
+            title = str(task.get('title', '')).lower()
+            tokens = [t for t in re.split(r'[\s_\-]+', title) if t]
+            keywords = [w for w in tokens if w not in stop_words]
+
+            # Source logic
+            source = 'media' if str(parent_insight_id).startswith('media_') else 'experience'
+
+            flat_tasks.append({
+                'planKey': plan_key,
+                'taskIdx': task_idx,
+                'keywords': keywords,
+                'taskTitle': task.get('title', 'Untitled Task'),
+                'parent': {
+                    'insight_id': parent_insight_id,
+                    'insight_title': parent_insight_title,
+                    'impact_criticality': parent_impact,
+                    'insight_type': parent_insight_type,
+                    'source': source
+                }
+            })
+
+    n = len(flat_tasks)
+
+    # Initialize all tasks with default linked fields in case it's a re-run
+    for plan_key, plan in existing_plans['plans'].items():
+        for task in plan.get('tasks', []):
+            task['linked_task_group'] = None
+            task['impacted_insights'] = []
+
+    if n < 2:
+        return
+
+    parent = list(range(n))
+    rank = [0] * n
+
+    def find(x):
+        if parent[x] != x:
+            parent[x] = find(parent[x])
+        return parent[x]
+
+    def union(a, b):
+        ra = find(a)
+        rb = find(b)
+        if ra == rb:
+            return
+        if rank[ra] < rank[rb]:
+            parent[ra] = rb
+        elif rank[ra] > rank[rb]:
+            parent[rb] = ra
+        else:
+            parent[rb] = ra
+            rank[ra] += 1
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            keywords_a = flat_tasks[i].get('keywords', [])
+            keywords_b = flat_tasks[j].get('keywords', [])
+            
+            if not isinstance(keywords_a, list) or not isinstance(keywords_b, list):
+                continue
+                
+            set_a = set(keywords_a)
+            set_b = set(keywords_b)
+
+            intersection = len(set_a.intersection(set_b))
+            union_size = len(set_a) + len(set_b) - intersection
+
+            if union_size > 0:
+                jaccard = intersection / union_size
+                if jaccard >= 0.80:
+                    union(i, j)
+
+    groups = {}
+    for i in range(n):
+        root = find(i)
+        groups.setdefault(root, []).append(i)
+
+    group_counter = 0
+
+    for root, member_indices in groups.items():
+        if len(member_indices) < 2:
             continue
-            
-        unique_tasks = []
-        for task in plan_data['tasks']:
-            # Create a unique signature based on title and KPI
-            title = str(task.get('title', '')).strip().lower()
-            kpi = str(task.get('kpi', '')).strip().lower()
-            sig = f"{title}_{kpi}"
-            
-            # If this is a pending, unassigned task that is identical to another one, skip it
-            status = task.get('status')
-            assigned = task.get('assigned_to')
-            
-            if status == 'pending' and not assigned:
-                if sig in seen_signatures:
-                    continue  # Deduplicate
-            
-            seen_signatures.add(sig)
-            unique_tasks.append(task)
-            
-        plan_data['tasks'] = unique_tasks
+
+        group_counter += 1
+        group_id = f"ltg_{group_counter}"
+
+        all_impacted = []
+        for idx in member_indices:
+            parent_ctx = flat_tasks[idx].get('parent')
+            if not isinstance(parent_ctx, dict):
+                continue
+            entry = parent_ctx.copy()
+            entry['task_title'] = flat_tasks[idx].get('taskTitle', '')
+            all_impacted.append(entry)
+
+        for idx in member_indices:
+            p_key = flat_tasks[idx]['planKey']
+            t_idx = flat_tasks[idx]['taskIdx']
+            existing_plans['plans'][p_key]['tasks'][t_idx]['linked_task_group'] = group_id
+            existing_plans['plans'][p_key]['tasks'][t_idx]['impacted_insights'] = all_impacted

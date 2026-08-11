@@ -29,6 +29,10 @@ class HttpMethod(models.TextChoices):
     PATCH = "PATCH", _("PATCH")
     DELETE = "DELETE", _("DELETE")
 
+class ApiProviderCodes(models.TextChoices):
+    XBYTES = 'xbytes', 'Xbytes'
+    KARMATECH = 'karmatech', 'Karmatech'
+
 class ApiProvider(BaseModel):
     """Model representing an external API integration, storing connection details, credentials, and health status."""
     name = models.CharField(

@@ -3,12 +3,18 @@ from django.db import models
 from shared.base.models import BaseModel
 
 
+class LLMProviderCodes(models.TextChoices):
+    GEMINI = 'gemini', 'Gemini'
+    OPENAI = 'openai', 'OpenAI'
+    ANTHROPIC = 'anthropic', 'Anthropic'
+
 class LLMProvider(BaseModel):
     """Model for configuring and managing external Large Language Model providers.
 
     (e.g., OpenAI, Anthropic, Gemini) and their credentials.
     """
     name = models.CharField(max_length=100, unique=True, help_text="e.g. openai, gemini, anthropic")
+    code = models.CharField(max_length=50, blank=True, default='', db_index=True, help_text="Unique internal identifier (e.g. OPENAI, GEMINI)")
     enabled = models.BooleanField(default=False)
     is_default = models.BooleanField(default=False, help_text="Fallback provider if none specified")
     api_key = models.CharField(max_length=2048, blank=True, default='')

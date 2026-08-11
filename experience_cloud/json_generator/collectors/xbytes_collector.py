@@ -2,6 +2,7 @@ import logging
 from collections.abc import Generator
 from typing import Any
 
+from django.db.models import Q
 from django.db.models.query import QuerySet
 
 from experience_cloud.json_generator.schemas import ProductSchema, RegionDataSchema
@@ -44,7 +45,18 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
             pincodes_map[plat_code] = [loc["pincode"] for loc in plat.get("locations", []) if loc.get("pincode")]
 
     platforms = list(keywords_map.keys())
-    qs = XBytesProduct.objects.filter(platform__in=platforms).order_by("product_uid")
+
+    query = Q()
+    for plat_code, kws in keywords_map.items():
+        if kws:
+            query |= Q(platform=plat_code, keyword__in=kws)
+        else:
+            query |= Q(platform=plat_code)
+
+    if query:
+        qs = XBytesProduct.objects.filter(query).order_by("product_uid")
+    else:
+        qs = XBytesProduct.objects.none()
 
     scraper_id = None
     scraped_date = None

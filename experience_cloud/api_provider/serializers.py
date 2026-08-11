@@ -16,3 +16,12 @@ class ApiProviderSerializer(BaseModelSerializer):
             'description'
         )
         read_only_fields = ('id', 'created_at', 'updated_at')
+
+    def validate_code(self, value):
+        """Validate that the code is a valid choice in ApiProviderCodes."""
+        from .models import ApiProviderCodes
+        valid_codes = [choice.value for choice in ApiProviderCodes]
+        if value and value not in valid_codes:
+            from rest_framework import serializers
+            raise serializers.ValidationError(f"Invalid code '{value}'. Valid options are: {', '.join(valid_codes)}")
+        return value
