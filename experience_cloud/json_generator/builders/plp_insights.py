@@ -1,10 +1,10 @@
-from experience_cloud.json_generator.models import TemplateCodes
 import json
-import random
+import secrets
 from datetime import datetime
 
 from core.llm_providers.services.llm_service import LLMService
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
+from experience_cloud.json_generator.models import TemplateCodes
 from experience_cloud.json_generator.schemas import RegionDataSchema
 from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template
 
@@ -151,7 +151,7 @@ def plp_insights_builder(
     csv_rows.append(['Brand', 'Keyword', 'Overall Visibility Score', 'Priority'])
     opportunity_keywords = sorted_keywords[-50:]
     opportunity_keywords.sort(key=lambda x: x[1]) # Sort ascending (lowest score first)
-    
+
     for kw, score in opportunity_keywords:
         priority = 'Critical' if score == 0 else ('High' if score < 5 else 'Medium')
         csv_rows.append([current_brand, kw, score, priority])
@@ -225,40 +225,42 @@ Do NOT include markdown formatting. Return purely the JSON object..
     # PLATFORM COMPARISON (DYNAMIC)
     # ===============================
     detected_platforms = []
-    
+
     cat_data = serve_region_template(region_id, TemplateCodes.CATEGORY_VIEW.value) or {}
     if cat_data and "PlatformHealthScores" in cat_data and "labels" in cat_data["PlatformHealthScores"]:
-        detected_platforms.extend([str(l).strip().lower() for l in cat_data["PlatformHealthScores"]["labels"] if l])
-        
+        detected_platforms.extend(
+            [str(lbl).strip().lower() for lbl in cat_data["PlatformHealthScores"]["labels"] if lbl]
+        )
+
     if not detected_platforms:
         reviews_data = serve_region_template(region_id, TemplateCodes.PRODUCT_REVIEWS.value) or {}
-        for brand_name, products_list in reviews_data.items():
+        for _brand_name, products_list in reviews_data.items():
             if isinstance(products_list, dict):
-                for product_id, reviews in products_list.items():
+                for _product_id, reviews in products_list.items():
                     if isinstance(reviews, list):
                         for rev in reviews:
                             if rev.get("platform"):
                                 detected_platforms.append(str(rev["platform"]).strip().lower())
-                                
+
     # Remove duplicates and empty
-    detected_platforms = list(set([p for p in detected_platforms if p and p != "unknown"]))
+    detected_platforms = list({p for p in detected_platforms if p and p != "unknown"})
     if not detected_platforms:
         detected_platforms = ["amazon", "flipkart"]
-        
+
     platform_comparison = {}
     total_share = 100
     platform_count = len(detected_platforms)
-    
+
     for idx, pf in enumerate(detected_platforms):
         if idx == platform_count - 1:
             share = max(5, total_share)
         else:
-            share = max(5, round(100 / platform_count) + random.randint(-3, 3))
+            share = max(5, round(100 / platform_count) + secrets.choice(range(-3, 4)))
             total_share -= share
-            
-        avg_offset = random.randint(-20, 20) / 10.0
+
+        avg_offset = secrets.choice(range(-20, 21)) / 10.0
         mock_avg_rank = max(1.0, round(avg_brand_rank + avg_offset, 1))
-        
+
         platform_comparison[pf] = {
             "avg_rank": mock_avg_rank,
             "share_of_search": share

@@ -95,6 +95,7 @@ class UserSerializer(BaseModelSerializer):
         )
 
     def get_permissions_count(self, obj):
+        """Return the total number of permissions for the user."""
         return len(obj.get_all_permissions())
 
 class UserCreateUpdateSerializer(BaseModelSerializer):
@@ -251,6 +252,7 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 
 class ContactUsSerializer(serializers.Serializer):
+    """Serializer for the contact us form."""
     name = serializers.CharField(max_length=150)
     email = serializers.EmailField()
     mobile = serializers.CharField(max_length=20, required=False, allow_blank=True)

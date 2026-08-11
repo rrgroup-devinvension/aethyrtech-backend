@@ -9,7 +9,9 @@ from experience_cloud.json_generator.utils import ItemGenerator, match_brand
 logger = logging.getLogger(__name__)
 
 
-def build_keyword_count(platforms_data: dict, products: ItemGenerator | None, brand_name: str) -> dict[str, dict[str, list[KeywordResult]]]:
+def build_keyword_count(
+    platforms_data: dict, products: ItemGenerator | None, brand_name: str
+) -> dict[str, dict[str, list[KeywordResult]]]:
     """Calculate occurrences and ranking presence for specified keywords across a given product set."""
     result: dict[str, dict[str, list[KeywordResult]]] = defaultdict(dict)
 

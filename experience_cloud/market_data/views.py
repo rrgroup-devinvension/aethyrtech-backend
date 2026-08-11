@@ -474,7 +474,7 @@ class StopDataDumpView(APIView):
 
 class DebugRunDataDumpView(APIView):
     """Synchronously run a single Data Dump execution for debugging.
-    
+
     Unauthenticated to easily hit via Postman/cURL.
     Accepts location_id and keyword_id.
     """
@@ -497,6 +497,8 @@ class DebugRunDataDumpView(APIView):
         try:
             import time
 
+            from django.core.exceptions import ObjectDoesNotExist
+
             from core.categories.models import Category
             from experience_cloud.catalog.models import Keyword, Location, Platform
             from experience_cloud.market_data.services.dispatcher import DataDumpDispatcher
@@ -509,7 +511,7 @@ class DebugRunDataDumpView(APIView):
                 platform_obj = Platform.objects.select_related('api_provider').get(id=location.platform_id)
                 category_obj = Category.objects.filter(id=location.category_id).first()
                 provider_obj = getattr(platform_obj, "api_provider", None) if platform_obj else None
-            except Exception as e:
+            except ObjectDoesNotExist as e:
                 return Response({'error': f'Failed to fetch configuration objects: {e!s}'}, status=404)
 
             loc_name = location.pincode if location.pincode else location.address
@@ -538,5 +540,5 @@ class DebugRunDataDumpView(APIView):
                 'duration_seconds': round(duration, 2)
             }, status=status.HTTP_200_OK)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

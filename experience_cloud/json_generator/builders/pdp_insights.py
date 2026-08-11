@@ -1,9 +1,9 @@
-from experience_cloud.json_generator.models import TemplateCodes
 import json
 from datetime import datetime
 
 from core.llm_providers.services.llm_service import LLMService
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
+from experience_cloud.json_generator.models import TemplateCodes
 from experience_cloud.json_generator.schemas import RegionDataSchema
 from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template
 
@@ -185,13 +185,13 @@ def pdp_insights_builder(
     from typing import Any
     csv_rows: list[list[Any]] = []
     csv_rows.append(['Brand', 'SKU', 'Product Title', 'Overall Health Score', 'Deficiencies / Missing Content'])
-    
+
     for issue in pdps_needing_improvement:
         csv_rows.append([
-            current_brand, 
-            issue.get("sku", ""), 
-            issue.get("name", ""), 
-            issue.get("health_score", 0), 
+            current_brand,
+            issue.get("sku", ""),
+            issue.get("name", ""),
+            issue.get("health_score", 0),
             issue.get("deficiencies", "")
         ])
 

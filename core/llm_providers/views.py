@@ -53,7 +53,7 @@ class LLMProviderViewSet(BaseViewSet):
     def form_options(self, request, *args, **kwargs):
         """Return all valid enums for the frontend form in a single request."""
         from .models import LLMProviderCodes
-        
+
         return Response({
             "providerCodes": [{"id": k, "name": v} for k, v in LLMProviderCodes.choices],
         })
@@ -61,6 +61,7 @@ class LLMProviderViewSet(BaseViewSet):
     filterset_fields: ClassVar[tuple] = ('enabled',)
 
     def perform_update(self, serializer):
+        """Handle the update of an LLM provider."""
         instance = self.get_object()
         changed = False
         if 'model' in serializer.validated_data and serializer.validated_data['model'] != instance.model:

@@ -1,8 +1,11 @@
 from django.db import models
-from shared.base.models import BaseModel
+
 from core.organizations.models import Brand
+from shared.base.models import BaseModel
+
 
 class TeamMember(BaseModel):
+    """Team member model."""
     brand = models.ForeignKey(Brand, on_delete=models.CASCADE, related_name='team_members')
     name = models.CharField(max_length=255)
     role = models.CharField(max_length=255, blank=True, default='')

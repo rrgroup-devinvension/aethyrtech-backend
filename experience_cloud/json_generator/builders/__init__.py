@@ -1,6 +1,7 @@
 from collections.abc import Callable
 
 from experience_cloud.json_generator.exceptions import DataProcessingException
+from experience_cloud.json_generator.models import TemplateCodes
 
 # Insight Builders
 from .action_plans import action_plans_builder
@@ -20,8 +21,6 @@ from .positive_data import positive_data_builder
 from .product_reviews import product_reviews_builder
 from .reviews_insights import reviews_insights_builder
 from .risk_data import risk_data_builder
-
-from experience_cloud.json_generator.models import TemplateCodes
 
 BUILDER_REGISTRY = {
     # Core Data Builders

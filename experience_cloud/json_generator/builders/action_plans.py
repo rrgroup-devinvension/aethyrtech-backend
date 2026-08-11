@@ -1,4 +1,3 @@
-from experience_cloud.json_generator.models import TemplateCodes
 import json
 import logging
 import re
@@ -9,6 +8,7 @@ from rest_framework.exceptions import NotFound
 
 from core.llm_providers.services.llm_service import LLMService
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
+from experience_cloud.json_generator.models import TemplateCodes
 from experience_cloud.json_generator.schemas import RegionDataSchema
 from experience_cloud.json_generator.utils import save_or_update_region_json, serve_region_template
 
@@ -499,7 +499,7 @@ def _deduplicate_and_link_tasks(existing_plans: dict) -> None:
         parent_insight_id = plan.get('insight_id', plan_key)
         parent_insight_title = plan.get('insight_title', '')
         parent_insight_type = plan.get('insight_type', 'positive')
-        parent_insight_owner = plan.get('insight_owner', 'CMO')
+        _parent_insight_owner = plan.get('insight_owner', 'CMO')
 
         # Derive impact from the plan — try insight-level keys first
         parent_impact = plan.get('impact', plan.get('insight_impact', 'Medium'))
@@ -529,7 +529,7 @@ def _deduplicate_and_link_tasks(existing_plans: dict) -> None:
     n = len(flat_tasks)
 
     # Initialize all tasks with default linked fields in case it's a re-run
-    for plan_key, plan in existing_plans['plans'].items():
+    for _plan_key, plan in existing_plans['plans'].items():
         for task in plan.get('tasks', []):
             task['linked_task_group'] = None
             task['impacted_insights'] = []
@@ -562,10 +562,10 @@ def _deduplicate_and_link_tasks(existing_plans: dict) -> None:
         for j in range(i + 1, n):
             keywords_a = flat_tasks[i].get('keywords', [])
             keywords_b = flat_tasks[j].get('keywords', [])
-            
+
             if not isinstance(keywords_a, list) or not isinstance(keywords_b, list):
                 continue
-                
+
             set_a = set(keywords_a)
             set_b = set(keywords_b)
 
@@ -584,7 +584,7 @@ def _deduplicate_and_link_tasks(existing_plans: dict) -> None:
 
     group_counter = 0
 
-    for root, member_indices in groups.items():
+    for _root, member_indices in groups.items():
         if len(member_indices) < 2:
             continue
 

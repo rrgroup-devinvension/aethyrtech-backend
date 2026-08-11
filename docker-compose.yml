@@ -2,16 +2,37 @@ version: '3.8'
 
 services:
   db:
-    profiles: ["fullstack"]
-    image: postgres:15-alpine
+    image: mysql:8
     environment:
-      POSTGRES_DB: aethyrtech
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      # Main database
+      MYSQL_DATABASE: ${DB_NAME:-aethyrtech_staging}
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_USER: ${DB_USER:-devuser}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-devpass123}
+      # We pass DB_NAME so the init script knows which one is the main db
+      DB_NAME: ${DB_NAME:-aethyrtech_staging}
     ports:
-      - "5432:5432"
+      - "3306:3306"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
+      # Mount the folder with the specific .sql files
+      - ./backups/docker/db:/backups/docker/db:ro
+      # Mount the initialization script
+      - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d:ro
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+      MYSQL_ROOT_PASSWORD: rootpassword
+      UPLOAD_LIMIT: 10G
+      MEMORY_LIMIT: 10G
+      MAX_EXECUTION_TIME: 86400
+    ports:
+      - "8080:80"
+    depends_on:
+      - db
 
   redis:
     image: redis:7-alpine
@@ -30,7 +51,10 @@ services:
       - "8000:8000"
     environment:
       - DEBUG=1
-      - DATABASE_URL=postgres://postgres:password@db:5432/aethyrtech
+      # Overriding hosts to point to the docker container instead of external DBs
+      - DB_HOST=db
+      - XBYTES_DB_HOST=db
+      - KARMATECH_DB_HOST=db
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -46,7 +70,9 @@ services:
       - .:/app
     environment:
       - DEBUG=1
-      - DATABASE_URL=postgres://postgres:password@db:5432/aethyrtech
+      - DB_HOST=db
+      - XBYTES_DB_HOST=db
+      - KARMATECH_DB_HOST=db
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -62,7 +88,9 @@ services:
       - .:/app
     environment:
       - DEBUG=1
-      - DATABASE_URL=postgres://postgres:password@db:5432/aethyrtech
+      - DB_HOST=db
+      - XBYTES_DB_HOST=db
+      - KARMATECH_DB_HOST=db
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -71,5 +99,5 @@ services:
       - redis
 
 volumes:
-  postgres_data:
+  mysql_data:
   redis_data:

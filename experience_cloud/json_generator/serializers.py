@@ -11,16 +11,21 @@ class JsonTemplateSerializer(BaseModelSerializer):
     """Serializer for managing JSON/CSV payload configuration templates."""
     class Meta(BaseModelSerializer.Meta):
         model = JsonTemplate
-        fields = ('id', 'name', 'template', 'file_name', 'parent_folder', 'parent_template', 'process_type', 'file_format', 'is_active', 'created_at', 'updated_at')
+        fields = (
+            'id', 'name', 'template', 'file_name', 'parent_folder', 'parent_template',
+            'process_type', 'file_format', 'is_active', 'created_at', 'updated_at'
+        )
         read_only_fields = ('id', 'created_at', 'updated_at')
 
     def validate_template(self, value):
+        """Validate that the given template code is officially supported."""
         valid_ids = [item['id'] for item in VALID_TEMPLATE_CODES]
         if value not in valid_ids:
             raise serializers.ValidationError(f"Invalid template code. Must be one of: {', '.join(valid_ids)}")
         return value
 
     def validate_file_format(self, value):
+        """Validate that the file format is a recognized extension."""
         from .models import FormatCodes
         valid_formats = [choice[0] for choice in FormatCodes.choices]
         if value not in valid_formats:
@@ -66,4 +71,7 @@ class RegionJsonFileSerializer(BaseModelSerializer):
             'status', 'error_message',
             'created_at', 'updated_at'
         )
-        read_only_fields = ('id', 'created_at', 'updated_at', 'template_name', 'template_code', 'process_type', 'parent_template')
+        read_only_fields = (
+            'id', 'created_at', 'updated_at', 'template_name',
+            'template_code', 'process_type', 'parent_template'
+        )

@@ -160,12 +160,12 @@ def process_region_batch(execution_id: int, region_id: int, file_task_ids: list)
             f"| Brand: {region_data.get('brand_name', 'Unknown')}]"
         )
         from experience_cloud.json_generator.models import ProcessTypeCodes
-        
+
         has_automatic = RegionJsonFile.objects.filter(
             task_id__in=[str(t) for t in file_task_ids],
             template__process_type=ProcessTypeCodes.AUTOMATIC.value
         ).exists()
-        
+
         if has_automatic:
             logger.info(f"{ctx} Region data loaded. Fetching all products for automatic templates...")
             product_generator: ItemGenerator | None = get_all_products(region_data)

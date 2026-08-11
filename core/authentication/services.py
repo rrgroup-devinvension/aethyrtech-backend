@@ -63,12 +63,12 @@ class AuthenticationService:
 
         from django.template.loader import render_to_string
         from django.utils.html import strip_tags
-        
+
         context = {
             'user_email': user.email,
             'otp': otp_instance.otp
         }
-        
+
         html_message = render_to_string('emails/password_reset.html', context)
         plain_message = strip_tags(html_message)
 

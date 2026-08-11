@@ -20,7 +20,7 @@ class XByteClient(BaseApiClient):
 
     def check_logical_error(self, response) -> tuple[bool, Any, str | None]:
         """Inspect XByte's JSON payload to flag API errors that are disguised.
-        
+
         This handles both HTTP 200 OK hidden errors (e.g., Location Not Found)
         and prevents standard HTTP 4xx/5xx responses from triggering automatic retries.
         """
@@ -49,8 +49,8 @@ class XByteClient(BaseApiClient):
                         return True, data, msg
 
                 return False, data, None
-        except Exception:
-            pass
+        except ValueError as e:
+            logger.warning(f"Failed to parse XByte logical error JSON: {e}")
         return False, None, None
 
     def fetch_results(

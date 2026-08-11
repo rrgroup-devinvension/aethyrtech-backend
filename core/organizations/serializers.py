@@ -51,9 +51,11 @@ class CompetitorSerializer(BaseModelSerializer):
         read_only_fields = BaseModelSerializer.Meta.read_only_fields
 
     def validate_aliases(self, value):
+        """Validate aliases."""
         return value or ''
 
     def validate_description(self, value):
+        """Validate description."""
         return value or ''
 
 

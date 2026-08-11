@@ -44,7 +44,6 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
             keywords_map[plat_code] = [kw["name"] for kw in plat.get("keywords", []) if kw.get("name")]
             pincodes_map[plat_code] = [loc["pincode"] for loc in plat.get("locations", []) if loc.get("pincode")]
 
-    platforms = list(keywords_map.keys())
 
     query = Q()
     for plat_code, kws in keywords_map.items():
@@ -53,10 +52,7 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
         else:
             query |= Q(platform=plat_code)
 
-    if query:
-        qs = XBytesProduct.objects.filter(query).order_by("product_uid")
-    else:
-        qs = XBytesProduct.objects.none()
+    qs = XBytesProduct.objects.filter(query).order_by("product_uid") if query else XBytesProduct.objects.none()
 
     scraper_id = None
     scraped_date = None

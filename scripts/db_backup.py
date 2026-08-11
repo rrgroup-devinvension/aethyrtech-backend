@@ -1,7 +1,9 @@
+import argparse
 import logging
 import os
 import sys
 import time
+from datetime import datetime
 
 # Compute project root and add it to sys.path so it can find the 'config' module
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -16,8 +18,6 @@ import django  # noqa: E402
 
 django.setup()
 
-import argparse
-from datetime import datetime  # noqa: E402
 
 from django.db import connections  # noqa: E402
 
@@ -115,7 +115,10 @@ def generate_sql_dump(db_name='default'):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Backup a specific Django database.")
-    parser.add_argument("--db", default="default", help="Name of the database to backup (e.g., default, xbytes_db, karmatech_db)")
+    parser.add_argument(
+        "--db", default="default",
+        help="Name of the database to backup (e.g., default, xbytes_db, karmatech_db)"
+    )
     args = parser.parse_args()
 
     try:

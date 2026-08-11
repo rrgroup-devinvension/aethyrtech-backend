@@ -1,8 +1,8 @@
-from experience_cloud.json_generator.models import TemplateCodes
 import json
 
 from core.llm_providers.services.llm_service import LLMService
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
+from experience_cloud.json_generator.models import TemplateCodes
 from experience_cloud.json_generator.schemas import RegionDataSchema
 from experience_cloud.json_generator.utils import save_or_update_region_json, serve_region_template
 
@@ -104,7 +104,8 @@ def cxo_insights_builder(
     # ===============================
     prompt = f"""
 You are a Senior Data Scientist and Strategic Brand Consultant for {current_brand}.
-Your task is to analyze the provided raw data and generate EXACTLY 16 high-impact strategic insights for the CMO (Marketing) and CCO (Commerce/Operations).
+Your task is to analyze the provided raw data and generate EXACTLY 16 high-impact strategic insights \
+for the CMO (Marketing) and CCO (Commerce/Operations).
 
 ### DATA CONTEXT:
 1. BRAND PERFORMANCE (brand_graph.json):
@@ -167,7 +168,7 @@ Schema:
     # ===============================
     # SAVE
     # ===============================
-    file_name, file_path = save_or_update_region_json(
+    _file_name, _file_path = save_or_update_region_json(
         region_id,
         template,
         llm_data,

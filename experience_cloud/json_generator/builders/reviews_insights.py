@@ -1,4 +1,3 @@
-from experience_cloud.json_generator.models import TemplateCodes
 import json
 import random
 import re
@@ -7,6 +6,7 @@ from datetime import datetime, timedelta
 
 from core.llm_providers.services.llm_service import LLMService
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
+from experience_cloud.json_generator.models import TemplateCodes
 from experience_cloud.json_generator.schemas import RegionDataSchema
 from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template
 
@@ -275,7 +275,7 @@ def reviews_insights_builder(
                 if len(w) < 3 or w.isnumeric() or w in stop_words:
                     continue
                 word_freq[w] = word_freq.get(w, 0) + val
-                
+
         for title in product_titles.values():
             for w in re.split(r'[\s\W]+', str(title).lower()):
                 if len(w) < 3 or w.isnumeric() or w in stop_words:
@@ -297,9 +297,10 @@ def reviews_insights_builder(
     latest_neg_json = json.dumps(top_3_latest_neg, indent=2)
 
     last_4w_sample = "\n- ".join(last_4_weeks_neg_reviews[:30])
-    
+
     prompt = f"""You are an AI data analyst expert. Analyze the following data for the brand {current_brand}.
-    Overall Sentiment counts: Positive: {brand_sentiments['positive']}, Neutral: {brand_sentiments['neutral']}, Negative: {brand_sentiments['negative']}.
+    Overall Sentiment counts: Positive: {brand_sentiments['positive']}, Neutral: {brand_sentiments['neutral']}, \
+Negative: {brand_sentiments['negative']}.
     Sample negative reviews:
     - {sample_negative}
 
@@ -311,13 +312,16 @@ def reviews_insights_builder(
 
     Provide insights in the exact following JSON format:
     {{
-        "sentiment_analysis_text": "A 3-4 sentence analytical summary of the overall sentiment. Highlight main positives and core grievances.",
+        "sentiment_analysis_text": "A 3-4 sentence analytical summary of the overall sentiment. \
+Highlight main positives and core grievances.",
         "top_10_negative_topics": [
-            {{ "topic": "Topic Name e.g. Print Quality", "score": 85, "description": "One sentence summary of this issue" }},
+            {{ "topic": "Topic Name e.g. Print Quality", "score": 85, \
+"description": "One sentence summary of this issue" }},
             {{ "topic": "Topic Name", "score": 72, "description": "..." }}
         ],
         "trending_issues_4_weeks": [
-            {{ "issue": "Issue title", "severity": "high", "description": "Short description of the trending issue", "count_mentions": 15 }},
+            {{ "issue": "Issue title", "severity": "high", \
+"description": "Short description of the trending issue", "count_mentions": 15 }},
             {{ "issue": "Issue title", "severity": "medium", "description": "...", "count_mentions": 8 }}
         ],
         "alerts_this_week": [
@@ -326,29 +330,44 @@ def reviews_insights_builder(
             {{ "issue": "Issue title", "pct": 20, "severity": "medium" }}
         ],
         "latest_responses": [
-            {{ "reviewer": "Reviewer Name", "date": "YYYY-MM-DD", "original_review": "Title - Text", "recommended_response": "Professional, empathetic response..." }}
+            {{
+                "reviewer": "Reviewer Name", "date": "YYYY-MM-DD",
+                "original_review": "Title - Text",
+                "recommended_response": "Professional, empathetic response..."
+            }}
         ],
         "tactical_action_plan": {{
             "immediate": [
-                {{ "action": "Specific action to take right now", "owner": "Team/Department responsible", "impact": "Expected outcome/metric improvement", "priority": "critical" }},
-                {{ "action": "Second immediate action", "owner": "Team", "impact": "Expected outcome", "priority": "high" }}
+                {{ "action": "Specific action to take right now", "owner": "Team/Department responsible",
+                  "impact": "Expected outcome/metric improvement", "priority": "critical" }},
+                {{ "action": "Second immediate action", "owner": "Team",
+                  "impact": "Expected outcome", "priority": "high" }}
             ],
             "one_week": [
-                {{ "action": "Action to complete within 7 days", "owner": "Team", "impact": "Expected outcome", "priority": "high" }},
-                {{ "action": "Second weekly action", "owner": "Team", "impact": "Expected outcome", "priority": "medium" }}
+                {{ "action": "Action to complete within 7 days", "owner": "Team",
+                  "impact": "Expected outcome", "priority": "high" }},
+                {{ "action": "Second weekly action", "owner": "Team",
+                  "impact": "Expected outcome", "priority": "medium" }}
             ],
             "one_month": [
-                {{ "action": "Strategic action for 30-day execution", "owner": "Team", "impact": "Expected outcome", "priority": "medium" }},
-                {{ "action": "Second monthly action", "owner": "Team", "impact": "Expected outcome", "priority": "medium" }}
+                {{ "action": "Strategic action for 30-day execution", "owner": "Team",
+                  "impact": "Expected outcome", "priority": "medium" }},
+                {{ "action": "Second monthly action", "owner": "Team",
+                  "impact": "Expected outcome", "priority": "medium" }}
             ]
         }}
     }}
     IMPORTANT:
-    - top_10_negative_topics MUST have exactly 10 items. 'score' = percentage of negative reviews mentioning this topic (0-100).
-    - trending_issues_4_weeks should have 5-8 items based on the last 4 weeks of negative reviews. 'severity' = critical/high/medium/low.
-    - alerts_this_week should have 3-5 items representing top issues from the most recent week. 'pct' = percentage share among negative reviews that week.
+    - top_10_negative_topics MUST have exactly 10 items. 'score' = percentage of negative reviews mentioning this topic.
+    - trending_issues_4_weeks should have 5-8 items based on the last 4 weeks of negative reviews.
+      'severity' = critical/high/medium/low.
+    - alerts_this_week should have 3-5 items representing top issues from the most recent week.
+      'pct' = percentage share among negative reviews that week.
     - latest_responses should have 3 items matching the 3 latest verified negative reviews provided.
-    - tactical_action_plan MUST have exactly 2 items in each of 'immediate', 'one_week', and 'one_month'. Actions must be specific, measurable, and directly derived from the review data and sentiment analysis. 'owner' should be a realistic business team (e.g., Customer Support, Product Engineering, Quality Assurance, Marketing, Supply Chain). 'impact' should describe a tangible expected improvement. 'priority' = critical/high/medium.
+    - tactical_action_plan MUST have exactly 2 items in each of 'immediate', 'one_week', and 'one_month'.
+      Actions must be specific, measurable, and directly derived from the review data and sentiment analysis.
+      'owner' should be a realistic business team (e.g., Customer Support, Product Engineering, Quality Assurance).
+      'impact' should describe a tangible expected improvement. 'priority' = critical/high/medium.
     Do NOT include markdown formatting (like ```json). Return purely the JSON object so it can be parsed."""
 
     response = LLMService.get_service().generate_content(
@@ -382,8 +401,14 @@ def reviews_insights_builder(
         last_week_neg, week_start = get_period_reviews(30)
 
     topic_csv_rows = [
-        ['Matched Topic', 'Topic Score (%)', 'Review Date', 'Reviewer', 'Platform', 'Product', 'Rating', 'Verified', 'Review Title', 'Review Text'],
-        [f"--- Period: {week_start} to {latest_date} | Brand: {current_brand} | Total Negative Reviews: {len(last_week_neg)} ---"]
+        [
+            'Matched Topic', 'Topic Score (%)', 'Review Date', 'Reviewer', 'Platform',
+            'Product', 'Rating', 'Verified', 'Review Title', 'Review Text'
+        ],
+        [
+            f"--- Period: {week_start} to {latest_date} | Brand: {current_brand} | "
+            f"Total Negative Reviews: {len(last_week_neg)} ---"
+        ]
     ]
     for topic in llm_data.get("top_10_negative_topics", []):
         name = topic.get("topic", "")
@@ -800,10 +825,10 @@ body{{font-family:Inter,sans-serif;background:#f8fafc;color:#1e293b;padding:32px
                 for r in matched:
                     rating = int(float(r.get("rating") or 0))
                     stars = "★" * rating + "☆" * (5 - rating)
-                    
+
                     title = str(r.get("title") or "")
                     text = str(r.get("text") or "")
-                    
+
                     html_content += f"""
 <div class="rc">
 <div class="rm">
@@ -920,7 +945,7 @@ def build_tactical_html(brand, llm_data):
     from datetime import datetime
 
     tap = llm_data.get("tactical_action_plan", {})
-    
+
     now = datetime.now()
     formatted_date = f"{now.strftime('%B')} {now.day}, {now.year} at {now.hour % 12 or 12}:{now.strftime('%M %p')}"
 
@@ -930,23 +955,37 @@ def build_tactical_html(brand, llm_data):
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
-*{{margin:0;padding:0;box-sizing:border-box}}body{{font-family:Inter,sans-serif;background:#0f172a;color:#e2e8f0;padding:40px;min-height:100vh}}
-.dl-bar{{text-align:center;margin-bottom:32px}}.dl-bar button{{background:linear-gradient(135deg,#6366f1,#06b6d4);color:#fff;border:none;padding:12px 32px;border-radius:14px;font-weight:800;font-size:14px;cursor:pointer;box-shadow:0 4px 20px rgba(99,102,241,.35);letter-spacing:.5px}}
-.header{{text-align:center;margin-bottom:40px}}.header h1{{font-size:28px;font-weight:900;background:linear-gradient(135deg,#818cf8,#22d3ee);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}}.header p{{color:#64748b;font-size:13px;font-weight:600}}
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:Inter,sans-serif;background:#0f172a;color:#e2e8f0;padding:40px;min-height:100vh}}
+.dl-bar{{text-align:center;margin-bottom:32px}}
+.dl-bar button{{background:linear-gradient(135deg,#6366f1,#06b6d4);color:#fff;border:none;padding:12px 32px;
+border-radius:14px;font-weight:800;font-size:14px;cursor:pointer;
+box-shadow:0 4px 20px rgba(99,102,241,.35);letter-spacing:.5px}}
+.header{{text-align:center;margin-bottom:40px}}
+.header h1{{font-size:28px;font-weight:900;background:linear-gradient(135deg,#818cf8,#22d3ee);
+-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}}
+.header p{{color:#64748b;font-size:13px;font-weight:600}}
 .grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;max-width:1200px;margin:0 auto}}
-.col-head{{display:flex;align-items:center;gap:10px;margin-bottom:20px;padding-bottom:14px;border-bottom:2px solid rgba(255,255,255,.06)}}
-.col-icon{{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px}}
-.col-title{{font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:2px}}.col-sub{{font-size:10px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:1px}}
-.card{{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px;margin-bottom:16px}}
+.col-head{{display:flex;align-items:center;gap:10px;margin-bottom:20px;
+padding-bottom:14px;border-bottom:2px solid rgba(255,255,255,.06)}}
+.col-icon{{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;
+justify-content:center;font-size:16px}}
+.col-title{{font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:2px}}
+.col-sub{{font-size:10px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:1px}}
+.card{{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+border-radius:14px;padding:20px;margin-bottom:16px}}
 .card-num{{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#fff;margin-right:10px;flex-shrink:0}}
 .card-top{{display:flex;align-items:flex-start;gap:2px;margin-bottom:12px}}
 .action-text{{font-size:13px;font-weight:700;line-height:1.5}}
 .meta{{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}}
 .tag{{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;padding:3px 10px;border-radius:6px}}
 .t-owner{{background:rgba(100,116,139,.3);color:#94a3b8;border:1px solid rgba(100,116,139,.2)}}
-.t-critical{{background:rgba(239,68,68,.2);color:#fca5a5;border:1px solid rgba(239,68,68,.25)}}.t-high{{background:rgba(245,158,11,.2);color:#fcd34d;border:1px solid rgba(245,158,11,.25)}}.t-medium{{background:rgba(59,130,246,.2);color:#93c5fd;border:1px solid rgba(59,130,246,.25)}}
+.t-critical{{background:rgba(239,68,68,.2);color:#fca5a5;border:1px solid rgba(239,68,68,.25)}}
+.t-high{{background:rgba(245,158,11,.2);color:#fcd34d;border:1px solid rgba(245,158,11,.25)}}
+.t-medium{{background:rgba(59,130,246,.2);color:#93c5fd;border:1px solid rgba(59,130,246,.25)}}
 .impact{{font-size:11px;color:#5eead4;line-height:1.5;padding-left:8px;border-left:2px solid rgba(94,234,212,.3)}}
-@media print{{.dl-bar{{display:none}}body{{padding:20px;background:#1e293b}}}}@media(max-width:900px){{.grid{{grid-template-columns:1fr}}}}
+@media print{{.dl-bar{{display:none}}body{{padding:20px;background:#1e293b}}}}
+@media(max-width:900px){{.grid{{grid-template-columns:1fr}}}}
 </style></head><body>
 <div class="dl-bar"><button onclick="genPDF()">Download as PDF</button></div>
 <div id="pdfContent">
@@ -957,25 +996,41 @@ def build_tactical_html(brand, llm_data):
 
     if not tap:
         html_content += """
-<div style="text-align: center; padding: 40px; color: #94a3b8; font-size: 14px; background: rgba(255,255,255,0.04); border-radius: 14px; max-width: 600px; margin: 0 auto;">
+<div style="text-align: center; padding: 40px; color: #94a3b8; font-size: 14px;
+            background: rgba(255,255,255,0.04); border-radius: 14px;
+            max-width: 600px; margin: 0 auto;">
     No tactical actions were generated by the AI for this period.
 </div>
 """
     else:
         html_content += '<div class="grid">'
-        
+
         columns = {
-            'immediate': {'label': 'Execute Now', 'sub': 'Immediate Actions', 'color': '#ef4444', 'bg': 'rgba(239,68,68,.15)', 'icon': 'Immediate:'},
-            'one_week':  {'label': 'This Week',   'sub': '7-Day Execution',   'color': '#f59e0b', 'bg': 'rgba(245,158,11,.15)', 'icon': 'Week:'},
-            'one_month': {'label': 'This Month',  'sub': '30-Day Strategy',   'color': '#3b82f6', 'bg': 'rgba(59,130,246,.15)', 'icon': 'Month:'}
+            'immediate': {
+                'label': 'Execute Now', 'sub': 'Immediate Actions',
+                'color': '#ef4444', 'bg': 'rgba(239,68,68,.15)', 'icon': 'Immediate:'
+            },
+            'one_week': {
+                'label': 'This Week', 'sub': '7-Day Execution',
+                'color': '#f59e0b', 'bg': 'rgba(245,158,11,.15)', 'icon': 'Week:'
+            },
+            'one_month': {
+                'label': 'This Month', 'sub': '30-Day Strategy',
+                'color': '#3b82f6', 'bg': 'rgba(59,130,246,.15)', 'icon': 'Month:'
+            }
         }
-        
+
         for key, col in columns.items():
             html_content += f"""
 <div>
 <div class="col-head">
-<div class="col-icon" style="background:{col['bg']};border:1px solid {col['color']}33;font-size:10px">{col['icon']}</div>
-<div><div class="col-title" style="color:{col['color']}">{col['label']}</div><div class="col-sub">{col['sub']}</div></div>
+<div class="col-icon" style="background:{col['bg']};border:1px solid {col['color']}33;font-size:10px">
+    {col['icon']}
+</div>
+<div>
+    <div class="col-title" style="color:{col['color']}">{col['label']}</div>
+    <div class="col-sub">{col['sub']}</div>
+</div>
 </div>
 """
             actions = tap.get(key, [])
@@ -996,7 +1051,7 @@ def build_tactical_html(brand, llm_data):
 </div>
 """
             html_content += "</div>"
-            
+
         html_content += "</div>"
 
     html_content += f"""

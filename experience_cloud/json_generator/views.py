@@ -42,8 +42,8 @@ class JsonTemplateViewSet(BaseViewSet):
     @action(detail=False, methods=['get'], url_path='form-options')
     def form_options(self, request, *args, **kwargs):
         """Return all valid enums for the frontend form in a single request."""
-        from .models import TemplateCodes, ParentFolderCodes, ProcessTypeCodes, FormatCodes
-        
+        from .models import FormatCodes, ParentFolderCodes, ProcessTypeCodes, TemplateCodes
+
         return Response({
             "templateCodes": [{"id": k, "name": v} for k, v in TemplateCodes.choices],
             "parentFolders": [{"id": k, "name": v} for k, v in ParentFolderCodes.choices],

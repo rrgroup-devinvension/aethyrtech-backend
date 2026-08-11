@@ -11,7 +11,9 @@ from experience_cloud.json_generator.schemas import (
 
 logger = logging.getLogger(__name__)
 
-def get_cartesian_products_pincodes_list(products, brand_name, region_data, is_competitor=False) -> list[CartesianProduct]:
+def get_cartesian_products_pincodes_list(
+    products, brand_name, region_data, is_competitor=False
+) -> list[CartesianProduct]:
     """Map the product catalog against geographic pincodes to establish regional ranking vectors.
 
     Produces a Cartesian product mapping of every SKU against all available location pincodes,

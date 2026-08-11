@@ -1,7 +1,7 @@
-from experience_cloud.json_generator.models import TemplateCodes
 import re
 
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
+from experience_cloud.json_generator.models import TemplateCodes
 from experience_cloud.json_generator.schemas import RegionDataSchema
 from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template
 
@@ -9,7 +9,7 @@ from experience_cloud.json_generator.utils import safe_float, save_or_update_reg
 @handle_builder_exceptions
 def brand_graph_builder(
     region_data: RegionDataSchema, task, products=None, template="template-name"
-) -> tuple[bool, list]:
+) -> tuple[bool, dict]:
     """Process raw catalog data and keyword metrics to construct the Brand Graph JSON payload.
 
     Executes complex scoring formulas across health, incentive, and anxiety metrics for each brand,
@@ -94,10 +94,10 @@ def brand_graph_builder(
             )
 
             import math
-            
+
             # Rating Anxiety: Scale 0-5 inverted to 0-100 (rating 5 = 0 anxiety)
             rating_anxiety = ((5 - min(5, max(0, rating))) / 5) * 100
-            
+
             # Review Anxiety: Logarithmic scale up to 1000 reviews for 0-100 index
             log_reviews = math.log10(reviews + 1)
             review_anxiety = (max(0, 3 - log_reviews) / 3) * 100
@@ -143,4 +143,10 @@ def brand_graph_builder(
         task
     )
 
-    return False, brand_graph_results
+    return True, {
+        "file_name": file_name,
+        "file_path": file_path,
+        "success": True,
+        "message": "Brand Graph successfully generated and saved."
+    }
+

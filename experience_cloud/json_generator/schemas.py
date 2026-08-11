@@ -127,6 +127,7 @@ class CartesianPayload(TypedDict):
 
 # --- Type Aliases for the Catalog Schema ---
 class CatalogContentSnapshot(TypedDict):
+    """Snapshot of content scores for a catalog item."""
     title_score: float
     description_score: float
     bullets_score: float
@@ -140,6 +141,7 @@ class CatalogContentSnapshot(TypedDict):
     enhanced_content: str
 
 class CatalogDetailData(TypedDict):
+    """Detailed metadata for a catalog item."""
     run_date: date | None
     upc_retailer_id: str | None
     model: str | None
@@ -207,19 +209,23 @@ AvailabilityRow = TypedDict("AvailabilityRow", {
 })
 
 class PlatformHealthDataset(TypedDict):
+    """Dataset for platform health charts."""
     label: str
     data: list[int]
 
 class PlatformHealthScores(TypedDict):
+    """Platform health score chart configuration."""
     labels: list[str]
     datasets: list[PlatformHealthDataset]
 
 class TopKeywordRow(TypedDict):
+    """Data row for top keyword metrics."""
     keyword: str
     value: int
     change: str
 
 class TopBrandRow(TypedDict):
+    """Data row for top brand metrics."""
     brand: str
     avg_discount: str
     avg_price: str

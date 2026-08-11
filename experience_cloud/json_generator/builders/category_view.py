@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 class BrandMetrics:
     """Aggregates all metrics for a single brand in one pass."""
     def __init__(self, brand: str):
+        """Initialize metrics for a brand."""
         self.brand = brand
         self.total_price = 0.0
         self.price_count = 0
@@ -218,7 +219,10 @@ def category_view_builder(
 
     # Category Summary Row
     category_live_percent = round((total_category_live / total_category_skus) * 100) if total_category_skus else 0
-    category_avg_health = round(total_category_health_sum / total_category_health_count) if total_category_health_count else 0
+    category_avg_health = (
+        round(total_category_health_sum / total_category_health_count)
+        if total_category_health_count else 0
+    )
     category_data.append(CategoryDataRow({
         "Audit Name": "Category",
         "Frequency": "One Time",

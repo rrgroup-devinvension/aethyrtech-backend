@@ -58,7 +58,7 @@ class User(AbstractBaseUser, TimeStampedModel):
     organization = models.ForeignKey('core_organizations.Organization', on_delete=models.CASCADE, null=True, blank=True)
     is_active = models.BooleanField(default=True)
     last_login = models.DateTimeField(null=True, blank=True)
-    phone_number = models.CharField(max_length=20, null=True, blank=True)
+    phone_number = models.CharField(max_length=20, default="", blank=True)
     brands = models.ManyToManyField('core_organizations.Brand', related_name='users', blank=True)
     regions = models.ManyToManyField('core_organizations.Region', related_name='users', blank=True)
 

@@ -1,9 +1,9 @@
-from experience_cloud.json_generator.models import TemplateCodes
 import json
 from datetime import datetime
 
 from core.llm_providers.services.llm_service import LLMService
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
+from experience_cloud.json_generator.models import TemplateCodes
 from experience_cloud.json_generator.schemas import RegionDataSchema
 from experience_cloud.json_generator.utils import safe_float, save_or_update_region_json, serve_region_template
 
@@ -170,14 +170,14 @@ def incentive_insights_builder(
     from typing import Any
     csv_rows: list[list[Any]] = []
     csv_rows.append(['Brand', 'SKU', 'Product Title', 'MSRP', 'Sell Price', 'Current Discount %'])
-    
+
     for opp in discount_opportunities:
         csv_rows.append([
-            current_brand, 
-            opp.get("sku", ""), 
-            opp.get("name", ""), 
-            opp.get("msrp", 0), 
-            opp.get("sell_price", 0), 
+            current_brand,
+            opp.get("sku", ""),
+            opp.get("name", ""),
+            opp.get("msrp", 0),
+            opp.get("sell_price", 0),
             opp.get("discount_pct", 0)
         ])
 

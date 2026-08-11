@@ -243,16 +243,30 @@ We use a **Docker Compose Profiles** strategy to support different developer wor
 #### For Backend Developers
 When developing backend features, you want the databases running in Docker, but Django running natively on your host machine for better debugging (`pdb`) and hot-reloading:
 ```bash
-# This spins up ONLY the dependencies (Postgres & Redis)
-docker-compose up -d
+# To stop and remove volumes (if you need a clean slate):
+docker compose down -v
+
+# This spins up ONLY the dependencies (MySQL, phpMyAdmin, & Redis)
+docker compose up -d --build
 ```
 Then run the app locally: `python manage.py runserver`
+
+#### Database Management (phpMyAdmin)
+The Docker stack includes phpMyAdmin, configured to support importing massive SQL files (up to 10GB).
+You can access it to manage all your databases (`aethyrtech`, `xbytesdata`, `compx_db`).
+- **URL**: [http://localhost:8080](http://localhost:8080)
+- **Server**: `db`
+- **Username**: `root`
+- **Password**: `rootpassword`
 
 #### For Frontend Developers / QA
 When you need the entire backend API running instantly without setting up a Python virtual environment, use the `fullstack` profile to spin up the App and Celery workers alongside the databases:
 ```bash
-# This spins up the ENTIRE stack (Postgres, Redis, Django Web, Celery Worker, Celery Beat)
-docker-compose --profile fullstack up -d --build
+# To stop and remove volumes for the full stack:
+docker compose --profile fullstack down -v
+
+# This spins up the ENTIRE stack (MySQL, Redis, Django Web, Celery Worker, Celery Beat)
+docker compose --profile fullstack up -d --build
 ```
 
 ### 10. Testing Standards

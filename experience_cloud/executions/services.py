@@ -79,7 +79,7 @@ class ExecutionManager:
             if valid_ids:
                 try:
                     current_app.control.revoke(valid_ids, terminate=True, signal='SIGTERM')
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.error(f"Failed to revoke celery tasks: {e}")
 
         stopped_count = len(celery_task_ids)

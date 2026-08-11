@@ -1,24 +1,24 @@
 import logging
 from typing import ClassVar
 
+from django.conf import settings
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.core.mail import EmailMultiAlternatives
-from django.conf import settings
-from django.template.loader import render_to_string
-from django.utils.html import strip_tags
 
 from core.authentication.permissions import AppPermissions
 from shared.base.views import BaseViewSet
 
 from .models import Role, User
 from .serializers import (
-    ContactUsSerializer,
     ChangePasswordSerializer,
+    ContactUsSerializer,
     OrganizationMinimalSerializer,
     PasswordUpdateSerializer,
     ProfileSerializer,
@@ -103,14 +103,17 @@ class UserViewSet(BaseViewSet):
     filterset_fields: ClassVar[tuple] = ('role', 'is_active')
 
     def get_queryset(self):
+        """Return the queryset of users, annotated with permission counts."""
         qs = super().get_queryset()
         from django.db.models import F, Func, IntegerField, Value
         from django.db.models.functions import Coalesce
 
         # Approximate permissions_count for sorting purposes by summing JSON array lengths
         qs = qs.annotate(
-            permissions_count=Coalesce(Func(F('role__permissions'), function='JSON_LENGTH', output_field=IntegerField()), Value(0)) +
-                              Coalesce(Func(F('extra_permissions'), function='JSON_LENGTH', output_field=IntegerField()), Value(0))
+            permissions_count=(
+                Coalesce(Func(F('role__permissions'), function='JSON_LENGTH', output_field=IntegerField()), Value(0)) +
+                Coalesce(Func(F('extra_permissions'), function='JSON_LENGTH', output_field=IntegerField()), Value(0))
+            )
         )
         return qs
 
@@ -253,7 +256,8 @@ class ChangePasswordView(APIView):
         )
 
 class ContactUsView(APIView):
-    permission_classes = [AllowAny]
+    """API view for handling contact us form submissions."""
+    permission_classes = (AllowAny,)
 
     @extend_schema(
         summary="Contact Us API",
@@ -261,6 +265,7 @@ class ContactUsView(APIView):
         request=ContactUsSerializer,
     )
     def post(self, request):
+        """Handle POST request."""
         serializer = ContactUsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -277,10 +282,15 @@ class ContactUsView(APIView):
         to_email = "Aethyrtech@aethyrtech.AI"
 
         try:
-            msg = EmailMultiAlternatives(subject, text_content, settings.DEFAULT_FROM_EMAIL, [to_email], reply_to=[data['email']])
+            msg = EmailMultiAlternatives(
+                subject, text_content, settings.DEFAULT_FROM_EMAIL, [to_email], reply_to=[data['email']]
+            )
             msg.attach_alternative(html_content, "text/html")
             msg.send()
             return Response({'message': 'Your message has been sent.'}, status=status.HTTP_200_OK)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to send contact email: {e!s}")
-            return Response({'error': 'There was a problem sending your message. Please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {'error': 'There was a problem sending your message. Please try again later.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

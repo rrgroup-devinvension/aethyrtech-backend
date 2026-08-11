@@ -1,4 +1,3 @@
-from typing import ClassVar
 
 from django.db import models
 
@@ -6,6 +5,7 @@ from shared.base.models import BaseModel
 
 
 class TemplateCodes(models.TextChoices):
+    """Enum for JSON Template codes."""
     BRAND_AUDIT = 'brand_audit', 'Brand Audit'
     CATALOG = 'catalog', 'Catalog'
     CATEGORY_VIEW = 'category_view', 'Category View'
@@ -33,15 +33,18 @@ class TemplateCodes(models.TextChoices):
     COMPILE_MEDIA_DASHBOARD = 'compile_media_dashboard', 'Compile Media Dashboard'
 
 class ProcessTypeCodes(models.TextChoices):
+    """Enum for generation process types."""
     AUTOMATIC = 'automatic', 'Automatic'
     MANUAL = 'manual', 'Manual'
 
 class FormatCodes(models.TextChoices):
+    """Enum for file format types."""
     CSV = 'csv', 'CSV'
     JSON = 'json', 'JSON'
     HTML = 'html', 'HTML'
 
 class ParentFolderCodes(models.TextChoices):
+    """Enum for parent folder categories."""
     EXPERIENCE_CLOUD = 'experience-cloud', 'Experience Cloud'
     MEDIA_CLOUD = 'media-cloud', 'Media Cloud'
     IDENTITY_CLOUD = 'identity-cloud', 'Identity Cloud'
@@ -49,12 +52,14 @@ class ParentFolderCodes(models.TextChoices):
 
 class JsonTemplate(BaseModel):
     """Model representing a configuration template for generating JSON or CSV payload files."""
-    
+
     name = models.CharField(max_length=255)
     template = models.CharField(max_length=255, unique=True)
     file_name = models.CharField(max_length=255, blank=True, default='')
     parent_folder = models.CharField(max_length=255, choices=ParentFolderCodes.choices, blank=True, default='')
-    parent_template = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='child_templates')
+    parent_template = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True, related_name='child_templates'
+    )
     process_type = models.CharField(max_length=50, choices=ProcessTypeCodes.choices, blank=True, default='')
     file_format = models.CharField(max_length=50, blank=True, default='')
     is_active = models.BooleanField(default=True)

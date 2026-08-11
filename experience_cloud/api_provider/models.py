@@ -30,6 +30,7 @@ class HttpMethod(models.TextChoices):
     DELETE = "DELETE", _("DELETE")
 
 class ApiProviderCodes(models.TextChoices):
+    """API Provider service codes."""
     XBYTES = 'xbytes', 'Xbytes'
     KARMATECH = 'karmatech', 'Karmatech'
 

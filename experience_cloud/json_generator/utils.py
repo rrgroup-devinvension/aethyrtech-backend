@@ -54,7 +54,11 @@ def archive_old_json_file(old_relative_path, brand_name, region_name):
     except OSError as e:
         logger.error(f"Failed to archive old JSON file {old_relative_path}: {e}")
 
-def save_region_template(data, brand_name, template, region_name="unknown", existing_path=None, file_name_override=None, parent_folder_override=None, file_format=None):
+def save_region_template(
+    data, brand_name, template, region_name="unknown",
+    existing_path=None, file_name_override=None,
+    parent_folder_override=None, file_format=None
+):
     """Serialize and save data to the filesystem, using JsonTemplate configurations."""
     ctx = f"[Data Gen | Brand: {brand_name} | Template: {template}]"
     logger.info(f"{ctx} Attempting to save file...")
@@ -91,8 +95,8 @@ def save_region_template(data, brand_name, template, region_name="unknown", exis
         folder = os.path.join(settings.MEDIA_ROOT, *folder_parts)
         os.makedirs(folder, exist_ok=True)
         filepath = os.path.join(folder, filename)
-        relative_path = "/".join(folder_parts + [filename])
-        
+        relative_path = "/".join([*folder_parts, filename])
+
         encoding_format = 'utf-8-sig' if file_format == 'csv' else 'utf-8'
         with open(filepath, 'w', encoding=encoding_format, newline='') as f:
             if file_format == 'csv':
@@ -429,7 +433,7 @@ def save_or_update_region_json(
     Often consumed natively by advanced template builders orchestrating multi-file generation cycles.
     """
     from core.organizations.models import Region
-    from experience_cloud.json_generator.models import RegionJsonFile, JsonTemplate
+    from experience_cloud.json_generator.models import JsonTemplate, RegionJsonFile
     region_name = "unknown"
     if region_id:
         region = Region.objects.filter(id=region_id).first()
@@ -445,7 +449,11 @@ def save_or_update_region_json(
     file_name_override = template_obj.file_name if template_obj and template_obj.file_name else None
     parent_folder_override = template_obj.parent_folder if template_obj and template_obj.parent_folder else None
 
-    file_name, file_path = save_region_template(json_data, brand_name, template_name, region_name, file_name_override=file_name_override, parent_folder_override=parent_folder_override)
+    file_name, file_path = save_region_template(
+        json_data, brand_name, template_name, region_name,
+        file_name_override=file_name_override,
+        parent_folder_override=parent_folder_override
+    )
 
     import os
 
@@ -486,16 +494,13 @@ def safe_parse_llm_json(content: str) -> dict:
             content = content.strip("`").replace("json\n", "", 1)
         start = content.find("{")
         end = content.rfind("}")
-        if start != -1 and end != -1:
-            json_str = content[start:end + 1]
-        else:
-            json_str = content
-            
+        json_str = content[start:end + 1] if start != -1 and end != -1 else content
+
         try:
             import json_repair
             return json_repair.loads(json_str)
         except ImportError:
             return json.loads(json_str)
-    except Exception as e:
+    except ValueError as e:
         logger.error(f"Failed to parse LLM JSON: {e}\nContent: {content}")
         return {}

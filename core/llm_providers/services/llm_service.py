@@ -42,7 +42,7 @@ class LLMService(ABC):
             raise Exception(f"No active LLM provider found for code: {provider_code or 'default'}")
 
         from core.llm_providers.models import LLMProviderCodes
-        
+
         provider_code_val = provider.code
 
         # Use decrypted API key
@@ -170,11 +170,12 @@ class LLMService(ABC):
     ):
         """Save the prompt and response to a local JSON file in MEDIA_ROOT."""
         try:
-            import os
             import json
+            import os
+            from datetime import datetime
+
             from django.conf import settings
             from django.utils.text import get_valid_filename
-            from datetime import datetime
 
             date_folder = datetime.now().strftime("%Y-%m-%d")
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -192,7 +193,7 @@ class LLMService(ABC):
                 act
             )
             os.makedirs(base_dir, exist_ok=True)
-            
+
             filename = f"{act}_{timestamp}.json"
             filepath = os.path.join(base_dir, filename)
 
@@ -209,9 +210,9 @@ class LLMService(ABC):
 
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(payload, f, ensure_ascii=False, indent=4)
-                
+
             logger.info(f"Saved LLM conversation to {filepath}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to save LLM conversation: {e}")
 
 class GeminiService(LLMService):
@@ -272,7 +273,7 @@ class GeminiService(LLMService):
                 'maxOutputTokens': 8192,
             }
         }
-        
+
         if response_type == 'json':
             data['generationConfig']['responseMimeType'] = 'application/json'
 
@@ -323,14 +324,14 @@ class GeminiService(LLMService):
             ):
                 text_content = decoded['candidates'][0]['content']['parts'][0]['text']
                 finish_reason = decoded['candidates'][0].get('finishReason', 'UNKNOWN')
-                
+
                 self.log_usage(
                     prompt_tokens, completion_tokens, total_tokens,
                     success=True, action=action, brand_id=brand_id, brand_name=brand_name
                 )
-                
+
                 self._save_llm_conversation(messages, text_content, action, brand_name, finish_reason)
-                
+
                 return LLMResponse(
                     text_content, prompt_tokens, completion_tokens,
                     total_tokens, self.get_provider_name()

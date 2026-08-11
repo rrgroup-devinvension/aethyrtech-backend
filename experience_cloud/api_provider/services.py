@@ -132,13 +132,12 @@ class BaseApiClient:
             if payload:
                 self._custom_payload = payload
 
-
     def check_logical_error(self, response: requests.Response) -> tuple[bool, Any, str | None]:
         """Override this in subclasses to check for logical errors in the response.
-        
-        This runs before HTTP raise_for_status() to allow parsing JSON errors in 4xx/5xx 
+
+        This runs before HTTP raise_for_status() to allow parsing JSON errors in 4xx/5xx
         responses and treating them as permanent failures instead of retrying them.
-        
+
         Returns:
             tuple: (is_error, parsed_data, error_message)
         """
@@ -430,7 +429,9 @@ class BaseApiClient:
                 is_logical_error, parsed_data, error_message = self.check_logical_error(response)
 
                 if is_logical_error:
-                    self._log_usage('FAILED', response_time, request_size, response_size, log_context, error_message=error_message)
+                    self._log_usage(
+                        'FAILED', response_time, request_size, response_size, log_context, error_message=error_message
+                    )
                     raise ApiProviderRequestError(
                         message=error_message or "API Logical Error",
                         extra=parsed_data if parsed_data else error_message
