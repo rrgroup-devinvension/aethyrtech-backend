@@ -33,7 +33,7 @@ class HierarchyCategoryListView(APIView):
             }
             for cat in categories
         ]
-        return Response({"results": data})
+        return Response(data)
 
 
 class HierarchyPlatformListView(APIView):
@@ -67,7 +67,7 @@ class HierarchyPlatformListView(APIView):
             }
             for plat in platforms
         ]
-        return Response({"results": data})
+        return Response(data)
 
 
 class HierarchyKeywordListView(APIView):
@@ -129,7 +129,7 @@ class HierarchyKeywordListView(APIView):
         # Sort alphabetically by keyword
         data.sort(key=lambda x: x['keyword'].lower())
 
-        return Response({"results": data})
+        return Response(data)
 
 
 class HierarchyLocationListView(APIView):
@@ -214,7 +214,7 @@ class HierarchyLocationListView(APIView):
                 "api_provider": latest_match.api_provider.name if latest_match and latest_match.api_provider else None
             })
 
-        return Response({"results": data})
+        return Response(data)
 
 
 from experience_cloud.market_data.services.trigger import trigger_data_dump  # noqa: E402

@@ -278,18 +278,15 @@ class ApiProviderAnalysisViewSet(viewsets.ViewSet):
         }
 
         return Response({
-            "status": "ok",
-            "data": {
-                "kpis": {
-                    "total_calls": total_calls,
-                    "success_rate": round(success_rate, 2),
-                    "avg_response_time": round(avg_rt, 2),
-                    "total_cost": float(total_cost)
-                },
-                "charts": {
-                    "time_series": time_series,
-                    "status_distribution": status_distribution
-                }
+            "kpis": {
+                "total_calls": total_calls,
+                "success_rate": round(success_rate, 2),
+                "avg_response_time": round(avg_rt, 2),
+                "total_cost": float(total_cost)
+            },
+            "charts": {
+                "time_series": time_series,
+                "status_distribution": status_distribution
             }
         }, status=status.HTTP_200_OK)
 

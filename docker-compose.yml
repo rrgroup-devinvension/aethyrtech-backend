@@ -14,7 +14,7 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - ./backups/docker/mysql_data:/var/lib/mysql
       # Mount the folder with the specific .sql files
       - ./backups/docker/db:/backups/docker/db:ro
       # Mount the initialization script
@@ -99,5 +99,4 @@ services:
       - redis
 
 volumes:
-  mysql_data:
   redis_data:
