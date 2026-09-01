@@ -1,6 +1,8 @@
 from django.urls import path
+from rest_framework.routers import DefaultRouter
 
 from .views import (
+    DataImportJobViewSet,
     DebugRunDataDumpView,
     HierarchyCategoryListView,
     HierarchyKeywordListView,
@@ -13,6 +15,9 @@ from .views import (
     StopDataDumpView,
 )
 
+router = DefaultRouter()
+router.register(r'imports', DataImportJobViewSet, basename='data-import')
+
 urlpatterns = [
     path('categories/', HierarchyCategoryListView.as_view(), name='hierarchy-categories'),
     path('platforms/', HierarchyPlatformListView.as_view(), name='hierarchy-platforms'),
@@ -24,4 +29,5 @@ urlpatterns = [
     path('stats/', MarketDataStatsView.as_view(), name='market-data-stats'),
     path('locations/<int:id>/stop/', StopDataDumpView.as_view(), name='stop-data-dump'),
     path('debug-run/', DebugRunDataDumpView.as_view(), name='debug-data-dump'),
+    *router.urls,
 ]

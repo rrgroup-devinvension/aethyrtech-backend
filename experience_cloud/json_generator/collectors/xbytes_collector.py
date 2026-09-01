@@ -5,9 +5,9 @@ from typing import Any
 from django.db.models import Q
 from django.db.models.query import QuerySet
 
-from experience_cloud.json_generator.schemas import ProductSchema, RegionDataSchema
+from experience_cloud.json_generator.schemas import BrandItem, ProductSchema, RegionDataSchema
 from experience_cloud.json_generator.utils import match_brands, parse_metric
-from experience_cloud.market_integrations.models.xbytes import XBytesProduct
+from experience_cloud.market_integrations.models.xbytes import XBytesProduct, XBytesReview
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
     Aggregates product attributes, availability statuses, and multi-location keyword rankings,
     mapping them strictly into uniform ProductSchema instances for JSON payload generation.
     """
-    brands: dict[str, list[str]] = region_data.get('brands', {})
+    brands: dict[str, BrandItem] = region_data.get('brands', {})
     if not brands:
         return
 
@@ -44,6 +44,38 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
             keywords_map[plat_code] = [kw["name"] for kw in plat.get("keywords", []) if kw.get("name")]
             pincodes_map[plat_code] = [loc["pincode"] for loc in plat.get("locations", []) if loc.get("pincode")]
 
+    reviews_qs = XBytesReview.objects.filter(brand__in=brands)
+    review_map: dict[str, list[dict]] = {}
+    for rev in reviews_qs:
+        try:
+            parsed_rating = float(rev.rating) if rev.rating and str(rev.rating).strip() else 0.0
+        except ValueError:
+            parsed_rating = 0.0
+
+        is_verified = str(rev.verified_purchase).lower() in ("true", "1", "yes") if rev.verified_purchase else False
+
+        try:
+            helpful = int(rev.helpful_count) if rev.helpful_count and str(rev.helpful_count).strip() else 0
+        except ValueError:
+            helpful = 0
+
+        review_entry = {
+            "id": rev.id,
+            "product_id": rev.product_url,
+            "sku": rev.sku,
+            "platform": None,
+            "review_id": rev.review_id,
+            "reviewer_name": rev.reviewer_name,
+            "rating": parsed_rating,
+            "review_title": rev.review_title,
+            "review_text": rev.review_text,
+            "review_date": rev.review_date,
+            "verified_purchase": is_verified,
+            "helpful_count": helpful,
+            "review_images": rev.review_images if rev.review_images else []
+        }
+        if rev.sku:
+            review_map.setdefault(str(rev.sku), []).append(review_entry)
 
     query = Q()
     for plat_code, kws in keywords_map.items():
@@ -77,7 +109,7 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
                     scraped_date = getattr(raw_date, 'date', lambda: None)()
             scraper_id = None  # Removed search relation
 
-        matched_brand = match_brands(brands, p.brand)
+        matched_brand = match_brands(brands, p.brand, platform=p.platform)
         if not matched_brand:
             logger.error(f"{ctx} Product {p.product_uid} skipped due to brand mismatch ({p.brand})")
             continue
@@ -108,6 +140,13 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
             continue
 
         if current_pf is not None and current_pf_valid:
+            if current_uid in review_map:
+                product_reviews = []
+                for r in review_map[current_uid]:
+                    r_copy = r.copy()
+                    r_copy["platform"] = current_pf.platform
+                    product_reviews.append(r_copy)
+                current_pf.set_reviews(product_reviews)
             yield current_pf
 
         current_uid = product_uid
@@ -154,4 +193,11 @@ def get_all_xbytes_products(region_data: RegionDataSchema) -> Generator[ProductS
              logger.error(f"{ctx} Product {p.product_uid} availability mismatch")
 
     if current_pf is not None and current_pf_valid:
+        if current_uid in review_map:
+            product_reviews = []
+            for r in review_map[current_uid]:
+                r_copy = r.copy()
+                r_copy["platform"] = current_pf.platform
+                product_reviews.append(r_copy)
+            current_pf.set_reviews(product_reviews)
         yield current_pf

@@ -30,3 +30,50 @@ class ApiDump(BaseModel):
         indexes = [
             models.Index(fields=['keyword_name', 'location_name', 'created_at'], name='idx_api_dump_lookup'),
         ]
+
+
+class DataImportJob(BaseModel):
+    """Tracks background processing and chunked uploads of Excel data."""
+    IMPORT_TYPES = (
+        ('REVIEWS', 'Reviews'),
+        ('DATA_DUMP', 'Data Dump'),
+    )
+    STATUS_CHOICES = (
+        ('UPLOADING', 'Uploading'),
+        ('PENDING_PROCESSING', 'Pending Processing'),
+        ('PROCESSING', 'Processing'),
+        ('PAUSED', 'Paused'),
+        ('COMPLETED', 'Completed'),
+        ('FAILED', 'Failed'),
+    )
+
+    import_type = models.CharField(max_length=50, choices=IMPORT_TYPES, default='REVIEWS')
+    platform = models.CharField(max_length=50, blank=True, default='')
+    file = models.FileField(upload_to='imports/', null=True, blank=True)
+    file_size_bytes = models.BigIntegerField(default=0, help_text="Total file size uploaded in bytes")
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='UPLOADING')
+
+    # Upload Tracking
+    upload_id = models.CharField(max_length=255, blank=True, default='')
+    upload_started_at = models.DateTimeField(null=True, blank=True)
+    upload_completed_at = models.DateTimeField(null=True, blank=True)
+    upload_duration = models.FloatField(null=True, blank=True, help_text="Time taken to upload the file (seconds)")
+
+    # Processing Tracking
+    total_rows = models.IntegerField(default=0)
+    processed_rows = models.IntegerField(default=0)
+    failed_rows = models.IntegerField(default=0)
+    processing_started_at = models.DateTimeField(null=True, blank=True)
+    processing_completed_at = models.DateTimeField(null=True, blank=True)
+    last_processed_at = models.DateTimeField(null=True, blank=True)
+    processing_duration = models.FloatField(null=True, blank=True, help_text="Time taken to process the file (seconds)")
+
+    # Errors
+    error_message = models.TextField(blank=True, default='')
+
+    class Meta:
+        db_table = 'data_import_jobs'
+        indexes = [
+            models.Index(fields=['status'], name='idx_data_import_status'),
+            models.Index(fields=['import_type'], name='idx_data_import_type'),
+        ]

@@ -1,10 +1,18 @@
-from rest_framework import generics, permissions, status
+import os
+import uuid
+
+from django.conf import settings
+from django.utils import timezone
+from rest_framework import generics, mixins, permissions, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.authentication.permissions import AppPermissions
 from core.categories.models import Category
 from experience_cloud.catalog.models import Keyword, Location, Platform
+from experience_cloud.market_data.models import DataImportJob
+from experience_cloud.market_data.serializers import DataImportJobSerializer
 from shared.permissions import HasPermission
 
 
@@ -542,3 +550,109 @@ class DebugRunDataDumpView(APIView):
 
         except Exception as e:  # noqa: BLE001
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class DataImportJobViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """ViewSet for managing large data import jobs via chunked uploads."""
+    queryset = DataImportJob.objects.all().order_by('-created_at')
+    serializer_class = DataImportJobSerializer
+
+    @action(detail=False, methods=['post'])
+    def init(self, request):
+        """Initialize a new chunked data import upload."""
+        import_type = request.data.get('import_type', 'REVIEWS')
+        platform = request.data.get('platform', '')
+        file_size_bytes = request.data.get('total_size', 0)
+
+        job = DataImportJob.objects.create(
+            import_type=import_type,
+            platform=platform,
+            status='UPLOADING',
+            upload_id=str(uuid.uuid4()),
+            file_size_bytes=file_size_bytes,
+            upload_started_at=timezone.now()
+        )
+        # Create temp file
+        temp_dir = os.path.join(settings.MEDIA_ROOT, 'temp_imports')
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_path = os.path.join(temp_dir, f'{job.upload_id}.part')
+        with open(temp_path, 'wb'):
+            pass
+
+        return Response({'job_id': job.id, 'upload_id': job.upload_id}, status=200)
+
+    @action(detail=True, methods=['post'])
+    def chunk(self, request, pk=None):
+        """Append a file chunk to the temporary upload file."""
+        job = self.get_object()
+        file_chunk = request.FILES.get('file')
+        if not file_chunk:
+            return Response({'error': 'No file chunk'}, status=400)
+
+        temp_path = os.path.join(settings.MEDIA_ROOT, 'temp_imports', f'{job.upload_id}.part')
+        with open(temp_path, 'ab') as f:
+            for c in file_chunk.chunks():
+                f.write(c)
+
+        return Response({'status': 'ok'}, status=200)
+
+    @action(detail=True, methods=['post'])
+    def complete(self, request, pk=None):
+        """Complete the upload, save the file to Django storage, and queue for processing."""
+        job = self.get_object()
+        filename = request.data.get('filename', 'upload.xlsx')
+
+        temp_path = os.path.join(settings.MEDIA_ROOT, 'temp_imports', f'{job.upload_id}.part')
+        final_dir = os.path.join(settings.MEDIA_ROOT, 'imports')
+        os.makedirs(final_dir, exist_ok=True)
+        final_path = os.path.join(final_dir, f'{job.upload_id}_{filename}')
+
+        os.rename(temp_path, final_path)
+
+        from django.core.files import File
+        with open(final_path, 'rb') as f:
+            job.file.save(filename, File(f), save=False)
+
+        job.status = 'PENDING_PROCESSING'
+        job.upload_completed_at = timezone.now()
+        if job.upload_started_at:
+            job.upload_duration = (job.upload_completed_at - job.upload_started_at).total_seconds()
+        job.save()
+
+        # trigger celery task
+        from experience_cloud.market_data.tasks import process_data_import
+        process_data_import.delay(job.id)
+
+        return Response({'status': 'Import Started'}, status=200)
+
+    @action(detail=True, methods=['post'])
+    def pause(self, request, pk=None):
+        """Pause a running data import job."""
+        job = self.get_object()
+        if job.status == 'PROCESSING' or job.status == 'PENDING_PROCESSING':
+            job.status = 'PAUSED'
+            job.save(update_fields=['status'])
+            return Response({'status': 'PAUSED'}, status=200)
+        return Response({'error': 'Job cannot be paused in current state'}, status=400)
+
+    @action(detail=True, methods=['post'])
+    def resume(self, request, pk=None):
+        """Resume or restart a paused/completed data import job."""
+        job = self.get_object()
+        if job.status in ['PAUSED', 'COMPLETED', 'FAILED']:
+            if job.status in ['COMPLETED', 'FAILED']:
+                # Reset processing if re-running completed/failed
+                job.processed_rows = 0
+                job.failed_rows = 0
+                job.processing_started_at = None
+                job.processing_completed_at = None
+                job.processing_duration = None
+                job.save()
+
+            job.status = 'PENDING_PROCESSING'
+            job.save(update_fields=['status'])
+
+            from experience_cloud.market_data.tasks import process_data_import
+            process_data_import.delay(job.id)
+            return Response({'status': 'RESUMED'}, status=200)
+        return Response({'error': 'Job cannot be resumed in current state'}, status=400)

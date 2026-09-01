@@ -2,11 +2,12 @@ import logging
 import time
 import traceback
 
+import pandas as pd
 from celery import shared_task
 
 from experience_cloud.executions.models import DataDumpTask
 from experience_cloud.executions.services import ExecutionManager
-from experience_cloud.market_data.models import ApiDump
+from experience_cloud.market_data.models import ApiDump, DataImportJob
 from experience_cloud.market_data.schemas import DataDumpSchema
 from experience_cloud.market_data.services.dispatcher import DataDumpDispatcher
 
@@ -142,3 +143,171 @@ def process_location_dump(execution_id: int, task_id: int, keyword_name: str, lo
         )
 
         ExecutionManager.update_task_status(DataDumpTask, task_id, execution_id, 'FAILED', error=full_trace)
+
+def auto_detect_platform(url: str, platforms_list: list) -> str:
+    """Detect platform from URL by checking against known platforms."""
+    if not url or not platforms_list:
+        return ''
+    url = str(url).lower()
+    for p in platforms_list:
+        if p and p.lower() in url:
+            return p.lower()
+    return ''
+
+@shared_task(name='experience_cloud.market_data.tasks.process_data_import')
+def process_data_import(job_id: int):
+    """Process a data import job by reading chunks and saving reviews."""
+    try:
+        job = DataImportJob.objects.get(id=job_id)
+        if job.status not in ['PENDING_PROCESSING', 'PROCESSING']:
+            logger.warning(f'Job {job_id} cannot be processed due to status: {job.status}')
+            return
+
+        job.status = 'PROCESSING'
+        from django.utils import timezone
+        if not job.processing_started_at:
+            job.processing_started_at = timezone.now()
+        job.last_processed_at = timezone.now()
+        job.save(update_fields=['status', 'processing_started_at', 'last_processed_at'])
+
+        filepath = job.file.path
+        if filepath.endswith(('.xlsx', '.xls')):
+            # Read total rows if not set
+            if job.total_rows == 0:
+                df_total = pd.read_excel(filepath)
+                job.total_rows = len(df_total)
+                job.save(update_fields=['total_rows'])
+                del df_total
+
+            # Process in chunks
+            chunk_size = 1000
+            skiprows = range(1, job.processed_rows + 1) if job.processed_rows > 0 else None
+
+            # Since pandas read_excel doesn't support chunksize natively like read_csv,
+            # we read the whole file but only process from processed_rows onwards
+            df = pd.read_excel(filepath, skiprows=skiprows)
+            df = df.fillna('')
+
+            if job.import_type == 'REVIEWS':
+                from experience_cloud.market_integrations.models.xbytes import XBytesReview
+
+                url_col = None
+                for col in df.columns:
+                    if str(col).lower().startswith('platform url'):
+                        url_col = col
+                        break
+
+                # Fetch platform codes once
+                from experience_cloud.catalog.models import Platform
+                db_platforms = list(Platform.objects.values_list('code', flat=True))
+
+                # Auto-detect platform if missing
+                if not job.platform and not df.empty:
+                    first_row = df.iloc[0]
+                    first_url = (
+                        str(first_row.get(url_col, first_row.get('product_url', '')))
+                        if url_col or 'product_url' in df.columns else ''
+                    )
+                    detected = auto_detect_platform(first_url, db_platforms)
+                    if detected:
+                        job.platform = detected
+                        job.save(update_fields=['platform'])
+
+                reviews_to_create = []
+                for i, (_index, row) in enumerate(df.iterrows()):
+                    # Check pause status every chunk
+                    if i > 0 and i % chunk_size == 0:
+                        job.refresh_from_db()
+                        if job.status != 'PROCESSING':
+                            logger.info(f'Job {job_id} paused at row {job.processed_rows}')
+                            return
+
+                    product_url = (
+                        str(row.get(url_col, row.get('product_url', '')))
+                        if url_col or 'product_url' in df.columns else ''
+                    )
+                    sku = str(row.get('sku_id', '')).strip()
+
+                    row_platform = job.platform or auto_detect_platform(product_url, db_platforms)
+
+                    review = XBytesReview(
+                        platform=row_platform,
+                        product_url=product_url,
+                        product_title=str(row.get('product_title', '')),
+                        sku=sku,
+                        brand=str(row.get('brand', '')),
+                        review_id=str(row.get('review_id', '')),
+                        reviewer_name=str(row.get('reviewer_name', '')),
+                        reviewer_profile_url=str(row.get('reviewer_profile_url', '')),
+                        rating=str(row.get('rating', '')),
+                        review_title=str(row.get('review_title', '')),
+                        review_text=str(row.get('review_text', '')),
+                        review_date=str(row.get('review_date', '')),
+                        verified_purchase=str(row.get('verified_purchase', '')),
+                        helpful_count=str(row.get('helpful_count', '')),
+                        review_images=str(row.get('review_images', '')),
+                        video_urls=str(row.get('video_urls', '')),
+                        variant_info=str(row.get('variant_info', '')),
+                        review_url=str(row.get('review_url', '')),
+                        timestamp=str(row.get('timestamp', ''))
+                    )
+                    reviews_to_create.append(review)
+
+                    if len(reviews_to_create) >= chunk_size:
+                        XBytesReview.objects.bulk_create(
+                            reviews_to_create,
+                            update_conflicts=True,
+                            update_fields=[
+                                'product_url', 'product_title', 'brand', 'reviewer_name',
+                                'reviewer_profile_url', 'rating', 'review_title', 'review_text',
+                                'review_date', 'verified_purchase', 'helpful_count', 'review_images',
+                                'video_urls', 'variant_info', 'review_url', 'timestamp'
+                            ]
+                        )
+                        job.processed_rows += len(reviews_to_create)
+                        job.save(update_fields=['processed_rows'])
+                        reviews_to_create = []
+
+                if reviews_to_create:
+                    # Final check before last chunk
+                    job.refresh_from_db(fields=['status'])
+                    if job.status == 'PAUSED':
+                        return
+                    XBytesReview.objects.bulk_create(
+                        reviews_to_create,
+                        update_conflicts=True,
+                        update_fields=[
+                            'product_url', 'product_title', 'brand', 'reviewer_name',
+                            'reviewer_profile_url', 'rating', 'review_title', 'review_text',
+                            'review_date', 'verified_purchase', 'helpful_count', 'review_images',
+                            'video_urls', 'variant_info', 'review_url', 'timestamp'
+                        ]
+                    )
+                    job.processed_rows += len(reviews_to_create)
+                    job.save(update_fields=['processed_rows'])
+
+            elif job.import_type == 'DATA_DUMP':
+                # Placeholder for future logic
+                pass
+
+        job.status = 'COMPLETED'
+        job.processing_completed_at = timezone.now()
+        if job.processing_started_at:
+            job.processing_duration = (job.processing_completed_at - job.processing_started_at).total_seconds()
+        job.save(update_fields=['status', 'processing_completed_at', 'processing_duration'])
+        logger.info(f'Job {job_id} completed successfully.')
+
+    except Exception as e:
+        full_trace = traceback.format_exc()
+        logger.exception(f'Data Import Task {job_id} failed: {e}')
+
+        job = DataImportJob.objects.filter(id=job_id).first()
+        if job:
+            job.status = 'FAILED'
+            job.error_message = full_trace
+            from django.utils import timezone
+            job.processing_completed_at = timezone.now()
+            if job.processing_started_at:
+                job.processing_duration = (job.processing_completed_at - job.processing_started_at).total_seconds()
+            job.save(update_fields=['status', 'error_message', 'processing_completed_at', 'processing_duration'])
+

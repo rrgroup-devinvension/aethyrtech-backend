@@ -128,15 +128,28 @@ def save_region_template(
         ) from exc
 
 
-def match_brand(product_brand, input_brand):
+def match_brand(product_brand, input_brand, platform=None, region_brands=None):
     """Perform a rigorous boundary-matched regex search to verify if a product brand matches a given input string."""
     if not product_brand or not input_brand:
         return None
-    pb = product_brand.strip().lower()
-    ib = input_brand.strip().lower()
-    return product_brand if re.search(rf"\b{re.escape(pb)}\b", ib) else None
 
-def match_brands(brands, input_brand):
+    aliases = [input_brand]
+    if region_brands and isinstance(region_brands, dict):
+        brand_data = region_brands.get(input_brand)
+        if brand_data:
+            if isinstance(brand_data, dict):
+                aliases.extend(brand_data.get("aliases", []))
+            elif isinstance(brand_data, list):
+                aliases.extend(brand_data)
+
+    pb = product_brand.strip().lower()
+    for name in aliases:
+        ib = name.strip().lower()
+        if re.search(rf"\b{re.escape(pb)}\b", ib):
+            return product_brand
+    return None
+
+def match_brands(brands, input_brand, platform=None):
     """Perform a rigorous boundary-matched regex search to verify if an input brand matches any brand aliases."""
     if not brands or not input_brand:
         return None
@@ -144,10 +157,19 @@ def match_brands(brands, input_brand):
     ib_no_hyphen = ib.replace('-', '')
 
     if isinstance(brands, dict):
-        for brand, aliases in brands.items():
+        for brand, data in brands.items():
             if not brand:
                 continue
-            names_to_check = [brand] + (aliases if aliases else [])
+
+            if isinstance(data, dict):
+                aliases = data.get("aliases", [])
+                platforms = data.get("platforms", [])
+                if platform and "all" not in platforms and platform not in platforms:
+                    continue
+            else:
+                aliases = data if data else []
+
+            names_to_check = [brand, *aliases]
             for name in names_to_check:
                 if not name:
                     continue
@@ -161,7 +183,7 @@ def match_brands(brands, input_brand):
         for brand in brands:
             if not brand:
                 continue
-            pb = brand.strip().lower()
+            pb = str(brand).strip().lower()
             if re.search(rf"\b{re.escape(pb)}\b", ib):
                 return brand
             pb_no_hyphen = pb.replace('-', '')

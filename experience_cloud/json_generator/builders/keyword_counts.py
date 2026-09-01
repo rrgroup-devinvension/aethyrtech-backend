@@ -4,13 +4,13 @@ from collections import defaultdict
 
 from experience_cloud.json_generator.decorators import handle_builder_exceptions
 from experience_cloud.json_generator.schemas import KeywordCountDetails, KeywordResult, RegionDataSchema
-from experience_cloud.json_generator.utils import ItemGenerator, match_brand
+from experience_cloud.json_generator.utils import ItemGenerator
 
 logger = logging.getLogger(__name__)
 
 
 def build_keyword_count(
-    platforms_data: dict, products: ItemGenerator | None, brand_name: str
+    platforms_data: dict, products: ItemGenerator | None, brand_name: str, brands: dict
 ) -> dict[str, dict[str, list[KeywordResult]]]:
     """Calculate occurrences and ranking presence for specified keywords across a given product set."""
     result: dict[str, dict[str, list[KeywordResult]]] = defaultdict(dict)
@@ -35,17 +35,25 @@ def build_keyword_count(
             parsed_keywords[platform_name] = parsed_kws
 
     # THE SINGLE PASS PRODUCT LOOP
+    visited_uids = set()
     for p in (products or []):
-        if not p.platform or not p.title:
+        if not p.platform or not p.title or not p.uid:
             continue
 
         # Only process if product belongs to the requested brand and its platform has tracked keywords
-        if not match_brand(brand_name, p.brand):
+        if p.brand != brand_name:
             continue
 
-        platform_kws = parsed_keywords.get(p.platform)
+        platform_kws = parsed_keywords.get(p.platform, [])
         if not platform_kws:
             continue
+
+        # Deduplicate after filters pass
+        # if p.platform == 'amazon_uae':
+        uid_key = (p.platform, p.uid)
+        if uid_key in visited_uids:
+            continue
+        visited_uids.add(uid_key)
 
         product_title = p.title
         result[p.platform][product_title] = []
@@ -98,7 +106,8 @@ def keyword_counts_builder(
     t_id = getattr(task, 'id', 'unknown')
     logger.info(f"Starting KEYWORD_COUNTS JSON build | Task={t_id}")
 
-    payload = build_keyword_count(platforms_data, products, brand_name)
+    brands = region_data.get("brands", {})
+    payload = build_keyword_count(platforms_data, products, brand_name, brands)
 
     logger.info(f"Completed KEYWORD_COUNTS JSON build | Task={t_id}")
     return False, payload

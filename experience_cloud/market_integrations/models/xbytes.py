@@ -91,3 +91,51 @@ class XBytesProduct(models.Model):
             self.bullets = [b.strip() for b in self.bullets if b and isinstance(b, str) and b.strip()]
 
         super().save(*args, **kwargs)
+
+
+class XBytesReview(models.Model):
+    """External mapping for XBytes reviews."""
+
+    objects = models.Manager()  # type: ignore
+
+    # Basic Info
+    platform = models.CharField(max_length=50, null=True, blank=True)
+    product_url = models.TextField(null=True, blank=True)
+    product_title = models.TextField(null=True, blank=True)
+    sku = models.CharField(max_length=100, null=True, blank=True)
+    brand = models.CharField(max_length=255, null=True, blank=True)
+
+    # Review Core
+    review_id = models.CharField(max_length=255, null=True, blank=True)
+    reviewer_name = models.TextField(null=True, blank=True)
+    reviewer_profile_url = models.TextField(null=True, blank=True)
+    rating = models.CharField(max_length=50, null=True, blank=True)
+    review_title = models.TextField(null=True, blank=True)
+    review_text = models.TextField(null=True, blank=True)
+    review_date = models.TextField(null=True, blank=True)
+    verified_purchase = models.TextField(null=True, blank=True)
+    helpful_count = models.TextField(null=True, blank=True)
+
+    # Media & Variants
+    review_images = models.TextField(null=True, blank=True)
+    video_urls = models.TextField(null=True, blank=True)
+    variant_info = models.TextField(null=True, blank=True)
+
+    # Meta
+    review_url = models.TextField(null=True, blank=True)
+    timestamp = models.TextField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:  # type: ignore
+        db_table = 'reviews'
+        indexes = [
+            models.Index(fields=['sku'], name='idx_xbytes_review_sku'),
+            models.Index(fields=['brand'], name='idx_xbytes_review_brand'),
+            models.Index(fields=['review_id'], name='idx_xbytes_review_id'),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=['platform', 'sku', 'review_id'], name='unique_xbytes_review')
+        ]
+

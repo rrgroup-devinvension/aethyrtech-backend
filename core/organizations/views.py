@@ -181,6 +181,10 @@ class CompetitorViewSet(BaseViewSet):
         if region_id:
             queryset = queryset.filter(region_id=region_id)
 
+        platform_id = self.request.query_params.get('platform')
+        if platform_id:
+            queryset = queryset.filter(platforms__id=platform_id).distinct()
+
         return queryset
 
 @extend_schema_view(
@@ -219,17 +223,23 @@ class RegionViewSet(BaseViewSet):
     @extend_schema(summary="Get Platforms for Region", responses={200: dict})
     @action(detail=True, methods=['get'], url_path='platforms')
     def region_platforms(self, request, pk=None, id=None, **kwargs):
-        """Retrieve platforms used by active locations or keywords in this region."""
+        """Retrieve platforms used by active locations, keywords, or competitors in this region."""
         region = self.get_object()
+        from core.organizations.models import Competitor
         from experience_cloud.catalog.models import Keyword, Location, Platform
 
-        # Get distinct platform IDs used by active locations and keywords for this region
+        # Get distinct platform IDs used by active locations, keywords, and competitors for this region
         loc_platforms = set(
             Location.objects.filter(region=region, is_active=True).values_list('platform_id', flat=True)
         )
         kw_platforms = set(Keyword.objects.filter(region=region, is_active=True).values_list('platform_id', flat=True))
+        comp_platforms = set(
+            Competitor.objects.filter(
+                region=region, is_active=True, platforms__isnull=False
+            ).values_list('platforms__id', flat=True)
+        )
 
-        platform_ids = loc_platforms.union(kw_platforms)
+        platform_ids = loc_platforms.union(kw_platforms).union(comp_platforms)
 
         platforms = Platform.objects.filter(id__in=platform_ids, status='Active')
 

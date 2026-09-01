@@ -280,3 +280,52 @@ We strictly use **Pytest** for our testing suite. Do not use Django's default `u
   ```bash
   pytest
   ```
+
+## Useful Utility Scripts
+
+The scripts/ directory contains useful Python scripts to help debug and audit generated Catalog JSON files.
+
+### 1. Counting Catalog Items
+Calculates the total number of items in a generated catalog JSON file and breaks down the counts by brand and data source.
+
+**Usage:**
+`ash
+python scripts/count_catalog_items.py <REGION_ID>
+`
+
+**Example:**
+`ash
+python scripts/count_catalog_items.py 2
+`
+
+### 2. Checking Missing/Extra SKUs
+Cross-references the generated catalog JSON for a specific platform against a target list of SKUs to identify matched, missing, and extra items. 
+
+The target list should be placed in scripts/sku_lists/<PLATFORM_NAME>.txt (e.g. mazon_uae.txt). The script outputs a detailed, comma-separated report text file in the same directory.
+
+**Usage:**
+`ash
+python scripts/check_skus.py <REGION_ID> <PLATFORM_NAME>
+`
+
+**Example:**
+`ash
+python scripts/check_skus.py 2 amazon_uae
+python scripts/check_skus.py 2 noon_uae
+`
+
+
+### 3. Importing XBytes Reviews
+Parses Excel (.xlsx), CSV, or TSV files containing product reviews and safely upserts them into the secondary xbytes_db database. It automatically extracts the platform name from the filename (e.g. Amazon_uae_reviews.xlsx -> mazon_uae).
+
+Place your review files in the scripts/reviews/ directory.
+
+**Usage:**
+`ash
+# Import all files in the directory
+python scripts/import_xbytes_reviews.py
+
+# Import ONLY files matching a specific platform
+python scripts/import_xbytes_reviews.py --platform amazon_uae
+`
+

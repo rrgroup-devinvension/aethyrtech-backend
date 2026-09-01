@@ -28,6 +28,14 @@ class LocationItem(TypedDict):
     lat: float | None
     lng: float | None
 
+class BrandItem(TypedDict):
+    """Schema for unified brand registry."""
+    id: int
+    name: str
+    type: str
+    aliases: list[str]
+    platforms: list[str]
+
 class PlatformSchema(TypedDict):
     """Schema for platform and API provider mappings."""
     platform_name: str
@@ -45,8 +53,9 @@ class RegionDataSchema(TypedDict):
     brand_id: int
     region_name: str
     region_id: int
-    brands: dict[str, list[str]]
+    brands: dict[str, BrandItem]
     display_brands: list[str]
+    display_competitors: list[str]
     platforms: dict[str, PlatformSchema]
     keywords: list[SimpleItem]
     locations: list[LocationItem]

@@ -23,9 +23,21 @@ def get_audit_data(brands, products):
         "last_run": None
     } for brand in brands}
 
+    visited_uids = set()
     for p in products:
-        if not p.brand or p.brand not in brand_stats:
+        if not p.brand or not p.uid:
             continue
+
+        p_platform = getattr(p, 'platform', None)
+        if p.brand not in brand_stats:
+            continue
+
+        # Deduplicate by platform + uid AFTER filters pass
+        # if p_platform == 'amazon_uae':
+        uid_key = (p_platform, p.uid)
+        if uid_key in visited_uids:
+            continue
+        visited_uids.add(uid_key)
 
         stats = brand_stats[p.brand]
         stats["sku_count"] += 1
@@ -87,7 +99,7 @@ def brand_audit_builder(
     region_data: RegionDataSchema, task, products=None, template="template-name"
 ) -> tuple[bool, dict]:
     """Construct the JSON payload for the Brand Audit dashboard view, including flagged alerts and KPIs."""
-    brands = region_data.get("display_brands", [])
+    brands = region_data.get("brands", {})
 
     t_id = getattr(task, 'id', 'unknown')
     logger.info(f"Starting BRAND_AUDIT JSON build for task {t_id}")

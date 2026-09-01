@@ -1,6 +1,6 @@
 import logging
 
-from experience_cloud.json_generator.schemas import ProductSchema, RegionDataSchema
+from experience_cloud.json_generator.schemas import BrandItem, ProductSchema, RegionDataSchema
 from experience_cloud.json_generator.utils import match_brands
 from experience_cloud.market_integrations.models.karmatech import (
     KarmatechProduct,
@@ -17,7 +17,7 @@ def get_all_karmatech_products(region_data: RegionDataSchema) -> list[ProductSch
     for authorized brand portfolios, aggressively normalizing the output into a unified list
     of standardized ProductSchema instances.
     """
-    brands: dict[str, list[str]] = region_data.get("brands", {})
+    brands: dict[str, BrandItem] = region_data.get("brands", {})
     if not brands:
         return []
 
@@ -86,7 +86,7 @@ def get_all_karmatech_products(region_data: RegionDataSchema) -> list[ProductSch
     formatted_products = []
     for p in products:
         sku = p.sku
-        matched_brand = match_brands(brands, p.brand)
+        matched_brand = match_brands(brands, p.brand, platform=p.platform)
         if not matched_brand:
             logger.error(f"{ctx} Product {p.sku} skipped due to brand mismatch ({p.brand})")
             continue

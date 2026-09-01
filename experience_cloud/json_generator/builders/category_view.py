@@ -84,7 +84,7 @@ def category_view_builder(
     Aggregates top-level catalog health, keyword frequency, platform-specific availability,
     and competitor brand metrics into a unified summary payload using a blazing fast O(P) single-pass architecture.
     """
-    brands = region_data.get("display_brands", [])
+    brands = region_data.get("brands", {})
     t_id = getattr(task, 'id', 'unknown')
     logger.info(f"Starting CATEGORY_VIEW JSON build for task {t_id}")
 
@@ -92,13 +92,19 @@ def category_view_builder(
     platform_codes = list(platform_schemas.keys())
     platform_names = [p.get("platform_name") for p in platform_schemas.values()]
 
-    # O(1) lookup dictionary for brand matching
-    valid_brands = {b.lower(): b for b in brands}
     brand_metrics: dict[str, BrandMetrics] = {b: BrandMetrics(b) for b in brands}
     inverted_index = defaultdict(set)
 
+    visited_uids = set()
     # SINGLE PASS AGGREGATION
     for p_idx, p in enumerate(products or []):
+        p_platform = getattr(p, 'platform', None)
+        # if p_platform == 'amazon_uae':
+        uid_key = (p_platform, getattr(p, 'uid', None))
+        if uid_key in visited_uids:
+            continue
+        visited_uids.add(uid_key)
+
         # 1. Track Inverted Index for Keywords
         try:
             t = getattr(p, 'title', '') or ''
@@ -115,13 +121,7 @@ def category_view_builder(
         if not p.brand:
             continue
 
-        b_key = str(p.brand).lower().strip()
-        matched_brand = valid_brands.get(b_key)
-
-        if not matched_brand:
-            continue
-
-        m = brand_metrics[matched_brand]
+        m = brand_metrics[p.brand]
 
         # Build Brand Stats
         if p.selling_price:

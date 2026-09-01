@@ -33,12 +33,50 @@ def get_region_data(region_id: int) -> RegionDataSchema:
     if brand_name:
         aliases_str = brand.aliases if brand.aliases else ""
         aliases = [a.strip() for a in aliases_str.split(',') if a.strip()] if aliases_str else []
-        brands[brand_name] = aliases
+        brands[brand_name] = {
+            "id": brand_id,
+            "name": brand_name,
+            "type": "parent",
+            "aliases": aliases,
+            "platforms": ["all"]  # parent brand applies to all platforms by default
+        }
 
-    for comp in Competitor.objects.filter(region_id=region_id):
+    platforms_map: dict = {}
+
+    def get_or_create_platform(plat, p_map):
+        if plat.id not in p_map:
+            api_prov = plat.api_provider
+            p_map[plat.id] = {
+                "platform_name": plat.name,
+                "platform_id": plat.id,
+                "platform_code": plat.code if plat.code else "",
+                "api_provider_name": api_prov.name if api_prov else "",
+                "api_provider_code": api_prov.code if api_prov else "",
+                "api_provider_id": api_prov.id if api_prov else 0,
+                "keywords": [],
+                "locations": []
+            }
+        return p_map[plat.id]
+
+    display_competitors: list = []
+
+    for comp in Competitor.objects.filter(region_id=region_id, is_active=True).prefetch_related('platforms'):
         aliases_str = comp.aliases if comp.aliases else ""
         aliases = [a.strip() for a in aliases_str.split(',') if a.strip()] if aliases_str else []
-        brands[comp.name] = aliases
+
+        comp_platforms = comp.platforms.all()
+        platforms_list = [p.code for p in comp_platforms if p.code] if comp_platforms else ["all"]
+
+        brands[comp.name] = {
+            "id": comp.id,
+            "name": comp.name,
+            "type": "competitor",
+            "aliases": aliases,
+            "platforms": platforms_list
+        }
+
+        if comp.name not in display_competitors:
+            display_competitors.append(comp.name)
 
     keywords_qs = Keyword.objects.filter(
         region_id=region_id,
@@ -46,7 +84,6 @@ def get_region_data(region_id: int) -> RegionDataSchema:
     ).select_related('platform__api_provider').order_by('display_order')
 
     keywords: dict = {}
-    platforms_map: dict = {}
     distinct_keywords_map: dict = {}
 
     for kw in keywords_qs:
@@ -57,21 +94,9 @@ def get_region_data(region_id: int) -> RegionDataSchema:
             keywords[plat_val] = []
         keywords[plat_val].append(kw.keyword)
 
-        if plat.id not in platforms_map:
-            api_prov = plat.api_provider
-            platforms_map[plat.id] = {
-                "platform_name": plat.name,
-                "platform_id": plat.id,
-                "platform_code": plat.code if plat.code else "",
-                "api_provider_name": api_prov.name if api_prov else "",
-                "api_provider_code": api_prov.code if api_prov else "",
-                "api_provider_id": api_prov.id if api_prov else 0,
-                "keywords": [],
-                "locations": []
-            }
-
+        p_data = get_or_create_platform(plat, platforms_map)
         kw_item = {"id": kw.id, "name": kw.keyword}
-        platforms_map[plat.id]["keywords"].append(kw_item)
+        p_data["keywords"].append(kw_item)
 
         if kw.keyword not in distinct_keywords_map:
             distinct_keywords_map[kw.keyword] = kw_item
@@ -96,19 +121,7 @@ def get_region_data(region_id: int) -> RegionDataSchema:
                 pincodes[plat_val] = []
             pincodes[plat_val].append(pin_val)
 
-        if plat.id not in platforms_map:
-            api_prov = plat.api_provider
-            platforms_map[plat.id] = {
-                "platform_name": plat.name,
-                "platform_id": plat.id,
-                "platform_code": plat.code if plat.code else "",
-                "api_provider_name": api_prov.name if api_prov else "",
-                "api_provider_code": api_prov.code if api_prov else "",
-                "api_provider_id": api_prov.id if api_prov else 0,
-                "keywords": [],
-                "locations": []
-            }
-
+        p_data = get_or_create_platform(plat, platforms_map)
         loc_item = {
             "id": loc.id,
             "pincode": loc.pincode,
@@ -117,7 +130,7 @@ def get_region_data(region_id: int) -> RegionDataSchema:
             "lng": float(loc.lng) if loc.lng is not None else None
         }
 
-        platforms_map[plat.id]["locations"].append(loc_item)
+        p_data["locations"].append(loc_item)
 
         loc_key = f"{loc.pincode}_{loc.address}"
         if loc_key not in distinct_locations_map:
@@ -135,6 +148,7 @@ def get_region_data(region_id: int) -> RegionDataSchema:
         "region_id": region_id,
         "brands": brands,
         "display_brands": list(brands.keys()),
+        "display_competitors": display_competitors,
         "platforms": { plat["platform_code"]: plat for plat in platforms_map.values() if plat["platform_code"] },
         "keywords": list(distinct_keywords_map.values()),
         "locations": list(distinct_locations_map.values()),

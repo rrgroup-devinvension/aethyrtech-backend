@@ -46,6 +46,7 @@ class Competitor(BaseModel):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, default='')
     region = models.ForeignKey(Region, on_delete=models.CASCADE, null=True, blank=True, related_name='competitors')
+    platforms = models.ManyToManyField('experience_cloud_catalog.Platform', blank=True, related_name='competitors')
     aliases = models.CharField(max_length=500, blank=True, default='')
     is_active = models.BooleanField(default=True)
 

@@ -26,11 +26,20 @@ def build_keyword_matrix(region_data: RegionDataSchema, products: ItemGenerator 
             locs = [loc.get("pincode") or loc.get("location") for loc in plat.get("locations", [])]
             platform_locations_map[plat_code] = [loc_str for loc_str in locs if loc_str]
 
+    visited_uids = set()
     for p in (products or []):
         if not p.brand or not p.title or not p.uid:
             continue
 
-        brand = str(p.brand).strip()
+        p_platform = getattr(p, 'platform', None)
+
+        # if p_platform == 'amazon_uae':
+        uid_key = (p_platform, p.uid)
+        if uid_key in visited_uids:
+            continue
+        visited_uids.add(uid_key)
+
+        brand = p.brand
         title = str(p.title).strip()
         ranking_data = p.rankings or {}
 

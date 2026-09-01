@@ -44,11 +44,21 @@ class CompetitorSerializer(BaseModelSerializer):
     """
     aliases = serializers.CharField(allow_null=True, allow_blank=True, required=False)
     description = serializers.CharField(allow_null=True, allow_blank=True, required=False)
+    platform_names = serializers.SerializerMethodField()
 
     class Meta(BaseModelSerializer.Meta):
         model = Competitor
-        fields = ('id', 'created_at', 'updated_at', 'region', 'name', 'description', 'aliases', 'is_active')
-        read_only_fields = BaseModelSerializer.Meta.read_only_fields
+        fields = (
+            'id', 'created_at', 'updated_at', 'region', 'platforms', 'platform_names',
+            'name', 'description', 'aliases', 'is_active'
+        )
+        read_only_fields = (*BaseModelSerializer.Meta.read_only_fields, 'platform_names')
+
+    def get_platform_names(self, obj):
+        """Retrieve names of associated platforms."""
+        if hasattr(obj, 'platforms') and obj.platforms.exists():
+            return [p.name for p in obj.platforms.all()]
+        return []
 
     def validate_aliases(self, value):
         """Validate aliases."""
