@@ -241,6 +241,7 @@ class XByteDataDumpService(BaseDataDumpService):
                 new_products,
                 batch_size=500,
                 update_conflicts=True,
+                unique_fields=['platform', 'keyword', 'location', 'product_uid'],
                 update_fields=[
                     'rank', 'title', 'brand', 'category', 'availability', 'mrp',
                     'sell_price', 'rating', 'reviews', 'brand_rating', 'brand_reviews', 'brand_review_text',
@@ -251,3 +252,14 @@ class XByteDataDumpService(BaseDataDumpService):
                     'run_date'
                 ]
             )
+            
+            # Clean up old records that no longer exist on this platform/location/keyword
+            incoming_uids = [str(item.get("id", "")).strip() for item in results]
+            deleted_count, _ = XBytesProduct.objects.filter(
+                platform=platform_code,
+                keyword=keyword_name,
+                location=location_str
+            ).exclude(product_uid__in=incoming_uids).delete()
+            
+            if deleted_count > 0:
+                logger.info(f"Cleaned up {deleted_count} outdated products for {platform_code} -> {keyword_name} -> {location_str}")

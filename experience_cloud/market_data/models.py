@@ -33,7 +33,7 @@ class ApiDump(BaseModel):
 
 
 class DataImportJob(BaseModel):
-    """Tracks background processing and chunked uploads of Excel data."""
+    """Parent batch tracking multiple chunked file uploads."""
     IMPORT_TYPES = (
         ('REVIEWS', 'Reviews'),
         ('DATA_DUMP', 'Data Dump'),
@@ -49,9 +49,37 @@ class DataImportJob(BaseModel):
 
     import_type = models.CharField(max_length=50, choices=IMPORT_TYPES, default='REVIEWS')
     platform = models.CharField(max_length=50, blank=True, default='')
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='UPLOADING')
+    batch_id = models.CharField(max_length=100, null=True, blank=True, unique=True, help_text="Frontend UUID to group this session")
+
+    # Aggregate Tracking
+    total_rows = models.IntegerField(default=0)
+    processed_rows = models.IntegerField(default=0)
+    failed_rows = models.IntegerField(default=0)
+    
+    # Timing
+    processing_started_at = models.DateTimeField(null=True, blank=True)
+    processing_completed_at = models.DateTimeField(null=True, blank=True)
+    processing_duration = models.FloatField(null=True, blank=True, help_text="Total time taken for the entire batch (seconds)")
+    
+    # Errors
+    error_message = models.TextField(blank=True, default='')
+
+    class Meta:
+        db_table = 'data_import_jobs'
+        indexes = [
+            models.Index(fields=['status'], name='idx_data_import_status'),
+            models.Index(fields=['import_type'], name='idx_data_import_type'),
+        ]
+
+
+class DataImportFile(BaseModel):
+    """Tracks a single file upload belonging to a DataImportJob."""
+    job = models.ForeignKey(DataImportJob, on_delete=models.CASCADE, related_name='files')
+    
     file = models.FileField(upload_to='imports/', null=True, blank=True)
     file_size_bytes = models.BigIntegerField(default=0, help_text="Total file size uploaded in bytes")
-    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='UPLOADING')
+    status = models.CharField(max_length=50, choices=DataImportJob.STATUS_CHOICES, default='UPLOADING')
 
     # Upload Tracking
     upload_id = models.CharField(max_length=255, blank=True, default='')
@@ -72,8 +100,8 @@ class DataImportJob(BaseModel):
     error_message = models.TextField(blank=True, default='')
 
     class Meta:
-        db_table = 'data_import_jobs'
+        db_table = 'data_import_files'
+        ordering = ['file']
         indexes = [
-            models.Index(fields=['status'], name='idx_data_import_status'),
-            models.Index(fields=['import_type'], name='idx_data_import_type'),
+            models.Index(fields=['status'], name='idx_data_import_file_status'),
         ]

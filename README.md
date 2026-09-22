@@ -188,10 +188,19 @@ Synchronously build a JSON file for a specific template and region.
   mysqldump -u root -p compx_db > store_backup.sql
   ```
 - **Generate Python-based SQL Dumps** (No mysqldump required):
-  *Backups are automatically saved to `backups/<db_name>/<YYYY-MM-DD>/<db_name>_<timestamp>.sql`*
+  *Backups are automatically saved to `backups/<db_name>/<YYYY-MM-DD>/<db_name>_<engine>_<timestamp>.sql`*
   ```bash
+  # Back up ALL databases sequentially
+  python scripts/db_backup.py
+  
+  # Back up a specific database
   python scripts/db_backup.py --db default
   python scripts/db_backup.py --db xbytes_db
+  ```
+- **Migrate Raw MySQL Databases to PostgreSQL**:
+  Uses SQLAlchemy to bypass Django's ORM and perform a direct schema and data migration, converting MySQL types and stripping collations safely.
+  ```bash
+  python scripts/raw_db_migrate.py --mysql-db compx_db --pg-db compx_db
   ```
 
 ---
@@ -289,43 +298,67 @@ The scripts/ directory contains useful Python scripts to help debug and audit ge
 Calculates the total number of items in a generated catalog JSON file and breaks down the counts by brand and data source.
 
 **Usage:**
-`ash
+```bash
 python scripts/count_catalog_items.py <REGION_ID>
-`
+```
 
 **Example:**
-`ash
+```bash
 python scripts/count_catalog_items.py 2
-`
+```
 
 ### 2. Checking Missing/Extra SKUs
 Cross-references the generated catalog JSON for a specific platform against a target list of SKUs to identify matched, missing, and extra items. 
 
-The target list should be placed in scripts/sku_lists/<PLATFORM_NAME>.txt (e.g. mazon_uae.txt). The script outputs a detailed, comma-separated report text file in the same directory.
+The target list should be placed in scripts/sku_lists/<PLATFORM_NAME>.txt (e.g. amazon_uae.txt). The script outputs a detailed, comma-separated report text file in the same directory.
 
 **Usage:**
-`ash
+```bash
 python scripts/check_skus.py <REGION_ID> <PLATFORM_NAME>
-`
+```
 
 **Example:**
-`ash
+```bash
 python scripts/check_skus.py 2 amazon_uae
 python scripts/check_skus.py 2 noon_uae
-`
+```
 
 
 ### 3. Importing XBytes Reviews
-Parses Excel (.xlsx), CSV, or TSV files containing product reviews and safely upserts them into the secondary xbytes_db database. It automatically extracts the platform name from the filename (e.g. Amazon_uae_reviews.xlsx -> mazon_uae).
+Parses Excel (.xlsx), CSV, or TSV files containing product reviews and safely upserts them into the secondary xbytes_db database. It automatically extracts the platform name from the filename (e.g. Amazon_uae_reviews.xlsx -> amazon_uae).
 
 Place your review files in the scripts/reviews/ directory.
 
 **Usage:**
-`ash
+```bash
 # Import all files in the directory
 python scripts/import_xbytes_reviews.py
 
 # Import ONLY files matching a specific platform
 python scripts/import_xbytes_reviews.py --platform amazon_uae
-`
+```
+
+
+
+
+
+
+
+python scripts/orm_migrate.py --source default 
+python scripts/orm_migrate.py --source karmatech_db  
+python scripts/orm_migrate.py --source xbytes_db     
+
+python manage.py migrate --database=default
+python manage.py migrate --database=xbytes_db
+
+# Migrate Default DB (assuming your default DB is named 'aethyrtech')
+python scripts/raw_db_migrate.py --mysql-db aethyrtech_staging --pg-db aethyrtech_staging
+python scripts/raw_db_migrate.py --mysql-db xbytesdata --pg-db xbytesdata
+python scripts/raw_db_migrate.py --mysql-db compx_db --pg-db compx_db
+
+python scripts/verify_migration.py --mysql-db aethyrtech_staging --pg-db aethyrtech_staging
+python scripts/verify_migration.py --mysql-db xbytesdata --pg-db xbytesdata
+python scripts/verify_migration.py --mysql-db compx_db --pg-db compx_db
+
+
 

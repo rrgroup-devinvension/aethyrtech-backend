@@ -8,14 +8,14 @@ class XBytesProduct(models.Model):
     # Core lookup fields
     objects = models.Manager()  # type: ignore
     platform = models.CharField(max_length=50)
-    keyword = models.CharField(max_length=255)
+    keyword = models.TextField()
     location = models.CharField(max_length=100)
     product_uid = models.CharField(max_length=100, null=True, blank=True)
     rank = models.IntegerField(null=True, blank=True)
 
     # Basic Details
     title = models.TextField(null=True, blank=True)
-    brand = models.CharField(max_length=255, null=True, blank=True)
+    brand = models.TextField(null=True, blank=True)
     category = models.TextField(null=True, blank=True)
     description = models.TextField(null=True, blank=True)
 
@@ -32,12 +32,12 @@ class XBytesProduct(models.Model):
     brand_review_text = models.TextField(max_length=1000, null=True, blank=True)
 
     # Manufacturer & Logistics
-    manufacturer = models.CharField(max_length=255, null=True, blank=True)
-    manufacturer_part = models.CharField(max_length=255, null=True, blank=True)
-    model = models.CharField(max_length=255, null=True, blank=True)
+    manufacturer = models.TextField(null=True, blank=True)
+    manufacturer_part = models.TextField(null=True, blank=True)
+    model = models.TextField(null=True, blank=True)
     upc_retailer_id = models.CharField(max_length=100, null=True, blank=True)
-    sold_by = models.CharField(max_length=255, null=True, blank=True)
-    shipped_by = models.CharField(max_length=255, null=True, blank=True)
+    sold_by = models.TextField(null=True, blank=True)
+    shipped_by = models.TextField(null=True, blank=True)
 
     # Media & URLs
     product_url = models.TextField(null=True, blank=True)
@@ -57,6 +57,7 @@ class XBytesProduct(models.Model):
 
     # Meta Data
     run_date = models.TextField(null=True, blank=True)
+    last_seen_batch_id = models.CharField(max_length=100, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -71,6 +72,7 @@ class XBytesProduct(models.Model):
 
             # Restored indexes for faster text searches
             models.Index(fields=['brand'], name='idx_product_brand'),
+            models.Index(fields=['last_seen_batch_id'], name='idx_prod_batch_id'),
         ]
 
         constraints = [
@@ -103,10 +105,10 @@ class XBytesReview(models.Model):
     product_url = models.TextField(null=True, blank=True)
     product_title = models.TextField(null=True, blank=True)
     sku = models.CharField(max_length=100, null=True, blank=True)
-    brand = models.CharField(max_length=255, null=True, blank=True)
+    brand = models.TextField(null=True, blank=True)
 
     # Review Core
-    review_id = models.CharField(max_length=255, null=True, blank=True)
+    review_id = models.TextField(null=True, blank=True)
     reviewer_name = models.TextField(null=True, blank=True)
     reviewer_profile_url = models.TextField(null=True, blank=True)
     rating = models.CharField(max_length=50, null=True, blank=True)

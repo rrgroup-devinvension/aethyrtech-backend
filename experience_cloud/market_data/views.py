@@ -528,7 +528,7 @@ class DebugRunDataDumpView(APIView):
             metadata = {
                 'location_name': loc_name,
                 'keyword_name': keyword.keyword,
-                'regions': [location.region_id] if location.region_id else []
+                'regions': [{'region_id': location.region_id}] if location.region_id else []
             }
 
             # Build schema exactly like the async task does
@@ -559,71 +559,103 @@ class DataImportJobViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, vie
 
     @action(detail=False, methods=['post'])
     def init(self, request):
-        """Initialize a new chunked data import upload."""
+        """Initialize a new batch job."""
         import_type = request.data.get('import_type', 'REVIEWS')
         platform = request.data.get('platform', '')
-        file_size_bytes = request.data.get('total_size', 0)
+        batch_id = request.data.get('batch_id') or str(uuid.uuid4())
 
-        job = DataImportJob.objects.create(
-            import_type=import_type,
-            platform=platform,
+        job, created = DataImportJob.objects.get_or_create(
+            batch_id=batch_id,
+            defaults={
+                'import_type': import_type,
+                'platform': platform,
+                'status': 'UPLOADING',
+                'processing_started_at': timezone.now()
+            }
+        )
+        
+        # Now init the specific file
+        file_size_bytes = request.data.get('total_size', 0)
+        from .models import DataImportFile
+        import_file = DataImportFile.objects.create(
+            job=job,
             status='UPLOADING',
             upload_id=str(uuid.uuid4()),
             file_size_bytes=file_size_bytes,
             upload_started_at=timezone.now()
         )
-        # Create temp file
+
         temp_dir = os.path.join(settings.MEDIA_ROOT, 'temp_imports')
         os.makedirs(temp_dir, exist_ok=True)
-        temp_path = os.path.join(temp_dir, f'{job.upload_id}.part')
+        temp_path = os.path.join(temp_dir, f'{import_file.upload_id}.part')
         with open(temp_path, 'wb'):
             pass
 
-        return Response({'job_id': job.id, 'upload_id': job.upload_id}, status=200)
+        return Response({'job_id': job.id, 'file_id': import_file.id, 'upload_id': import_file.upload_id}, status=200)
 
-    @action(detail=True, methods=['post'])
-    def chunk(self, request, pk=None):
+    @action(detail=False, methods=['post'], url_path='(?P<file_id>[^/.]+)/chunk')
+    def chunk(self, request, file_id=None):
         """Append a file chunk to the temporary upload file."""
-        job = self.get_object()
+        from .models import DataImportFile
+        try:
+            import_file = DataImportFile.objects.get(id=file_id)
+        except DataImportFile.DoesNotExist:
+            return Response({'error': 'File not found'}, status=404)
+
         file_chunk = request.FILES.get('file')
         if not file_chunk:
             return Response({'error': 'No file chunk'}, status=400)
 
-        temp_path = os.path.join(settings.MEDIA_ROOT, 'temp_imports', f'{job.upload_id}.part')
+        temp_path = os.path.join(settings.MEDIA_ROOT, 'temp_imports', f'{import_file.upload_id}.part')
         with open(temp_path, 'ab') as f:
             for c in file_chunk.chunks():
                 f.write(c)
 
         return Response({'status': 'ok'}, status=200)
 
-    @action(detail=True, methods=['post'])
-    def complete(self, request, pk=None):
+    @action(detail=False, methods=['post'], url_path='(?P<file_id>[^/.]+)/complete')
+    def complete(self, request, file_id=None):
         """Complete the upload, save the file to Django storage, and queue for processing."""
-        job = self.get_object()
+        from .models import DataImportFile
+        try:
+            import_file = DataImportFile.objects.get(id=file_id)
+        except DataImportFile.DoesNotExist:
+            return Response({'error': 'File not found'}, status=404)
+
         filename = request.data.get('filename', 'upload.xlsx')
 
-        temp_path = os.path.join(settings.MEDIA_ROOT, 'temp_imports', f'{job.upload_id}.part')
+        temp_path = os.path.join(settings.MEDIA_ROOT, 'temp_imports', f'{import_file.upload_id}.part')
         final_dir = os.path.join(settings.MEDIA_ROOT, 'imports')
         os.makedirs(final_dir, exist_ok=True)
-        final_path = os.path.join(final_dir, f'{job.upload_id}_{filename}')
+        final_path = os.path.join(final_dir, f'{import_file.upload_id}_{filename}')
 
         os.rename(temp_path, final_path)
 
         from django.core.files import File
         with open(final_path, 'rb') as f:
-            job.file.save(filename, File(f), save=False)
+            import_file.file.save(filename, File(f), save=False)
 
-        job.status = 'PENDING_PROCESSING'
-        job.upload_completed_at = timezone.now()
-        if job.upload_started_at:
-            job.upload_duration = (job.upload_completed_at - job.upload_started_at).total_seconds()
-        job.save()
+        import_file.status = 'PENDING_PROCESSING'
+        import_file.upload_completed_at = timezone.now()
+        if import_file.upload_started_at:
+            import_file.upload_duration = (import_file.upload_completed_at - import_file.upload_started_at).total_seconds()
+        import_file.save()
 
-        # trigger celery task
-        from experience_cloud.market_data.tasks import process_data_import
-        process_data_import.delay(job.id)
+        # Update parent job status if needed
+        job = import_file.job
+        if job.status == 'UPLOADING':
+            job.status = 'PENDING_PROCESSING'
+            job.save(update_fields=['status'])
 
-        return Response({'status': 'Import Started'}, status=200)
+        # Dispatch Celery Task
+        from celery import current_app
+        current_app.send_task(
+            'experience_cloud.market_data.tasks.process_data_import',
+            args=[import_file.id],
+            queue='celery'
+        )
+
+        return Response({'status': 'processing'}, status=200)
 
     @action(detail=True, methods=['post'])
     def pause(self, request, pk=None):

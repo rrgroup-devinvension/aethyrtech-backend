@@ -55,3 +55,4 @@ mypy==1.8.0
 django-stubs==4.2.7
 djangorestframework-stubs==3.14.5
 jsonpath-ng
+psycopg2-binary==2.9.12

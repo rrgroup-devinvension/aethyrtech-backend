@@ -53,6 +53,25 @@ class OrganizationViewSet(BaseViewSet):
         """Perform update."""
         serializer.save(updated_by=self.request.user)
 
+    @extend_schema(summary="Toggle Organization Status", request=dict, responses={200: dict})
+    @action(detail=True, methods=["post"], url_path="toggle-status")
+    def toggle_status(self, request, pk=None):
+        """Toggle the active status of an organization."""
+        logger.info(f"Toggling status for organization pk {pk}")
+        organization = self.get_object()
+        new_status = request.data.get("status")
+
+        if not new_status:
+            return Response(
+                {"detail": "Please provide 'status' in request body."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        organization.status = new_status
+        organization.save()
+        logger.info(f"Organization pk {pk} status set to {organization.status}")
+        return Response({"detail": f"Organization status updated to {organization.status}"}, status=status.HTTP_200_OK)
+
     @extend_schema(summary="Get Organization Brands", responses={200: BrandSerializer(many=True)})
     @action(detail=True, methods=['get'], url_path='brands')
     def organization_brands(self, request, pk=None, id=None, **kwargs):
@@ -157,7 +176,7 @@ class BrandViewSet(BaseViewSet):
 )
 class CompetitorViewSet(BaseViewSet):
     """API endpoints for managing market Competitors."""
-    organization_field = 'organization_id'
+    organization_field = 'region__brand__organization_id'
     permission_mapping: ClassVar[dict[str, str]] = {
         'GET': AppPermissions.READ_BRAND,
         'POST': AppPermissions.MANAGE_BRAND,
@@ -197,6 +216,7 @@ class CompetitorViewSet(BaseViewSet):
 )
 class RegionViewSet(BaseViewSet):
     """API endpoints for managing operational Regions."""
+    organization_field = 'brand__organization_id'
     permission_mapping: ClassVar[dict[str, str]] = {
         'GET': AppPermissions.READ_BRAND,
         'POST': AppPermissions.MANAGE_BRAND,

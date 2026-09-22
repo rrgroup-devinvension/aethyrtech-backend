@@ -65,7 +65,9 @@ class ExternalDBRouter:
                     return db == 'xbytes_db'
                 elif model_name.startswith('karmatech'):
                     return db == 'karmatech_db'
-            # Default fallback for market_integrations app: NO migrations outside of target DBs
+            # If no model_name is provided, allow the app to migrate to its designated DBs
+            if db in ['xbytes_db', 'karmatech_db']:
+                return True
             return False
 
         # For all other apps, prevent them from migrating onto our external DBs

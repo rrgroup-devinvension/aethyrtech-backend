@@ -1,7 +1,7 @@
 from experience_cloud.market_integrations.models.xbytes import XBytesProduct
 from shared.base.serializers import BaseModelSerializer
 
-from .models import DataImportJob
+from .models import DataImportJob, DataImportFile
 
 
 class ProductSerializer(BaseModelSerializer):
@@ -15,8 +15,16 @@ class ProductSerializer(BaseModelSerializer):
         fields = '__all__'
 
 
+class DataImportFileSerializer(BaseModelSerializer):
+    class Meta(BaseModelSerializer.Meta):
+        model = DataImportFile
+        fields = '__all__'
+
+
 class DataImportJobSerializer(BaseModelSerializer):
     """Serialize the Data Import Job status and details."""
+    files = DataImportFileSerializer(many=True, read_only=True)
+
     class Meta(BaseModelSerializer.Meta):
         model = DataImportJob
         fields = '__all__'

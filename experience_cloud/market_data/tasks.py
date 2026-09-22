@@ -7,7 +7,7 @@ from celery import shared_task
 
 from experience_cloud.executions.models import DataDumpTask
 from experience_cloud.executions.services import ExecutionManager
-from experience_cloud.market_data.models import ApiDump, DataImportJob
+from experience_cloud.market_data.models import ApiDump
 from experience_cloud.market_data.schemas import DataDumpSchema
 from experience_cloud.market_data.services.dispatcher import DataDumpDispatcher
 
@@ -144,44 +144,77 @@ def process_location_dump(execution_id: int, task_id: int, keyword_name: str, lo
 
         ExecutionManager.update_task_status(DataDumpTask, task_id, execution_id, 'FAILED', error=full_trace)
 
-def auto_detect_platform(url: str, platforms_list: list) -> str:
-    """Detect platform from URL by checking against known platforms."""
-    if not url or not platforms_list:
+def auto_detect_platform(filename: str, platforms_list: list) -> str:
+    """Detect platform strictly from the uploaded filename by checking against known platforms."""
+    if not platforms_list or not filename:
         return ''
-    url = str(url).lower()
+
+    fname = str(filename).lower()
+    best_match = ''
+
     for p in platforms_list:
-        if p and p.lower() in url:
-            return p.lower()
-    return ''
+        if p:
+            p_lower = p.lower()
+            if p_lower in fname:
+                if len(p_lower) > len(best_match):
+                    best_match = p_lower
+
+    return best_match
 
 @shared_task(name='experience_cloud.market_data.tasks.process_data_import')
-def process_data_import(job_id: int):
+def process_data_import(file_id: int):
     """Process a data import job by reading chunks and saving reviews."""
     try:
-        job = DataImportJob.objects.get(id=job_id)
-        if job.status not in ['PENDING_PROCESSING', 'PROCESSING']:
-            logger.warning(f'Job {job_id} cannot be processed due to status: {job.status}')
+        def _debug_truncation(obj_dict):
+            logger.info("Running _debug_truncation to find the exact column > 255 characters...")
+            for obj in obj_dict.values():
+                for field in obj._meta.fields:
+                    val = getattr(obj, field.name)
+                    if val is not None:
+                        val_len = len(str(val))
+                        if val_len > 255:
+                            row_info = getattr(obj, '_excel_row', 'Unknown')
+                            logger.error(f"POTENTIAL TRUNCATION in {obj.__class__.__name__} (Excel Row ~{row_info}): Field '{field.name}' length is {val_len}. Value preview: {str(val)[:200]}")
+
+        from experience_cloud.market_data.models import DataImportFile
+        import_file = DataImportFile.objects.get(id=file_id)
+        if import_file.status not in ['PENDING_PROCESSING', 'PROCESSING']:
+            logger.warning(f'File {file_id} cannot be processed due to status: {import_file.status}')
             return
 
+        job = import_file.job
+
+        import_file.status = 'PROCESSING'
         job.status = 'PROCESSING'
         from django.utils import timezone
+        if not import_file.processing_started_at:
+            import_file.processing_started_at = timezone.now()
         if not job.processing_started_at:
             job.processing_started_at = timezone.now()
-        job.last_processed_at = timezone.now()
-        job.save(update_fields=['status', 'processing_started_at', 'last_processed_at'])
 
-        filepath = job.file.path
+        import_file.last_processed_at = timezone.now()
+        import_file.save(update_fields=['status', 'processing_started_at', 'last_processed_at'])
+        job.save(update_fields=['status', 'processing_started_at'])
+
+        filepath = import_file.file.path
         if filepath.endswith(('.xlsx', '.xls')):
             # Read total rows if not set
-            if job.total_rows == 0:
+            if import_file.total_rows == 0:
                 df_total = pd.read_excel(filepath)
-                job.total_rows = len(df_total)
+                import_file.total_rows = len(df_total)
+                import_file.save(update_fields=['total_rows'])
+
+                # Update parent job total rows
+                from django.db.models import F
+                job.total_rows = F('total_rows') + len(df_total)
                 job.save(update_fields=['total_rows'])
+                job.refresh_from_db(fields=['total_rows'])
+
                 del df_total
 
             # Process in chunks
             chunk_size = 1000
-            skiprows = range(1, job.processed_rows + 1) if job.processed_rows > 0 else None
+            skiprows = range(1, import_file.processed_rows + 1) if import_file.processed_rows > 0 else None
 
             # Since pandas read_excel doesn't support chunksize natively like read_csv,
             # we read the whole file but only process from processed_rows onwards
@@ -201,25 +234,24 @@ def process_data_import(job_id: int):
                 from experience_cloud.catalog.models import Platform
                 db_platforms = list(Platform.objects.values_list('code', flat=True))
 
+                import os
+                filename = os.path.basename(import_file.file.name)
+
                 # Auto-detect platform if missing
-                if not job.platform and not df.empty:
-                    first_row = df.iloc[0]
-                    first_url = (
-                        str(first_row.get(url_col, first_row.get('product_url', '')))
-                        if url_col or 'product_url' in df.columns else ''
-                    )
-                    detected = auto_detect_platform(first_url, db_platforms)
+                if not job.platform:
+                    detected = auto_detect_platform(filename, db_platforms)
                     if detected:
                         job.platform = detected
                         job.save(update_fields=['platform'])
 
-                reviews_to_create = []
+                reviews_dict = {}
+                processed_count = 0
                 for i, (_index, row) in enumerate(df.iterrows()):
                     # Check pause status every chunk
                     if i > 0 and i % chunk_size == 0:
                         job.refresh_from_db()
                         if job.status != 'PROCESSING':
-                            logger.info(f'Job {job_id} paused at row {job.processed_rows}')
+                            logger.info(f'File {file_id} paused at row {import_file.processed_rows}')
                             return
 
                     product_url = (
@@ -228,7 +260,7 @@ def process_data_import(job_id: int):
                     )
                     sku = str(row.get('sku_id', '')).strip()
 
-                    row_platform = job.platform or auto_detect_platform(product_url, db_platforms)
+                    row_platform = job.platform or auto_detect_platform(filename, db_platforms)
 
                     review = XBytesReview(
                         platform=row_platform,
@@ -251,12 +283,16 @@ def process_data_import(job_id: int):
                         review_url=str(row.get('review_url', '')),
                         timestamp=str(row.get('timestamp', ''))
                     )
-                    reviews_to_create.append(review)
+                    review._excel_row = _index + 2  # type: ignore
+                    unique_key = (review.platform, review.sku, review.review_id)
+                    reviews_dict[unique_key] = review
+                    processed_count += 1
 
-                    if len(reviews_to_create) >= chunk_size:
+                    if len(reviews_dict) >= chunk_size:
                         XBytesReview.objects.bulk_create(
-                            reviews_to_create,
+                            list(reviews_dict.values()),
                             update_conflicts=True,
+                            unique_fields=['platform', 'sku', 'review_id'],
                             update_fields=[
                                 'product_url', 'product_title', 'brand', 'reviewer_name',
                                 'reviewer_profile_url', 'rating', 'review_title', 'review_text',
@@ -264,18 +300,24 @@ def process_data_import(job_id: int):
                                 'video_urls', 'variant_info', 'review_url', 'timestamp'
                             ]
                         )
-                        job.processed_rows += len(reviews_to_create)
+                        import_file.processed_rows += processed_count
+                        import_file.save(update_fields=['processed_rows'])
+                        from django.db.models import F
+                        job.processed_rows = F('processed_rows') + processed_count
                         job.save(update_fields=['processed_rows'])
-                        reviews_to_create = []
+                        job.refresh_from_db(fields=['processed_rows'])
+                        reviews_dict = {}
+                        processed_count = 0
 
-                if reviews_to_create:
+                if reviews_dict:
                     # Final check before last chunk
                     job.refresh_from_db(fields=['status'])
                     if job.status == 'PAUSED':
                         return
                     XBytesReview.objects.bulk_create(
-                        reviews_to_create,
+                        list(reviews_dict.values()),
                         update_conflicts=True,
+                        unique_fields=['platform', 'sku', 'review_id'],
                         update_fields=[
                             'product_url', 'product_title', 'brand', 'reviewer_name',
                             'reviewer_profile_url', 'rating', 'review_title', 'review_text',
@@ -283,31 +325,174 @@ def process_data_import(job_id: int):
                             'video_urls', 'variant_info', 'review_url', 'timestamp'
                         ]
                     )
-                    job.processed_rows += len(reviews_to_create)
+                    import_file.processed_rows += processed_count
+                    import_file.save(update_fields=['processed_rows'])
+                    from django.db.models import F
+                    job.processed_rows = F('processed_rows') + processed_count
                     job.save(update_fields=['processed_rows'])
+                    job.refresh_from_db(fields=['processed_rows'])
 
             elif job.import_type == 'DATA_DUMP':
-                # Placeholder for future logic
-                pass
+                import os
 
-        job.status = 'COMPLETED'
-        job.processing_completed_at = timezone.now()
-        if job.processing_started_at:
-            job.processing_duration = (job.processing_completed_at - job.processing_started_at).total_seconds()
-        job.save(update_fields=['status', 'processing_completed_at', 'processing_duration'])
-        logger.info(f'Job {job_id} completed successfully.')
+                from experience_cloud.market_integrations.models.xbytes import XBytesProduct
+                filename = os.path.basename(import_file.file.name)
 
-    except Exception as e:
-        full_trace = traceback.format_exc()
-        logger.exception(f'Data Import Task {job_id} failed: {e}')
+                # Fetch platform codes once
+                from experience_cloud.catalog.models import Platform
+                db_platforms = list(Platform.objects.values_list('code', flat=True))
 
-        job = DataImportJob.objects.filter(id=job_id).first()
-        if job:
-            job.status = 'FAILED'
-            job.error_message = full_trace
-            from django.utils import timezone
+                if not job.platform:
+                    detected = auto_detect_platform(filename, db_platforms)
+                    if detected:
+                        job.platform = detected
+                        job.save(update_fields=['platform'])
+
+                products_dict = {}
+                processed_count = 0
+                for i, (_index, row) in enumerate(df.iterrows()):
+                    if i > 0 and i % chunk_size == 0:
+                        job.refresh_from_db()
+                        if job.status != 'PROCESSING':
+                            logger.info(f'File {file_id} paused at row {import_file.processed_rows}')
+                            return
+
+                    row_platform = job.platform or auto_detect_platform(filename, db_platforms)
+
+                    product_uid = str(row.get('id', '')).strip()
+                    keyword = str(row.get('input_brand_keyword', '')).strip()
+                    location = str(row.get('Pincode', row.get('pincode', row.get('pdp_address', '')))).strip()
+
+                    if not product_uid:
+                        continue
+
+                    product = XBytesProduct(
+                        platform=row_platform,
+                        keyword=keyword,
+                        location=location,
+                        product_uid=product_uid,
+                        rank=pd.to_numeric(row.get('rank'), errors='coerce') if 'rank' in df.columns and pd.notna(row['rank']) else None,
+                        title=str(row.get('product_title', '')),
+                        brand=str(row.get('brand', '')),
+                        category=str(row.get('category', '')),
+                        availability=str(row.get('availability', '')),
+                        mrp=str(row.get('msrp', '')),
+                        sell_price=str(row.get('sell_price', '')),
+                        rating=str(row.get('rating', '')),
+                        reviews=str(row.get('reviews', '')),
+                        product_url=str(row.get('Platform url of the SKU', '')),
+                        thumbnail=str(row.get('thumbnail_image_url', '')),
+                        main_image=str(row.get('main_image', '')),
+                        manufacturer=str(row.get('manufacturer', '')),
+                        manufacturer_part=str(row.get('manufacturer_part', '')),
+                        upc_retailer_id=str(row.get('upc_retailer_id', '')),
+                        model=str(row.get('model', '')),
+                        sold_by=str(row.get('sold_by', '')),
+                        shipped_by=str(row.get('shipped_by', '')),
+                        description=str(row.get('description', '')),
+                        image_count=str(row.get('images', 0)),
+                        video_count=str(row.get('videos', 0)),
+                        document_count=str(row.get('documents', 0)),
+                        product_view_360=str(row.get('product_view_360', '')),
+                        run_date=str(row.get('run_date', '')),
+                        last_seen_batch_id=job.batch_id
+                    )
+                    product._excel_row = _index + 2  # type: ignore
+
+                    unique_key = (row_platform, keyword, location, product_uid)
+                    products_dict[unique_key] = product
+                    processed_count += 1
+
+                    if len(products_dict) >= chunk_size:
+                        try:
+                            XBytesProduct.objects.bulk_create(
+                                list(products_dict.values()),
+                                batch_size=chunk_size,
+                                update_conflicts=True,
+                                unique_fields=['platform', 'keyword', 'location', 'product_uid'],
+                                update_fields=[
+                                    'rank', 'title', 'brand', 'category', 'availability', 'mrp',
+                                    'sell_price', 'rating', 'reviews', 'product_url', 'thumbnail', 'main_image',
+                                    'manufacturer', 'manufacturer_part', 'upc_retailer_id', 'model', 'sold_by', 'shipped_by',
+                                    'description', 'image_count', 'video_count', 'document_count', 'product_view_360',
+                                    'run_date', 'last_seen_batch_id'
+                                ]
+                            )
+                        except Exception as e:
+                            _debug_truncation(products_dict)
+                            raise e
+                        products_dict.clear()
+                        import_file.processed_rows += processed_count
+                        import_file.save(update_fields=['processed_rows'])
+                        from django.db.models import F
+                        job.processed_rows = F('processed_rows') + processed_count
+                        job.save(update_fields=['processed_rows'])
+                        job.refresh_from_db(fields=['processed_rows'])
+                        processed_count = 0
+
+                if products_dict:
+                    try:
+                        XBytesProduct.objects.bulk_create(
+                            list(products_dict.values()),
+                            batch_size=chunk_size,
+                            update_conflicts=True,
+                            unique_fields=['platform', 'keyword', 'location', 'product_uid'],
+                            update_fields=[
+                                'rank', 'title', 'brand', 'category', 'availability', 'mrp',
+                                'sell_price', 'rating', 'reviews', 'product_url', 'thumbnail', 'main_image',
+                                'manufacturer', 'manufacturer_part', 'upc_retailer_id', 'model', 'sold_by', 'shipped_by',
+                                'description', 'image_count', 'video_count', 'document_count', 'product_view_360',
+                                'run_date', 'last_seen_batch_id'
+                            ]
+                        )
+                    except Exception as e:
+                        _debug_truncation(products_dict)
+                        raise e
+                    import_file.processed_rows += processed_count
+                    import_file.save(update_fields=['processed_rows'])
+                    from django.db.models import F
+                    job.processed_rows = F('processed_rows') + processed_count
+                    job.save(update_fields=['processed_rows'])
+                    job.refresh_from_db(fields=['processed_rows'])
+
+        import_file.status = 'COMPLETED'
+        import_file.processing_completed_at = timezone.now()
+        if import_file.processing_started_at:
+            import_file.processing_duration = (import_file.processing_completed_at - import_file.processing_started_at).total_seconds()
+        import_file.save(update_fields=['status', 'processing_completed_at', 'processing_duration'])
+        logger.info(f'File {file_id} completed successfully.')
+
+        # Check if ANY other files in this batch are still running or pending
+        pending_siblings = job.files.exclude(status__in=['COMPLETED', 'FAILED']).exists()
+
+        if not pending_siblings:
+            job.status = 'COMPLETED'
             job.processing_completed_at = timezone.now()
             if job.processing_started_at:
                 job.processing_duration = (job.processing_completed_at - job.processing_started_at).total_seconds()
-            job.save(update_fields=['status', 'error_message', 'processing_completed_at', 'processing_duration'])
+            job.save(update_fields=['status', 'processing_completed_at', 'processing_duration'])
+
+            if job.import_type == 'DATA_DUMP' and job.batch_id:
+                logger.info(f"All files for batch {job.batch_id} completed. Triggering cleanup...")
+                from experience_cloud.market_data.services.cleanup import clean_stale_batch_products
+                clean_stale_batch_products(job.batch_id)
+
+    except Exception as e:
+        full_trace = traceback.format_exc()
+        logger.exception(f'Data Import Task {file_id} failed: {e}')
+
+        from experience_cloud.market_data.models import DataImportFile
+        import_file = DataImportFile.objects.filter(id=file_id).first()
+        if import_file:
+            import_file.status = 'FAILED'
+            import_file.error_message = full_trace
+            from django.utils import timezone
+            import_file.processing_completed_at = timezone.now()
+            if import_file.processing_started_at:
+                import_file.processing_duration = (import_file.processing_completed_at - import_file.processing_started_at).total_seconds()
+            import_file.save(update_fields=['status', 'error_message', 'processing_completed_at', 'processing_duration'])
+
+            job = import_file.job
+            job.status = 'FAILED'
+            job.save(update_fields=['status'])
 

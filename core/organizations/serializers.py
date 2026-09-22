@@ -123,5 +123,5 @@ class RegionSerializer(BaseModelSerializer):
 
     def get_files_count(self, obj):
         """Calculate the number of files generated/associated within this region."""
-        from experience_cloud.json_generator.models import JsonTemplate
-        return JsonTemplate.objects.count()
+        from experience_cloud.json_generator.models import RegionJsonFile
+        return RegionJsonFile.objects.filter(region=obj).count()
