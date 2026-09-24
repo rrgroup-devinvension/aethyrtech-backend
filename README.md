@@ -33,19 +33,26 @@ cd aethyrtech-backend
 ### 2. Set up the virtual environment
 It is highly recommended to use a virtual environment:
 ```bash
-python -m venv venv
+python -m venv .venv
 
 # On Windows:
 venv\Scripts\activate
 
 # On Mac/Linux:
 source venv/bin/activate
+
+# Install uv
+pip install uv
+uv --version
 ```
 
 ### 3. Install dependencies
 ```bash
-pip install -r requirements.txt
-pip install python-dotenv
+uv sync
+
+# To add new package
+uv add django
+uv add djangorestframework
 ```
 
 ### 4. Configure Environment Variables

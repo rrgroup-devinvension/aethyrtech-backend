@@ -97,9 +97,10 @@ REST_FRAMEWORK = {
     ],
 }
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:4200",
-]
+CORS_ALLOWED_ORIGINS = os.getenv(
+    "CORS_ALLOWED_ORIGINS", 
+    "http://localhost:4200,https://app.staging.aethyrtech.ai,https://app.aethyrtech.ai"
+).split(",")
 CORS_ALLOW_HEADERS = [
     *list(default_headers),
     "noauth",
