@@ -3,7 +3,7 @@ name: 🚀 Deploy Django Backend (Production)
 on:
   push:
     branches:
-      - master
+      - main
 
 jobs:
   test:
